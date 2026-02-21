@@ -1,0 +1,16 @@
+__pycache__/
+.pytest_cache/
+.hypothesis/
+node_modules/
+vue-widgets/node_modules/
+vue-widgets/.vite/
+vue-widgets/dist/
+coverage/
+.coverage
+.vscode/
+.opencode/
+.git/
+*.pyc
+settings.json
+path_mappings.yaml
+model_cache/
