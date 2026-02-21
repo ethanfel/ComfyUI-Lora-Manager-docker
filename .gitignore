@@ -18,6 +18,9 @@ model_cache/
 # Browser extension (private)
 extension/
 
+# Custom nodes (separate repos)
+custom_nodes/
+
 # Vue widgets development cache (but keep build output)
 vue-widgets/node_modules/
 vue-widgets/.vite/
