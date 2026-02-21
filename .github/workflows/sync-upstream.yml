@@ -1,0 +1,44 @@
+name: Sync from upstream
+
+on:
+  schedule:
+    # Run daily at 06:00 UTC
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Add upstream remote
+        run: git remote add upstream https://github.com/willmiao/ComfyUI-Lora-Manager.git || true
+
+      - name: Fetch upstream
+        run: git fetch upstream main
+
+      - name: Check for new commits
+        id: check
+        run: |
+          BEHIND=$(git rev-list --count HEAD..upstream/main)
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "Upstream is $BEHIND commits ahead"
+
+      - name: Merge upstream
+        if: steps.check.outputs.behind != '0'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git merge upstream/main --no-edit
+
+      - name: Push
+        if: steps.check.outputs.behind != '0'
+        run: git push origin main
