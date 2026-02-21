@@ -15,11 +15,18 @@ on:
       - "web/**"
       - "vue-widgets/src/**"
       - ".github/workflows/docker-publish.yml"
+  workflow_run:
+    workflows: ["Sync from upstream"]
+    types:
+      - completed
   workflow_dispatch:
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    if: >-
+      github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Check out code
         uses: actions/checkout@v4
