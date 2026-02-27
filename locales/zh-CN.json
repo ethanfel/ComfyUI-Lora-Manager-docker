@@ -258,16 +258,26 @@
             "contentFiltering": "内容过滤",
             "videoSettings": "视频设置",
             "layoutSettings": "布局设置",
-            "folderSettings": "文件夹设置",
-            "priorityTags": "优先标签",
-            "downloadPathTemplates": "下载路径模板",
-            "exampleImages": "示例图片",
-            "updateFlags": "更新标记",
-            "autoOrganize": "Auto-organize",
             "misc": "其他",
-            "metadataArchive": "元数据归档数据库",
-            "storageLocation": "设置位置",
+            "folderSettings": "默认根目录",
+            "extraFolderPaths": "额外文件夹路径",
+            "downloadPathTemplates": "下载路径模板",
+            "priorityTags": "优先标签",
+            "updateFlags": "更新标记",
+            "exampleImages": "示例图片",
+            "autoOrganize": "自动整理",
+            "metadata": "元数据",
             "proxySettings": "代理设置"
+        },
+        "nav": {
+            "general": "通用",
+            "interface": "界面",
+            "library": "库"
+        },
+        "search": {
+            "placeholder": "搜索设置...",
+            "clear": "清除搜索",
+            "noResults": "未找到匹配 \"{query}\" 的设置"
         },
         "storage": {
             "locationLabel": "便携模式",
@@ -341,13 +351,13 @@
             "activeLibraryHelp": "在已配置的库之间切换以更新默认文件夹。更改选择将重新加载页面。",
             "loadingLibraries": "正在加载库...",
             "noLibraries": "尚未配置库",
-            "defaultLoraRoot": "默认 LoRA 根目录",
+            "defaultLoraRoot": "LoRA 根目录",
             "defaultLoraRootHelp": "设置下载、导入和移动时的默认 LoRA 根目录",
-            "defaultCheckpointRoot": "默认 Checkpoint 根目录",
+            "defaultCheckpointRoot": "Checkpoint 根目录",
             "defaultCheckpointRootHelp": "设置下载、导入和移动时的默认 Checkpoint 根目录",
-            "defaultUnetRoot": "默认 Diffusion Model 根目录",
+            "defaultUnetRoot": "Diffusion Model 根目录",
             "defaultUnetRootHelp": "设置下载、导入和移动时的默认 Diffusion Model (UNET) 根目录",
-            "defaultEmbeddingRoot": "默认 Embedding 根目录",
+            "defaultEmbeddingRoot": "Embedding 根目录",
             "defaultEmbeddingRootHelp": "设置下载、导入和移动时的默认 Embedding 根目录",
             "noDefault": "无默认"
         },
@@ -475,6 +485,23 @@
             "proxyPassword": "密码 (可选)",
             "proxyPasswordPlaceholder": "密码",
             "proxyPasswordHelp": "代理认证的密码 (如果需要)"
+        },
+        "extraFolderPaths": {
+            "title": "额外文件夹路径",
+            "help": "在 ComfyUI 的标准路径之外添加额外的模型文件夹。这些路径单独存储，并与默认文件夹一起扫描。",
+            "description": "配置额外的文件夹以扫描模型。这些路径是 LoRA Manager 特有的，将与 ComfyUI 的默认路径合并。",
+            "modelTypes": {
+                "lora": "LoRA 路径",
+                "checkpoint": "Checkpoint 路径",
+                "unet": "Diffusion 模型路径",
+                "embedding": "Embedding 路径"
+            },
+            "pathPlaceholder": "/额外/模型/路径",
+            "saveSuccess": "额外文件夹路径已更新。",
+            "saveError": "更新额外文件夹路径失败：{message}",
+            "validation": {
+                "duplicatePath": "此路径已配置"
+            }
         }
     },
     "loras": {

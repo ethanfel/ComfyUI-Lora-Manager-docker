@@ -258,16 +258,26 @@
             "contentFiltering": "סינון תוכן",
             "videoSettings": "הגדרות וידאו",
             "layoutSettings": "הגדרות פריסה",
-            "folderSettings": "הגדרות תיקייה",
-            "priorityTags": "תגיות עדיפות",
-            "downloadPathTemplates": "תבניות נתיב הורדה",
-            "exampleImages": "תמונות דוגמה",
-            "updateFlags": "תגי עדכון",
-            "autoOrganize": "Auto-organize",
             "misc": "שונות",
-            "metadataArchive": "מסד נתונים של ארכיון מטא-דאטה",
-            "storageLocation": "מיקום ההגדרות",
+            "folderSettings": "תיקיות ברירת מחדל",
+            "extraFolderPaths": "נתיבי תיקיות נוספים",
+            "downloadPathTemplates": "תבניות נתיב הורדה",
+            "priorityTags": "תגיות עדיפות",
+            "updateFlags": "תגי עדכון",
+            "exampleImages": "תמונות דוגמה",
+            "autoOrganize": "ארגון אוטומטי",
+            "metadata": "מטא-נתונים",
             "proxySettings": "הגדרות פרוקסי"
+        },
+        "nav": {
+            "general": "כללי",
+            "interface": "ממשק",
+            "library": "ספרייה"
+        },
+        "search": {
+            "placeholder": "חיפוש בהגדרות...",
+            "clear": "נקה חיפוש",
+            "noResults": "לא נמצאו הגדרות תואמות ל-\"{query}\""
         },
         "storage": {
             "locationLabel": "מצב נייד",
@@ -341,13 +351,13 @@
             "activeLibraryHelp": "החלפה בין הספריות המוגדרות לעדכן את תיקיות ברירת המחדל. שינוי הבחירה ירענן את הדף.",
             "loadingLibraries": "טוען ספריות...",
             "noLibraries": "לא הוגדרו ספריות",
-            "defaultLoraRoot": "תיקיית שורש ברירת מחדל של LoRA",
+            "defaultLoraRoot": "תיקיית שורש LoRA",
             "defaultLoraRootHelp": "הגדר את ספריית השורש המוגדרת כברירת מחדל של LoRA להורדות, ייבוא והעברות",
-            "defaultCheckpointRoot": "תיקיית שורש ברירת מחדל של Checkpoint",
+            "defaultCheckpointRoot": "תיקיית שורש Checkpoint",
             "defaultCheckpointRootHelp": "הגדר את ספריית השורש המוגדרת כברירת מחדל של checkpoint להורדות, ייבוא והעברות",
-            "defaultUnetRoot": "תיקיית שורש ברירת מחדל של Diffusion Model",
+            "defaultUnetRoot": "תיקיית שורש Diffusion Model",
             "defaultUnetRootHelp": "הגדר את ספריית השורש המוגדרת כברירת מחדל של Diffusion Model (UNET) להורדות, ייבוא והעברות",
-            "defaultEmbeddingRoot": "תיקיית שורש ברירת מחדל של Embedding",
+            "defaultEmbeddingRoot": "תיקיית שורש Embedding",
             "defaultEmbeddingRootHelp": "הגדר את ספריית השורש המוגדרת כברירת מחדל של embedding להורדות, ייבוא והעברות",
             "noDefault": "אין ברירת מחדל"
         },
@@ -475,6 +485,23 @@
             "proxyPassword": "סיסמה (אופציונלי)",
             "proxyPasswordPlaceholder": "password",
             "proxyPasswordHelp": "סיסמה לאימות מול הפרוקסי (אם נדרש)"
+        },
+        "extraFolderPaths": {
+            "title": "נתיבי תיקיות נוספים",
+            "help": "הוסף תיקיות מודלים נוספות מחוץ לנתיבים הסטנדרטיים של ComfyUI. נתיבים אלה נשמרים בנפרד ונסרקים לצד תיקיות ברירת המחדל.",
+            "description": "הגדר תיקיות נוספות לסריקת מודלים. נתיבים אלה ספציפיים ל-LoRA Manager וימוזגו עם נתיבי ברירת המחדל של ComfyUI.",
+            "modelTypes": {
+                "lora": "נתיבי LoRA",
+                "checkpoint": "נתיבי Checkpoint",
+                "unet": "נתיבי מודל דיפוזיה",
+                "embedding": "נתיבי Embedding"
+            },
+            "pathPlaceholder": "/נתיב/למודלים/נוספים",
+            "saveSuccess": "נתיבי תיקיות נוספים עודכנו.",
+            "saveError": "נכשל בעדכון נתיבי תיקיות נוספים: {message}",
+            "validation": {
+                "duplicatePath": "נתיב זה כבר מוגדר"
+            }
         }
     },
     "loras": {

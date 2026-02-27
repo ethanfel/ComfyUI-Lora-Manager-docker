@@ -258,16 +258,26 @@
             "contentFiltering": "Filtrage du contenu",
             "videoSettings": "Paramètres vidéo",
             "layoutSettings": "Paramètres d'affichage",
-            "folderSettings": "Paramètres des dossiers",
-            "priorityTags": "Étiquettes prioritaires",
-            "downloadPathTemplates": "Modèles de chemin de téléchargement",
-            "exampleImages": "Images d'exemple",
-            "updateFlags": "Indicateurs de mise à jour",
-            "autoOrganize": "Auto-organize",
             "misc": "Divers",
-            "metadataArchive": "Base de données d'archive des métadonnées",
-            "storageLocation": "Emplacement des paramètres",
+            "folderSettings": "Racines par défaut",
+            "extraFolderPaths": "Chemins de dossiers supplémentaires",
+            "downloadPathTemplates": "Modèles de chemin de téléchargement",
+            "priorityTags": "Étiquettes prioritaires",
+            "updateFlags": "Indicateurs de mise à jour",
+            "exampleImages": "Images d'exemple",
+            "autoOrganize": "Organisation automatique",
+            "metadata": "Métadonnées",
             "proxySettings": "Paramètres du proxy"
+        },
+        "nav": {
+            "general": "Général",
+            "interface": "Interface",
+            "library": "Bibliothèque"
+        },
+        "search": {
+            "placeholder": "Rechercher dans les paramètres...",
+            "clear": "Effacer la recherche",
+            "noResults": "Aucun paramètre trouvé correspondant à \"{query}\""
         },
         "storage": {
             "locationLabel": "Mode portable",
@@ -341,13 +351,13 @@
             "activeLibraryHelp": "Basculer entre les bibliothèques configurées pour mettre à jour les dossiers par défaut. Changer la sélection recharge la page.",
             "loadingLibraries": "Chargement des bibliothèques...",
             "noLibraries": "Aucune bibliothèque configurée",
-            "defaultLoraRoot": "Racine LoRA par défaut",
+            "defaultLoraRoot": "Racine LoRA",
             "defaultLoraRootHelp": "Définir le répertoire racine LoRA par défaut pour les téléchargements, imports et déplacements",
-            "defaultCheckpointRoot": "Racine Checkpoint par défaut",
+            "defaultCheckpointRoot": "Racine Checkpoint",
             "defaultCheckpointRootHelp": "Définir le répertoire racine checkpoint par défaut pour les téléchargements, imports et déplacements",
-            "defaultUnetRoot": "Racine Diffusion Model par défaut",
+            "defaultUnetRoot": "Racine Diffusion Model",
             "defaultUnetRootHelp": "Définir le répertoire racine Diffusion Model (UNET) par défaut pour les téléchargements, imports et déplacements",
-            "defaultEmbeddingRoot": "Racine Embedding par défaut",
+            "defaultEmbeddingRoot": "Racine Embedding",
             "defaultEmbeddingRootHelp": "Définir le répertoire racine embedding par défaut pour les téléchargements, imports et déplacements",
             "noDefault": "Aucun par défaut"
         },
@@ -475,6 +485,23 @@
             "proxyPassword": "Mot de passe (optionnel)",
             "proxyPasswordPlaceholder": "mot_de_passe",
             "proxyPasswordHelp": "Mot de passe pour l'authentification proxy (si nécessaire)"
+        },
+        "extraFolderPaths": {
+            "title": "Chemins de dossiers supplémentaires",
+            "help": "Ajoutez des dossiers de modèles supplémentaires en dehors des chemins standard de ComfyUI. Ces chemins sont stockés séparément et analysés aux côtés des dossiers par défaut.",
+            "description": "Configurez des dossiers supplémentaires pour l'analyse de modèles. Ces chemins sont spécifiques à LoRA Manager et seront fusionnés avec les chemins par défaut de ComfyUI.",
+            "modelTypes": {
+                "lora": "Chemins LoRA",
+                "checkpoint": "Chemins Checkpoint",
+                "unet": "Chemins de modèle de diffusion",
+                "embedding": "Chemins Embedding"
+            },
+            "pathPlaceholder": "/chemin/vers/modèles/supplémentaires",
+            "saveSuccess": "Chemins de dossiers supplémentaires mis à jour.",
+            "saveError": "Échec de la mise à jour des chemins de dossiers supplémentaires: {message}",
+            "validation": {
+                "duplicatePath": "Ce chemin est déjà configuré"
+            }
         }
     },
     "loras": {

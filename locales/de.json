@@ -258,16 +258,26 @@
             "contentFiltering": "Inhaltsfilterung",
             "videoSettings": "Video-Einstellungen",
             "layoutSettings": "Layout-Einstellungen",
-            "folderSettings": "Ordner-Einstellungen",
-            "priorityTags": "Prioritäts-Tags",
-            "downloadPathTemplates": "Download-Pfad-Vorlagen",
-            "exampleImages": "Beispielbilder",
-            "updateFlags": "Update-Markierungen",
-            "autoOrganize": "Auto-organize",
             "misc": "Verschiedenes",
-            "metadataArchive": "Metadaten-Archiv-Datenbank",
-            "storageLocation": "Einstellungsort",
+            "folderSettings": "Standard-Roots",
+            "extraFolderPaths": "Zusätzliche Ordnerpfade",
+            "downloadPathTemplates": "Download-Pfad-Vorlagen",
+            "priorityTags": "Prioritäts-Tags",
+            "updateFlags": "Update-Markierungen",
+            "exampleImages": "Beispielbilder",
+            "autoOrganize": "Auto-Organisierung",
+            "metadata": "Metadaten",
             "proxySettings": "Proxy-Einstellungen"
+        },
+        "nav": {
+            "general": "Allgemein",
+            "interface": "Oberfläche",
+            "library": "Bibliothek"
+        },
+        "search": {
+            "placeholder": "Einstellungen durchsuchen...",
+            "clear": "Suche löschen",
+            "noResults": "Keine Einstellungen gefunden für \"{query}\""
         },
         "storage": {
             "locationLabel": "Portabler Modus",
@@ -341,13 +351,13 @@
             "activeLibraryHelp": "Zwischen den konfigurierten Bibliotheken wechseln, um die Standardordner zu aktualisieren. Eine Änderung der Auswahl lädt die Seite neu.",
             "loadingLibraries": "Bibliotheken werden geladen...",
             "noLibraries": "Keine Bibliotheken konfiguriert",
-            "defaultLoraRoot": "Standard-LoRA-Stammordner",
+            "defaultLoraRoot": "LoRA-Stammordner",
             "defaultLoraRootHelp": "Legen Sie den Standard-LoRA-Stammordner für Downloads, Importe und Verschiebungen fest",
-            "defaultCheckpointRoot": "Standard-Checkpoint-Stammordner",
+            "defaultCheckpointRoot": "Checkpoint-Stammordner",
             "defaultCheckpointRootHelp": "Legen Sie den Standard-Checkpoint-Stammordner für Downloads, Importe und Verschiebungen fest",
-            "defaultUnetRoot": "Standard-Diffusion-Modell-Stammordner",
+            "defaultUnetRoot": "Diffusion-Modell-Stammordner",
             "defaultUnetRootHelp": "Legen Sie den Standard-Diffusion-Modell-(UNET)-Stammordner für Downloads, Importe und Verschiebungen fest",
-            "defaultEmbeddingRoot": "Standard-Embedding-Stammordner",
+            "defaultEmbeddingRoot": "Embedding-Stammordner",
             "defaultEmbeddingRootHelp": "Legen Sie den Standard-Embedding-Stammordner für Downloads, Importe und Verschiebungen fest",
             "noDefault": "Kein Standard"
         },
@@ -475,6 +485,23 @@
             "proxyPassword": "Passwort (optional)",
             "proxyPasswordPlaceholder": "passwort",
             "proxyPasswordHelp": "Passwort für die Proxy-Authentifizierung (falls erforderlich)"
+        },
+        "extraFolderPaths": {
+            "title": "Zusätzliche Ordnerpfade",
+            "help": "Fügen Sie zusätzliche Modellordner außerhalb der Standardpfade von ComfyUI hinzu. Diese Pfade werden separat gespeichert und zusammen mit den Standardordnern gescannt.",
+            "description": "Konfigurieren Sie zusätzliche Ordner zum Scannen von Modellen. Diese Pfade sind spezifisch für LoRA Manager und werden mit den Standardpfaden von ComfyUI zusammengeführt.",
+            "modelTypes": {
+                "lora": "LoRA-Pfade",
+                "checkpoint": "Checkpoint-Pfade",
+                "unet": "Diffusionsmodell-Pfade",
+                "embedding": "Embedding-Pfade"
+            },
+            "pathPlaceholder": "/pfad/zu/extra/modellen",
+            "saveSuccess": "Zusätzliche Ordnerpfade aktualisiert.",
+            "saveError": "Fehler beim Aktualisieren der zusätzlichen Ordnerpfade: {message}",
+            "validation": {
+                "duplicatePath": "Dieser Pfad ist bereits konfiguriert"
+            }
         }
     },
     "loras": {

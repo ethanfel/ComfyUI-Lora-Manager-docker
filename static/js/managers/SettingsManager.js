@@ -364,8 +364,281 @@ export class SettingsManager {
         }
 
         this.setupPriorityTagInputs();
+        this.initializeNavigation();
+        this.initializeSearch();
 
         this.initialized = true;
+    }
+
+    initializeNavigation() {
+        const navItems = document.querySelectorAll('.settings-nav-item');
+        const sections = document.querySelectorAll('.settings-section');
+
+        if (navItems.length === 0 || sections.length === 0) return;
+
+        // Handle navigation item clicks - macOS Settings style: show section instead of scroll
+        navItems.forEach(item => {
+            item.addEventListener('click', (e) => {
+                const sectionId = item.dataset.section;
+                if (!sectionId) return;
+
+                // Hide all sections
+                sections.forEach(section => {
+                    section.classList.remove('active');
+                });
+
+                // Show target section
+                const targetSection = document.getElementById(`section-${sectionId}`);
+                if (targetSection) {
+                    targetSection.classList.add('active');
+                }
+
+                // Update active nav state
+                navItems.forEach(nav => nav.classList.remove('active'));
+                item.classList.add('active');
+            });
+        });
+
+        // Show first section by default
+        const firstSection = sections[0];
+        if (firstSection) {
+            firstSection.classList.add('active');
+        }
+    }
+
+    initializeSearch() {
+        const searchInput = document.getElementById('settingsSearchInput');
+        const searchClear = document.getElementById('settingsSearchClear');
+        
+        if (!searchInput) return;
+
+        // Debounced search handler
+        let searchTimeout;
+        const debouncedSearch = (query) => {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(() => {
+                this.performSearch(query);
+            }, 150);
+        };
+
+        // Handle input changes
+        searchInput.addEventListener('input', (e) => {
+            const query = e.target.value.trim();
+            
+            // Show/hide clear button
+            if (searchClear) {
+                searchClear.style.display = query ? 'flex' : 'none';
+            }
+            
+            debouncedSearch(query);
+        });
+
+        // Handle clear button click
+        if (searchClear) {
+            searchClear.addEventListener('click', () => {
+                searchInput.value = '';
+                searchClear.style.display = 'none';
+                searchInput.focus();
+                this.performSearch('');
+            });
+        }
+
+        // Handle Escape key to clear search
+        searchInput.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                if (searchInput.value) {
+                    searchInput.value = '';
+                    if (searchClear) searchClear.style.display = 'none';
+                    this.performSearch('');
+                }
+            }
+        });
+    }
+
+    performSearch(query) {
+        const sections = document.querySelectorAll('.settings-section');
+        const navItems = document.querySelectorAll('.settings-nav-item');
+        const settingsForm = document.querySelector('.settings-form');
+        
+        // Remove existing empty state
+        const existingEmptyState = settingsForm?.querySelector('.settings-search-empty');
+        if (existingEmptyState) {
+            existingEmptyState.remove();
+        }
+
+        if (!query) {
+            // Reset: remove highlights only, keep current section visible
+            sections.forEach(section => {
+                this.removeSearchHighlights(section);
+            });
+            return;
+        }
+
+        const lowerQuery = query.toLowerCase();
+        let firstMatchSection = null;
+        let firstMatchElement = null;
+        let matchCount = 0;
+
+        sections.forEach(section => {
+            const sectionText = this.getSectionSearchableText(section);
+            const hasMatch = sectionText.includes(lowerQuery);
+
+            if (hasMatch) {
+                const firstHighlight = this.highlightSearchMatches(section, lowerQuery);
+                matchCount++;
+                
+                // Track first match to auto-switch
+                if (!firstMatchSection) {
+                    firstMatchSection = section;
+                    firstMatchElement = firstHighlight;
+                }
+            } else {
+                this.removeSearchHighlights(section);
+            }
+        });
+
+        // Auto-switch to first matching section
+        if (firstMatchSection) {
+            const sectionId = firstMatchSection.id.replace('section-', '');
+            
+            // Hide all sections
+            sections.forEach(section => section.classList.remove('active'));
+            
+            // Show matching section
+            firstMatchSection.classList.add('active');
+            
+            // Update nav active state
+            navItems.forEach(item => {
+                item.classList.remove('active');
+                if (item.dataset.section === sectionId) {
+                    item.classList.add('active');
+                }
+            });
+
+            // Scroll to first match after a short delay to allow section to become visible
+            if (firstMatchElement) {
+                requestAnimationFrame(() => {
+                    firstMatchElement.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'center'
+                    });
+                });
+            }
+        }
+
+        // Show empty state if no matches found
+        if (matchCount === 0 && settingsForm) {
+            const emptyState = document.createElement('div');
+            emptyState.className = 'settings-search-empty';
+            emptyState.innerHTML = `
+                <i class="fas fa-search"></i>
+                <p>${translate('settings.search.noResults', { query }, `No settings found matching "${query}"`)}</p>
+            `;
+            settingsForm.appendChild(emptyState);
+        }
+    }
+
+    getSectionSearchableText(section) {
+        // Get all text content from labels, help text, and headers
+        const labels = section.querySelectorAll('label');
+        const helpTexts = section.querySelectorAll('.input-help');
+        const headers = section.querySelectorAll('h3');
+        
+        let text = '';
+        
+        labels.forEach(el => text += ' ' + el.textContent);
+        helpTexts.forEach(el => text += ' ' + el.textContent);
+        headers.forEach(el => text += ' ' + el.textContent);
+        
+        return text.toLowerCase();
+    }
+
+    highlightSearchMatches(section, query) {
+        // Remove existing highlights first
+        this.removeSearchHighlights(section);
+        
+        if (!query) return null;
+
+        // Highlight in labels and help text
+        const textElements = section.querySelectorAll('label, .input-help, h3');
+        let firstHighlight = null;
+        
+        textElements.forEach(element => {
+            const walker = document.createTreeWalker(
+                element,
+                NodeFilter.SHOW_TEXT,
+                null,
+                false
+            );
+            
+            const textNodes = [];
+            let node;
+            while (node = walker.nextNode()) {
+                if (node.textContent.toLowerCase().includes(query)) {
+                    textNodes.push(node);
+                }
+            }
+            
+            textNodes.forEach(textNode => {
+                const parent = textNode.parentElement;
+                const text = textNode.textContent;
+                const lowerText = text.toLowerCase();
+                
+                // Split text by query and wrap matches in highlight spans
+                const parts = [];
+                let lastIndex = 0;
+                let index;
+                
+                while ((index = lowerText.indexOf(query, lastIndex)) !== -1) {
+                    // Add text before match
+                    if (index > lastIndex) {
+                        parts.push(document.createTextNode(text.substring(lastIndex, index)));
+                    }
+                    
+                    // Add highlighted match
+                    const highlight = document.createElement('span');
+                    highlight.className = 'settings-search-highlight';
+                    highlight.textContent = text.substring(index, index + query.length);
+                    parts.push(highlight);
+                    
+                    // Track first highlight for scrolling
+                    if (!firstHighlight) {
+                        firstHighlight = highlight;
+                    }
+                    
+                    lastIndex = index + query.length;
+                }
+                
+                // Add remaining text
+                if (lastIndex < text.length) {
+                    parts.push(document.createTextNode(text.substring(lastIndex)));
+                }
+                
+                // Replace original text node with highlighted version
+                if (parts.length > 1) {
+                    parts.forEach(part => parent.insertBefore(part, textNode));
+                    parent.removeChild(textNode);
+                }
+            });
+        });
+        
+        return firstHighlight;
+    }
+
+    removeSearchHighlights(section) {
+        const highlights = section.querySelectorAll('.settings-search-highlight');
+        
+        highlights.forEach(highlight => {
+            const parent = highlight.parentElement;
+            if (parent) {
+                // Replace highlight with its text content
+                parent.insertBefore(document.createTextNode(highlight.textContent), highlight);
+                parent.removeChild(highlight);
+                
+                // Normalize to merge adjacent text nodes
+                parent.normalize();
+            }
+        });
     }
 
     async openSettingsFileLocation() {
@@ -525,6 +798,9 @@ export class SettingsManager {
 
         // Load default unet root
         await this.loadUnetRoots();
+
+        // Load extra folder paths
+        this.loadExtraFolderPaths();
 
         // Load language setting
         const languageSelect = document.getElementById('languageSelect');
@@ -1025,6 +1301,119 @@ export class SettingsManager {
         } catch (error) {
             console.error('Error loading embedding roots:', error);
             showToast('toast.settings.embeddingRootsFailed', { message: error.message }, 'error');
+        }
+    }
+
+    loadExtraFolderPaths() {
+        const extraFolderPaths = state.global.settings.extra_folder_paths || {};
+
+        // Load paths for each model type
+        ['loras', 'checkpoints', 'unet', 'embeddings'].forEach((modelType) => {
+            const container = document.getElementById(`extraFolderPaths-${modelType}`);
+            if (!container) return;
+
+            // Clear existing paths
+            container.innerHTML = '';
+
+            // Add existing paths
+            const paths = extraFolderPaths[modelType] || [];
+            paths.forEach((path) => {
+                this.addExtraFolderPathRow(modelType, path);
+            });
+
+            // Add empty row for new path if no paths exist
+            if (paths.length === 0) {
+                this.addExtraFolderPathRow(modelType, '');
+            }
+        });
+    }
+
+    addExtraFolderPathRow(modelType, path = '') {
+        const container = document.getElementById(`extraFolderPaths-${modelType}`);
+        if (!container) return;
+
+        const row = document.createElement('div');
+        row.className = 'extra-folder-path-row mapping-row';
+
+        row.innerHTML = `
+            <div class="path-controls">
+                <input type="text" class="extra-folder-path-input"
+                       placeholder="${translate('settings.extraFolderPaths.pathPlaceholder', {}, '/path/to/models')}" value="${path}"
+                       onblur="settingsManager.updateExtraFolderPaths('${modelType}')"
+                       onkeydown="if(event.key === 'Enter') { this.blur(); }" />
+                <button type="button" class="remove-path-btn"
+                        onclick="this.parentElement.parentElement.remove(); settingsManager.updateExtraFolderPaths('${modelType}')"
+                        title="${translate('common.actions.delete', {}, 'Delete')}">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+
+        container.appendChild(row);
+
+        // Focus the input if it's empty (new row)
+        if (!path) {
+            const input = row.querySelector('.extra-folder-path-input');
+            if (input) {
+                setTimeout(() => input.focus(), 0);
+            }
+        }
+    }
+
+    async updateExtraFolderPaths(changedModelType) {
+        const extraFolderPaths = {};
+
+        // Collect paths for all model types
+        ['loras', 'checkpoints', 'unet', 'embeddings'].forEach((modelType) => {
+            const container = document.getElementById(`extraFolderPaths-${modelType}`);
+            if (!container) return;
+
+            const inputs = container.querySelectorAll('.extra-folder-path-input');
+            const paths = [];
+
+            inputs.forEach((input) => {
+                const value = input.value.trim();
+                if (value) {
+                    paths.push(value);
+                }
+            });
+
+            extraFolderPaths[modelType] = paths;
+        });
+
+        // Check if paths have actually changed
+        const currentPaths = state.global.settings.extra_folder_paths || {};
+        const pathsChanged = JSON.stringify(currentPaths) !== JSON.stringify(extraFolderPaths);
+
+        if (!pathsChanged) {
+            return;
+        }
+
+        // Update state
+        state.global.settings.extra_folder_paths = extraFolderPaths;
+
+        try {
+            // Save to backend - this triggers path validation
+            await this.saveSetting('extra_folder_paths', extraFolderPaths);
+            showToast('toast.settings.settingsUpdated', { setting: 'Extra Folder Paths' }, 'success');
+
+            // Add empty row if no valid paths exist for the changed type
+            const container = document.getElementById(`extraFolderPaths-${changedModelType}`);
+            if (container) {
+                const inputs = container.querySelectorAll('.extra-folder-path-input');
+                const hasEmptyRow = Array.from(inputs).some((input) => !input.value.trim());
+
+                if (!hasEmptyRow) {
+                    this.addExtraFolderPathRow(changedModelType, '');
+                }
+            }
+        } catch (error) {
+            console.error('Failed to save extra folder paths:', error);
+            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+
+            // Restore previous state on error
+            state.global.settings.extra_folder_paths = currentPaths;
+            this.loadExtraFolderPaths();
         }
     }
 

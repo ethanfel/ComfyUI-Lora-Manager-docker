@@ -258,16 +258,26 @@
             "contentFiltering": "內容過濾",
             "videoSettings": "影片設定",
             "layoutSettings": "版面設定",
-            "folderSettings": "資料夾設定",
-            "priorityTags": "優先標籤",
-            "downloadPathTemplates": "下載路徑範本",
-            "exampleImages": "範例圖片",
-            "updateFlags": "更新標記",
-            "autoOrganize": "Auto-organize",
             "misc": "其他",
-            "metadataArchive": "中繼資料封存資料庫",
-            "storageLocation": "設定位置",
+            "folderSettings": "預設根目錄",
+            "extraFolderPaths": "額外資料夾路徑",
+            "downloadPathTemplates": "下載路徑範本",
+            "priorityTags": "優先標籤",
+            "updateFlags": "更新標記",
+            "exampleImages": "範例圖片",
+            "autoOrganize": "自動整理",
+            "metadata": "中繼資料",
             "proxySettings": "代理設定"
+        },
+        "nav": {
+            "general": "通用",
+            "interface": "介面",
+            "library": "模型庫"
+        },
+        "search": {
+            "placeholder": "搜尋設定...",
+            "clear": "清除搜尋",
+            "noResults": "未找到符合 \"{query}\" 的設定"
         },
         "storage": {
             "locationLabel": "可攜式模式",
@@ -341,13 +351,13 @@
             "activeLibraryHelp": "在已設定的資料庫之間切換以更新預設資料夾。變更選項會重新載入頁面。",
             "loadingLibraries": "正在載入資料庫...",
             "noLibraries": "尚未設定任何資料庫",
-            "defaultLoraRoot": "預設 LoRA 根目錄",
+            "defaultLoraRoot": "LoRA 根目錄",
             "defaultLoraRootHelp": "設定下載、匯入和移動時的預設 LoRA 根目錄",
-            "defaultCheckpointRoot": "預設 Checkpoint 根目錄",
+            "defaultCheckpointRoot": "Checkpoint 根目錄",
             "defaultCheckpointRootHelp": "設定下載、匯入和移動時的預設 Checkpoint 根目錄",
-            "defaultUnetRoot": "預設 Diffusion Model 根目錄",
+            "defaultUnetRoot": "Diffusion Model 根目錄",
             "defaultUnetRootHelp": "設定下載、匯入和移動時的預設 Diffusion Model (UNET) 根目錄",
-            "defaultEmbeddingRoot": "預設 Embedding 根目錄",
+            "defaultEmbeddingRoot": "Embedding 根目錄",
             "defaultEmbeddingRootHelp": "設定下載、匯入和移動時的預設 Embedding 根目錄",
             "noDefault": "未設定預設"
         },
@@ -475,6 +485,23 @@
             "proxyPassword": "密碼（選填）",
             "proxyPasswordPlaceholder": "password",
             "proxyPasswordHelp": "代理驗證所需的密碼（如有需要）"
+        },
+        "extraFolderPaths": {
+            "title": "額外資料夾路徑",
+            "help": "在 ComfyUI 的標準路徑之外新增額外的模型資料夾。這些路徑單獨儲存，並與預設資料夾一起掃描。",
+            "description": "設定額外的資料夾以掃描模型。這些路徑是 LoRA Manager 特有的，將與 ComfyUI 的預設路徑合併。",
+            "modelTypes": {
+                "lora": "LoRA 路徑",
+                "checkpoint": "Checkpoint 路徑",
+                "unet": "Diffusion 模型路徑",
+                "embedding": "Embedding 路徑"
+            },
+            "pathPlaceholder": "/額外/模型/路徑",
+            "saveSuccess": "額外資料夾路徑已更新。",
+            "saveError": "更新額外資料夾路徑失敗：{message}",
+            "validation": {
+                "duplicatePath": "此路徑已設定"
+            }
         }
     },
     "loras": {

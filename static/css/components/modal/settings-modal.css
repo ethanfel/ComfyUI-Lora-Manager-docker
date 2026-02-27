@@ -1,4 +1,4 @@
-/* Settings styles */
+/* Settings Modal - macOS Settings Style */
 .settings-toggle {
     width: 36px;
     height: 36px;
@@ -20,15 +20,207 @@
 }
 
 .settings-modal {
-    max-width: 700px; /* Further increased from 600px for more space */
+    width: 1000px;
+    height: calc(92vh - var(--header-height, 48px));
+    max-width: 95vw;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.settings-modal .modal-body {
+    display: flex;
+    flex-direction: row;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+}
+
+/* Navigation Sidebar */
+.settings-nav {
+    width: 200px;
+    flex-shrink: 0;
+    border-right: 1px solid var(--lora-border);
+    padding: var(--space-2);
+    overflow-y: auto;
+}
+
+[data-theme="dark"] .settings-nav {
+    background: transparent;
+}
+
+.settings-nav-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.settings-nav-group {
+    margin-bottom: var(--space-2);
+}
+
+/* Hide group titles - we use flat navigation */
+.settings-nav-group-title {
+    display: none;
+}
+
+/* Hide settings title */
+.settings-nav-title {
+    display: none;
+}
+
+.settings-nav-item {
+    display: block;
+    width: 100%;
+    padding: 10px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-color);
+    text-align: left;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--border-radius-xs);
+    transition: all 0.2s ease;
+    margin-bottom: 4px;
+}
+
+.settings-nav-item:hover {
+    background: rgba(var(--lora-accent-rgb, 79, 70, 229), 0.1);
+    color: var(--lora-accent);
+}
+
+.settings-nav-item.active {
+    background: var(--lora-accent);
+    color: white;
+    font-weight: 600;
+}
+
+/* Content Area */
+.settings-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-3);
+    scroll-behavior: smooth;
+}
+
+.settings-content .settings-form {
+    padding-bottom: var(--space-4);
 }
 
 .settings-header {
     display: flex;
     align-items: center;
-    justify-content: flex-start;
     gap: var(--space-1);
     margin-bottom: var(--space-2);
+    padding-right: 40px; /* Space for close button */
+    padding-left: calc(var(--space-2) + 14px); /* Align with nav item text */
+}
+
+.settings-header .settings-search-wrapper {
+    margin-left: auto;
+}
+
+/* Search Input Styles */
+.settings-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 240px;
+}
+
+.settings-search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-color);
+    opacity: 0.5;
+    font-size: 0.9em;
+    pointer-events: none;
+}
+
+.settings-search-input {
+    width: 100%;
+    padding: 6px 28px 6px 32px;
+    height: 32px;
+    border-radius: var(--border-radius-xs);
+    border: 1px solid var(--border-color);
+    background-color: var(--lora-surface);
+    color: var(--text-color);
+    font-size: 0.9em;
+    transition: all 0.2s ease;
+}
+
+.settings-search-input:focus {
+    border-color: var(--lora-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--lora-accent-rgb, 79, 70, 229), 0.1);
+}
+
+.settings-search-input::placeholder {
+    color: var(--text-color);
+    opacity: 0.5;
+}
+
+.settings-search-clear {
+    position: absolute;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    border: none;
+    background: rgba(var(--border-color-rgb, 148, 163, 184), 0.3);
+    color: var(--text-color);
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7em;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+.settings-search-clear:hover {
+    opacity: 1;
+    background: rgba(var(--border-color-rgb, 148, 163, 184), 0.5);
+}
+
+/* Search Highlight Styles */
+.settings-search-highlight {
+    background-color: rgba(var(--lora-accent-rgb, 79, 70, 229), 0.3);
+    color: var(--lora-accent);
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: 500;
+}
+
+/* Section visibility during search */
+.settings-section.search-match,
+.setting-item.search-match {
+    display: block !important;
+}
+
+.settings-section.search-hidden,
+.setting-item.search-hidden {
+    display: none !important;
+}
+
+/* Empty search results state */
+.settings-search-empty {
+    text-align: center;
+    padding: var(--space-4);
+    color: var(--text-color);
+    opacity: 0.7;
+}
+
+.settings-search-empty i {
+    font-size: 2em;
+    margin-bottom: var(--space-2);
+    opacity: 0.5;
+}
+
+.settings-search-empty p {
+    margin: 0;
+    font-size: 0.95em;
 }
 
 .settings-header h2 {
@@ -248,9 +440,30 @@
     gap: var(--space-2);
 }
 
-.priority-tags-header {
+.priority-tags-header-row {
+    display: flex;
+    flex-direction: row;
     align-items: center;
     justify-content: flex-start;
+}
+
+.priority-tags-header-row .setting-info {
+    width: auto;
+    flex-shrink: 0;
+}
+
+.priority-tags-header {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    width: auto;
+}
+
+.priority-tags-header label {
+    display: inline-flex;
+    white-space: nowrap;
 }
 
 .priority-tags-info {
@@ -360,25 +573,65 @@
     padding: 6px 0;
 }
 
-/* Settings Styles */
+/* Settings Section - macOS Settings Style */
 .settings-section {
-    margin-top: var(--space-3);
-    border-top: 1px solid var(--lora-border);
-    padding-top: var(--space-2);
+    display: none;
+    animation: fadeIn 0.2s ease-out;
 }
 
-.settings-section h3 {
-    font-size: 1.1em;
+.settings-section.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateX(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Remove old section header - replaced by subsection headers */
+.settings-section-header {
+    display: none;
+}
+
+/* Subsection styling */
+.settings-subsection {
+    margin-bottom: var(--space-5);
+}
+
+.settings-subsection:last-child {
+    margin-bottom: 0;
+}
+
+.settings-subsection-header {
+    display: flex;
+    align-items: center;
+    padding: var(--space-2) 0;
     margin-bottom: var(--space-2);
+    border-bottom: 1px solid var(--lora-border);
+}
+
+.settings-subsection-header h4 {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 0;
     color: var(--text-color);
-    opacity: 0.9;
+}
+
+/* Remove toggle button styles */
+.settings-section-toggle {
+    display: none;
 }
 
 .setting-item {
     display: flex;
     flex-direction: column; /* Changed to column for help text placement */
-    margin-bottom: var(--space-3); /* Increased to provide more spacing between items */
-    padding: var(--space-1);
+    padding: var(--space-2);
     border-radius: var(--border-radius-xs);
 }
 
@@ -389,6 +642,8 @@
 [data-theme="dark"] .setting-item:hover {
     background: rgba(255, 255, 255, 0.05);
 }
+
+
 
 /* Control row with label and input together */
 .setting-row {
@@ -403,13 +658,16 @@
     margin-bottom: 0;
     width: 35%; /* Increased from 30% to prevent wrapping */
     flex-shrink: 0; /* Prevent shrinking */
+    display: flex; /* Allow label and info-icon to be on same line */
+    align-items: center;
 }
 
 .setting-info label {
-    display: block;
-    font-weight: 500;
+    font-weight: 400;
     margin-bottom: 0;
     white-space: nowrap; /* Prevent label wrapping */
+    /* Use text color with alpha instead of opacity to avoid affecting tooltip */
+    color: rgba(from var(--text-color) r g b / 0.85);
 }
 
 .setting-control {
@@ -701,6 +959,66 @@ input:checked + .toggle-slider:before {
     }
 }
 
+/* Responsive: Mobile - Single column layout */
+@media (max-width: 768px) {
+    .settings-modal {
+        width: 95vw;
+        max-height: 90vh;
+    }
+    
+    .settings-modal .modal-body {
+        flex-direction: column;
+    }
+    
+    .settings-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--space-2);
+    }
+
+    .settings-header .settings-search-wrapper {
+        margin-left: 0;
+        width: 100%;
+    }
+    
+    .settings-nav {
+        width: 100%;
+        max-height: 200px;
+        border-right: none;
+        border-bottom: 1px solid var(--lora-border);
+        padding: var(--space-1);
+    }
+    
+    .settings-nav-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+    }
+    
+    .settings-nav-group {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--space-1);
+        margin-bottom: 0;
+    }
+    
+    .settings-nav-group-title {
+        display: none;
+    }
+    
+    .settings-nav-item {
+        width: auto;
+        white-space: nowrap;
+        font-size: 0.85em;
+        padding: 6px 10px;
+        margin-bottom: 0;
+    }
+    
+    .settings-content {
+        padding: var(--space-2);
+    }
+}
+
 /* Dark theme specific adjustments */
 [data-theme="dark"] .base-model-select,
 [data-theme="dark"] .path-value-input {
@@ -826,4 +1144,127 @@ input:checked + .toggle-slider:before {
         padding-top: var(--space-2);
         margin-top: var(--space-2);
     }
+}
+
+/* Info icon styling for settings labels - Minimal style */
+.info-icon {
+    color: var(--text-color);
+    margin-left: 6px;
+    font-size: 0.85em;
+    vertical-align: text-bottom;
+    cursor: help;
+    opacity: 0.4;
+    transition: opacity 0.2s ease;
+}
+
+.info-icon:hover {
+    opacity: 1;
+}
+
+/* Tooltip using data-tooltip attribute */
+.info-icon[data-tooltip] {
+    position: relative;
+}
+
+.info-icon[data-tooltip]::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 8px);
+    background: rgba(0, 0, 0, 0.9);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: normal;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    white-space: normal;
+    max-width: 220px;
+    width: max-content;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+    pointer-events: none;
+    z-index: 10000;
+    line-height: 1.4;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    text-transform: none;
+}
+
+.info-icon[data-tooltip]:hover::after {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* Fix tooltip overflow on left edge - when icon is near left side of modal */
+.settings-subsection-header .info-icon[data-tooltip]::after {
+    left: 0;
+    transform: translateX(0);
+}
+
+.settings-subsection-header .info-icon[data-tooltip]::before {
+    left: 12px;
+}
+
+/* Dark theme adjustments for tooltip - Fully opaque */
+[data-theme="dark"] .info-icon[data-tooltip]::after {
+    background: rgba(40, 40, 40, 0.95);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}
+
+/* Extra Folder Paths - Single input layout */
+.extra-folder-path-row {
+    margin-bottom: var(--space-2);
+}
+
+.extra-folder-path-row:last-child {
+    margin-bottom: 0;
+}
+
+.extra-folder-paths-container {
+    margin-top: var(--space-2);
+}
+
+.extra-folder-path-row .path-controls {
+    display: flex;
+    gap: var(--space-2);
+    align-items: center;
+}
+
+.extra-folder-path-row .path-controls .extra-folder-path-input {
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border-radius: var(--border-radius-xs);
+    border: 1px solid var(--border-color);
+    background-color: var(--lora-surface);
+    color: var(--text-color);
+    font-size: 0.9em;
+    height: 32px;
+    box-sizing: border-box;
+}
+
+.extra-folder-path-row .path-controls .extra-folder-path-input:focus {
+    border-color: var(--lora-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--lora-accent-rgb, 79, 70, 229), 0.1);
+}
+
+.extra-folder-path-row .path-controls .remove-path-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--border-radius-xs);
+    border: 1px solid var(--lora-error);
+    background: transparent;
+    color: var(--lora-error);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    flex-shrink: 0;
+}
+
+.extra-folder-path-row .path-controls .remove-path-btn:hover {
+    background: var(--lora-error);
+    color: white;
 }
