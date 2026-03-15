@@ -20,6 +20,7 @@ async function loadImages() {
         // Paginate through all lora list pages to collect hashes + names
         // (server caps page_size at 100)
         const hashes = [];
+        _modelNames = {};
         let page = 1;
         while (true) {
             const listResp = await fetch(`/api/lm/loras/list?page=${page}&page_size=100`);
@@ -222,7 +223,7 @@ function showDetail(img, sha256) {
                     ${img.steps ? `<div class="community-detail-param"><strong>Steps:</strong> ${img.steps}</div>` : ""}
                     ${img.sampler ? `<div class="community-detail-param"><strong>Sampler:</strong> ${escapeHtml(img.sampler)}</div>` : ""}
                     ${img.cfg_scale ? `<div class="community-detail-param"><strong>CFG Scale:</strong> ${img.cfg_scale}</div>` : ""}
-                    ${img.seed ? `<div class="community-detail-param"><strong>Seed:</strong> ${img.seed}</div>` : ""}
+                    ${img.seed != null ? `<div class="community-detail-param"><strong>Seed:</strong> ${img.seed}</div>` : ""}
                     ${img.denoise ? `<div class="community-detail-param"><strong>Denoise:</strong> ${img.denoise}</div>` : ""}
                     ${img.base_model ? `<div class="community-detail-param"><strong>Base Model:</strong> ${escapeHtml(img.base_model)}</div>` : ""}
                     ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${img.width}x${img.height}</div>` : ""}
@@ -272,9 +273,25 @@ function setupFetchButton() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
 
+        // Listen for progress updates via WebSocket
+        let ws = null;
+        try {
+            const proto = location.protocol === "https:" ? "wss:" : "ws:";
+            ws = new WebSocket(`${proto}//${location.host}/ws/fetch-progress`);
+            ws.onmessage = (e) => {
+                try {
+                    const msg = JSON.parse(e.data);
+                    if (msg.type === "community_images_progress") {
+                        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}</span>`;
+                    }
+                } catch {}
+            };
+        } catch {}
+
         try {
             const resp = await fetch("/api/lm/community-images/fetch", { method: "POST" });
             const data = await resp.json();
+            if (ws) ws.close();
             if (data.success) {
                 const count = data.stored || 0;
                 btn.innerHTML = `<i class="fas fa-check"></i> <span>${count} images saved</span>`;
@@ -288,6 +305,7 @@ function setupFetchButton() {
                 throw new Error(data.error || "Unknown error");
             }
         } catch (err) {
+            if (ws) ws.close();
             btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error</span>';
             btn.title = err.message || String(err);
             console.error("[Community] Fetch failed:", err);

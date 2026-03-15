@@ -50,6 +50,7 @@ _UPSERT_SQL = """
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(civitai_image_id) DO UPDATE SET
       image_url = excluded.image_url,
+      local_filename = COALESCE(excluded.local_filename, community_images.local_filename),
       like_count = excluded.like_count,
       heart_count = excluded.heart_count,
       laugh_count = excluded.laugh_count,
