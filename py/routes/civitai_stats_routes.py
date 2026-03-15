@@ -98,7 +98,9 @@ class CivitaiStatsRoutes:
             cache = await scanner.get_cached_data()
             # Find first model with civitai modelId
             for item in cache.raw_data:
-                civitai = item.get("civitai", {})
+                if not item:
+                    continue
+                civitai = item.get("civitai") or {}
                 mid = civitai.get("modelId")
                 if mid:
                     item_sha = item.get("sha256", "")
