@@ -223,6 +223,33 @@
     color: var(--text-secondary, rgba(255,255,255,0.5));
 }
 
+.community-card-resources {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.community-resource-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(124, 58, 237, 0.15);
+    color: var(--accent-color, #7c3aed);
+    white-space: nowrap;
+    max-width: 180px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.community-resource-tag i {
+    font-size: 9px;
+    flex-shrink: 0;
+}
+
 .community-card-footer {
     display: flex;
     justify-content: space-between;

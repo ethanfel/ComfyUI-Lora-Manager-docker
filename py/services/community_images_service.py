@@ -63,12 +63,33 @@ def filter_community_images(
 
 
 def _extract_image_data(
-    item: dict, sha256: str, civitai_model_id: int
+    item: dict,
+    sha256: str,
+    civitai_model_id: int,
+    version_name_cache: dict[int, str] | None = None,
 ) -> dict:
     """Convert a CivitAI API image item to DB row format."""
     stats = item.get("stats") or {}
     meta = item.get("meta") or {}
     inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
+
+    # Build enriched resources list from civitaiResources
+    resources_json = None
+    raw_resources = inner_meta.get("civitaiResources") or []
+    if raw_resources:
+        enriched = []
+        cache = version_name_cache or {}
+        for res in raw_resources:
+            entry = {
+                "type": res.get("type"),
+                "weight": res.get("weight"),
+                "modelVersionId": res.get("modelVersionId"),
+            }
+            vid = res.get("modelVersionId")
+            if vid and vid in cache:
+                entry["name"] = cache[vid]
+            enriched.append(entry)
+        resources_json = json.dumps(enriched)
 
     return {
         "civitai_image_id": item.get("id"),
@@ -91,6 +112,7 @@ def _extract_image_data(
         "heart_count": stats.get("heartCount", 0),
         "laugh_count": stats.get("laughCount", 0),
         "comment_count": stats.get("commentCount", 0),
+        "resources": resources_json,
         "created_at": item.get("createdAt"),
     }
 
@@ -102,6 +124,7 @@ class CommunityImagesFetchService:
         self.db = db
         self._api_key = api_key
         self._session: aiohttp.ClientSession | None = None
+        self._version_name_cache: dict[int, str] = {}  # modelVersionId -> name
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Lazy aiohttp session with auth header."""
@@ -114,6 +137,49 @@ class CommunityImagesFetchService:
                 headers=headers, timeout=timeout
             )
         return self._session
+
+    async def _resolve_version_name(self, version_id: int) -> str | None:
+        """Resolve a CivitAI modelVersionId to its model name. Cached."""
+        if version_id in self._version_name_cache:
+            return self._version_name_cache[version_id]
+
+        session = await self._get_session()
+        try:
+            async with session.get(
+                f"{_CIVITAI_API}/model-versions/{version_id}"
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                model = data.get("model") or {}
+                name = model.get("name") or data.get("name")
+                if name:
+                    self._version_name_cache[version_id] = name
+                return name
+        except Exception:
+            return None
+
+    async def _resolve_resources(self, items: list[dict]) -> None:
+        """Resolve modelVersionId → name for all civitaiResources across items.
+
+        Batches unique IDs and caches results to minimize API calls.
+        """
+        # Collect unique version IDs that need resolving
+        version_ids: set[int] = set()
+        for item in items:
+            meta = item.get("meta")
+            if not meta or not isinstance(meta, dict):
+                continue
+            inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
+            for res in inner_meta.get("civitaiResources") or []:
+                vid = res.get("modelVersionId")
+                if vid and vid not in self._version_name_cache:
+                    version_ids.add(vid)
+
+        # Resolve in order, with rate limiting
+        for vid in version_ids:
+            await self._resolve_version_name(vid)
+            await asyncio.sleep(0.3)  # light rate limit for name lookups
 
     async def _fetch_images_api(
         self, model_id: int, retries: int = 2
@@ -242,6 +308,9 @@ class CommunityImagesFetchService:
         if not filtered:
             return 0
 
+        # Resolve resource names (batched, cached)
+        await self._resolve_resources(filtered)
+
         rows: list[dict] = []
         for item in filtered:
             image_id = item.get("id")
@@ -253,7 +322,9 @@ class CommunityImagesFetchService:
                 image_url, sha256, image_id
             )
 
-            row = _extract_image_data(item, sha256, civitai_model_id)
+            row = _extract_image_data(
+                item, sha256, civitai_model_id, self._version_name_cache
+            )
             row["local_filename"] = local_path
             row["has_workflow"] = 1 if has_workflow else 0
             rows.append(row)

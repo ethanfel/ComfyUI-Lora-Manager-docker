@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS community_images (
     laugh_count INTEGER DEFAULT 0,
     comment_count INTEGER DEFAULT 0,
     has_workflow INTEGER DEFAULT 0,
+    resources TEXT,
     created_at TEXT,
     fetched_at REAL
 );
@@ -47,8 +48,8 @@ _UPSERT_SQL = """
         prompt, negative_prompt, steps, sampler, cfg_scale,
         seed, denoise, base_model,
         like_count, heart_count, laugh_count, comment_count,
-        has_workflow, created_at, fetched_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        has_workflow, resources, created_at, fetched_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(civitai_image_id) DO UPDATE SET
       image_url = excluded.image_url,
       local_filename = COALESCE(excluded.local_filename, community_images.local_filename),
@@ -57,6 +58,7 @@ _UPSERT_SQL = """
       laugh_count = excluded.laugh_count,
       comment_count = excluded.comment_count,
       has_workflow = excluded.has_workflow,
+      resources = COALESCE(excluded.resources, community_images.resources),
       fetched_at = excluded.fetched_at
 """
 
@@ -91,6 +93,7 @@ def _row_to_params(data: dict, now: float) -> tuple:
         data.get("laugh_count", 0),
         data.get("comment_count", 0),
         data.get("has_workflow", 0),
+        data.get("resources"),
         data.get("created_at"),
         now,
     )
@@ -135,7 +138,11 @@ class CommunityImagesDB:
             conn.execute(
                 "ALTER TABLE community_images ADD COLUMN has_workflow INTEGER DEFAULT 0"
             )
-            conn.commit()
+        if "resources" not in cols:
+            conn.execute(
+                "ALTER TABLE community_images ADD COLUMN resources TEXT"
+            )
+        conn.commit()
 
     def _ensure_conn(self) -> sqlite3.Connection:
         if self._conn is None:

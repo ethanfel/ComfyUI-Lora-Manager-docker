@@ -225,6 +225,7 @@ function createCard(img, sha256) {
                 ${img.cfg_scale ? `<span class="community-meta-tag">CFG ${img.cfg_scale}</span>` : ""}
                 ${img.base_model ? `<span class="community-meta-tag">${escapeHtml(img.base_model)}</span>` : ""}
             </div>
+            ${renderResourceTags(img.resources)}
             <div class="community-card-footer">
                 <div class="community-card-reactions">
                     ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${img.like_count}</span>` : ""}
@@ -280,6 +281,7 @@ function showDetail(img, sha256) {
                     ${img.base_model ? `<div class="community-detail-param"><strong>Base Model:</strong> ${escapeHtml(img.base_model)}</div>` : ""}
                     ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${img.width}x${img.height}</div>` : ""}
                 </div>
+                ${renderResourceTags(img.resources)}
                 <div class="community-card-reactions" style="margin-top:12px;">
                     ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${img.like_count}</span>` : ""}
                     ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
@@ -456,6 +458,22 @@ function setupPageSizeSelect() {
         _pageSize = parseInt(select.value, 10) || 10;
         loadPage(1);
     });
+}
+
+// -- Resource tags --------------------------------------------------------
+function renderResourceTags(resources) {
+    if (!resources || !resources.length) return "";
+    const tags = resources
+        .filter(r => r.name)
+        .map(r => {
+            const icon = r.type === "lora" ? "fa-puzzle-piece" : r.type === "checkpoint" ? "fa-cube" : "fa-box";
+            const weight = r.weight != null && r.type === "lora" ? ` (${r.weight})` : "";
+            return `<span class="community-resource-tag" title="${escapeHtml(r.type || '')}">
+                <i class="fas ${icon}"></i> ${escapeHtml(r.name)}${weight}
+            </span>`;
+        });
+    if (!tags.length) return "";
+    return `<div class="community-card-resources">${tags.join("")}</div>`;
 }
 
 // -- Helpers --------------------------------------------------------------

@@ -19,6 +19,18 @@ from ..services.websocket_manager import ws_manager
 logger = logging.getLogger(__name__)
 
 
+def _clean_image(img: dict) -> dict:
+    """Clean an image dict for JSON response — drop fetched_at, parse resources."""
+    out = {k: v for k, v in img.items() if k != "fetched_at"}
+    # Parse resources JSON string into list
+    if isinstance(out.get("resources"), str):
+        try:
+            out["resources"] = json.loads(out["resources"])
+        except (json.JSONDecodeError, TypeError):
+            out["resources"] = []
+    return out
+
+
 class CommunityImagesRoutes:
     """Route handlers for Community Creations page and API."""
 
@@ -225,10 +237,7 @@ class CommunityImagesRoutes:
             models_out = []
             for sha in result["models"]:
                 model_images = result["images"].get(sha, [])
-                clean_images = [
-                    {k: v for k, v in img.items() if k != "fetched_at"}
-                    for img in model_images
-                ]
+                clean_images = [_clean_image(img) for img in model_images]
                 models_out.append({
                     "sha256": sha,
                     "model_name": name_map.get(sha, "Unknown"),
@@ -287,10 +296,7 @@ class CommunityImagesRoutes:
         # Clean for JSON — remove fetched_at
         clean: dict[str, list[dict]] = {}
         for sha, img_list in images.items():
-            clean[sha] = [
-                {k: v for k, v in img.items() if k != "fetched_at"}
-                for img in img_list
-            ]
+            clean[sha] = [_clean_image(img) for img in img_list]
         return web.json_response({"success": True, "images": clean})
 
     @staticmethod
