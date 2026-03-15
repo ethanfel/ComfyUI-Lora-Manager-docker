@@ -322,6 +322,8 @@ class StandaloneLoraManager(LoraManager):
         from py.routes.example_images_routes import ExampleImagesRoutes
         from py.routes.preview_routes import PreviewRoutes
         from py.routes.stats_routes import StatsRoutes
+        from py.routes.civitai_stats_routes import CivitaiStatsRoutes
+        from py.routes.community_images_routes import CommunityImagesRoutes
         from py.services.websocket_manager import ws_manager
 
         register_default_model_types()
@@ -338,6 +340,11 @@ class StandaloneLoraManager(LoraManager):
         MiscRoutes.setup_routes(app)
         ExampleImagesRoutes.setup_routes(app, ws_manager=ws_manager)
         PreviewRoutes.setup_routes(app)
+        try:
+            CivitaiStatsRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register CivitAI stats routes")
+        CommunityImagesRoutes.setup_routes(app)
 
         # Setup WebSocket routes that are shared across all model types
         app.router.add_get("/ws/fetch-progress", ws_manager.handle_connection)
