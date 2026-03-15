@@ -6,7 +6,10 @@ import logging
 import os
 from collections.abc import Callable
 
+import io
+
 import aiohttp
+from PIL import Image
 
 from .community_images_db import CommunityImagesDB
 from ..utils.example_images_paths import get_model_folder, get_model_relative_path
@@ -17,6 +20,8 @@ _CIVITAI_API = "https://civitai.com/api/v1"
 _RATE_LIMIT_DELAY = 1.5  # seconds between requests
 _MIN_PROMPT_LENGTH = 20
 _MAX_IMAGES_PER_MODEL = 10
+_WEBP_QUALITY = 85
+_MAX_IMAGE_DIMENSION = 1280  # resize longest side
 
 
 def filter_community_images(
@@ -150,8 +155,9 @@ class CommunityImagesFetchService:
     async def _download_image(
         self, image_url: str, sha256: str, image_id: int
     ) -> str | None:
-        """Download image to {model_folder}/community/{image_id}.jpg.
+        """Download image, convert to WebP, resize if needed.
 
+        Saves to {model_folder}/community/{image_id}.webp.
         Returns relative path from static mount, or None on failure.
         """
         model_folder = get_model_folder(sha256)
@@ -163,7 +169,7 @@ class CommunityImagesFetchService:
         community_dir = os.path.join(model_folder, "community")
         os.makedirs(community_dir, exist_ok=True)
 
-        filepath = os.path.join(community_dir, f"{image_id}.jpg")
+        filepath = os.path.join(community_dir, f"{image_id}.webp")
 
         try:
             session = await self._get_session()
@@ -176,13 +182,19 @@ class CommunityImagesFetchService:
                     )
                     return None
                 data = await resp.read()
-                with open(filepath, "wb") as f:
-                    f.write(data)
+
+            # Convert to WebP with resize
+            img = Image.open(io.BytesIO(data))
+            img.thumbnail(
+                (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
+                Image.LANCZOS,
+            )
+            img.save(filepath, "webp", quality=_WEBP_QUALITY)
         except Exception as exc:
             logger.warning("Failed to download image %d: %s", image_id, exc)
             return None
 
-        return f"{rel_path}/community/{image_id}.jpg"
+        return f"{rel_path}/community/{image_id}.webp"
 
     async def fetch_images_for_model(
         self,
