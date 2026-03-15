@@ -228,12 +228,15 @@
                     throw new Error(data.error || "Unknown error");
                 }
             } catch (err) {
+                const msg = err.message || String(err);
                 btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error</span>';
-                console.error("[CivitAI Stats] Fetch failed:", err);
+                btn.title = msg;
+                console.error("[CivitAI Stats] Fetch failed:", msg);
                 setTimeout(() => {
                     btn.innerHTML = '<i class="fas fa-chart-bar"></i> <span>Fetch Stats</span>';
+                    btn.title = "Fetch CivitAI stats (downloads, ratings, likes)";
                     btn.disabled = false;
-                }, 3000);
+                }, 5000);
             }
         });
     }
