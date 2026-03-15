@@ -28,6 +28,7 @@ class CommunityImagesRoutes:
                 loader=jinja2.FileSystemLoader(config.templates_path),
                 autoescape=True,
             )
+            cls._template_env.filters["t"] = server_i18n.create_template_filter()
         return cls._template_env
 
     @staticmethod
@@ -39,10 +40,6 @@ class CommunityImagesRoutes:
             server_i18n.set_locale(user_language)
 
             env = CommunityImagesRoutes._get_template_env()
-            if not hasattr(env, "_i18n_filter_added"):
-                env.filters["t"] = server_i18n.create_template_filter()
-                env._i18n_filter_added = True
-
             template = env.get_template("community_creations.html")
             rendered = template.render(
                 request=request,
@@ -184,11 +181,17 @@ class CommunityImagesRoutes:
     @staticmethod
     async def handle_status(request: web.Request) -> web.Response:
         """GET /api/lm/community-images/status — DB count."""
-        db = CommunityImagesDB.get_instance()
-        return web.json_response({
-            "success": True,
-            "count": db.count(),
-        })
+        try:
+            db = CommunityImagesDB.get_instance()
+            return web.json_response({
+                "success": True,
+                "count": db.count(),
+            })
+        except Exception as exc:
+            logger.exception("Community images status check failed")
+            return web.json_response(
+                {"success": False, "error": str(exc)}, status=500
+            )
 
     @classmethod
     def setup_routes(cls, app: web.Application) -> None:
