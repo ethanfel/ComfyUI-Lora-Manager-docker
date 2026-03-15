@@ -29,3 +29,4 @@ vue-widgets/dist/
 
 # Hypothesis test cache
 .hypothesis/
+.worktrees/
