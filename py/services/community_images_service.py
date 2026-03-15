@@ -363,6 +363,14 @@ class CommunityImagesFetchService:
 
         return len(rows)
 
+    def cancel(self) -> None:
+        """Signal the fetch loop to stop after the current model."""
+        self._cancelled = True
+
+    @property
+    def cancelled(self) -> bool:
+        return self._cancelled
+
     async def fetch_all(
         self,
         models: list[dict],
@@ -378,12 +386,17 @@ class CommunityImagesFetchService:
         Returns:
             Total number of images stored.
         """
+        self._cancelled = False
         total = len(models)
         total_stored = 0
 
         logger.info("Fetching community images for %d models", total)
 
         for i, model in enumerate(models):
+            if self._cancelled:
+                logger.info("Community images fetch cancelled at %d/%d", i, total)
+                break
+
             sha256 = model.get("sha256")
             model_id = model.get("civitai_model_id")
             author = model.get("author_username", "")
@@ -404,7 +417,8 @@ class CommunityImagesFetchService:
                 await asyncio.sleep(_RATE_LIMIT_DELAY)
 
         logger.info(
-            "Community images fetch complete: %d images stored for %d models",
+            "Community images fetch %s: %d images stored for %d models",
+            "cancelled" if self._cancelled else "complete",
             total_stored,
             total,
         )

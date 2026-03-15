@@ -1,6 +1,7 @@
 """Route registrar for Community Creations endpoints."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -17,6 +18,11 @@ from ..services.server_i18n import server_i18n
 from ..services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
+
+# Module-level fetch state — prevents concurrent fetches and supports cancel
+_fetch_lock = asyncio.Lock()
+_active_service: CommunityImagesFetchService | None = None
+_fetch_task: asyncio.Task | None = None
 
 
 def _clean_image(img: dict) -> dict:
@@ -70,6 +76,14 @@ class CommunityImagesRoutes:
     @staticmethod
     async def handle_fetch(request: web.Request) -> web.Response:
         """POST /api/lm/community-images/fetch — trigger bulk fetch."""
+        global _active_service, _fetch_task
+
+        if _fetch_lock.locked():
+            return web.json_response(
+                {"success": False, "error": "Fetch already in progress"},
+                status=409,
+            )
+
         try:
             db = CommunityImagesDB.get_instance()
             settings = get_settings_manager()
@@ -127,32 +141,46 @@ class CommunityImagesRoutes:
                     "skipped": len(existing),
                 })
 
-            service = CommunityImagesFetchService(db=db, api_key=api_key)
+            async with _fetch_lock:
+                service = CommunityImagesFetchService(db=db, api_key=api_key)
+                _active_service = service
 
-            async def progress_callback(current: int, total: int) -> None:
-                await ws_manager.broadcast({
-                    "type": "community_images_progress",
-                    "current": current,
-                    "total": total,
-                    "progress": round(current / total * 100) if total else 0,
+                async def progress_callback(current: int, total: int) -> None:
+                    await ws_manager.broadcast({
+                        "type": "community_images_progress",
+                        "current": current,
+                        "total": total,
+                        "progress": round(current / total * 100) if total else 0,
+                    })
+
+                try:
+                    stored = await service.fetch_all(
+                        models, progress_callback=progress_callback
+                    )
+                finally:
+                    await service.close()
+                    _active_service = None
+
+                return web.json_response({
+                    "success": True,
+                    "stored": stored,
+                    "total": len(models),
+                    "skipped": len(existing),
+                    "cancelled": service.cancelled,
                 })
-
-            try:
-                stored = await service.fetch_all(models, progress_callback=progress_callback)
-            finally:
-                await service.close()
-
-            return web.json_response({
-                "success": True,
-                "stored": stored,
-                "total": len(models),
-                "skipped": len(existing),
-            })
         except Exception as exc:
             logger.exception("Community images fetch failed")
             return web.json_response(
                 {"success": False, "error": str(exc)}, status=500
             )
+
+    @staticmethod
+    async def handle_cancel(request: web.Request) -> web.Response:
+        """POST /api/lm/community-images/cancel — cancel in-progress fetch."""
+        if _active_service is not None:
+            _active_service.cancel()
+            return web.json_response({"success": True, "message": "Cancel requested"})
+        return web.json_response({"success": True, "message": "No fetch in progress"})
 
     @staticmethod
     async def _get_lora_metadata() -> tuple[list[str], dict[str, str], dict[str, str]]:
@@ -360,6 +388,7 @@ class CommunityImagesRoutes:
         """Register community images routes."""
         app.router.add_get("/community", cls.handle_page)
         app.router.add_post("/api/lm/community-images/fetch", cls.handle_fetch)
+        app.router.add_post("/api/lm/community-images/cancel", cls.handle_cancel)
         app.router.add_get("/api/lm/community-images/by-models", cls.handle_by_models)
         app.router.add_post("/api/lm/community-images/by-hashes", cls.handle_by_hashes)
         app.router.add_get(

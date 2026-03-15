@@ -60,6 +60,30 @@
     color: var(--text-primary, #fff);
 }
 
+/* -- Cancel button ------------------------------------------------------- */
+.btn-cancel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border: 1px solid rgba(239, 68, 68, 0.5);
+    border-radius: 6px;
+    background: rgba(239, 68, 68, 0.15);
+    color: #ef4444;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.btn-cancel:hover {
+    background: rgba(239, 68, 68, 0.25);
+}
+
+.btn-cancel:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
 /* -- Base model tabs ----------------------------------------------------- */
 .community-base-model-tabs {
     display: flex;

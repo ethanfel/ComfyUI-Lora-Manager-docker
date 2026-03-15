@@ -384,14 +384,36 @@ function setupFetchButton() {
             doFetch(fetchBtn || refetchBtn, true);
         });
     }
+
+    const cancelBtn = document.getElementById("cancelFetchBtn");
+    if (cancelBtn) {
+        cancelBtn.style.display = "none";
+        cancelBtn.addEventListener("click", async () => {
+            cancelBtn.disabled = true;
+            cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Stopping...';
+            try {
+                await fetch("/api/lm/community-images/cancel", { method: "POST" });
+            } catch (err) {
+                console.error("[Community] Cancel failed:", err);
+            }
+        });
+    }
 }
 
-async function doFetch(btn, force) {
-    const defaultIcon = force ? "fa-sync-alt" : "fa-images";
-    const defaultLabel = force ? "Re-fetch All" : "Fetch Community Images";
+let _isFetching = false;
 
-    btn.disabled = true;
+async function doFetch(btn, force) {
+    if (_isFetching) return;
+
+    const defaultIcon = "fa-images";
+    const defaultLabel = "Fetch Community Images";
+
+    _isFetching = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
+
+    // Show cancel button
+    const cancelBtn = document.getElementById("cancelFetchBtn");
+    if (cancelBtn) cancelBtn.style.display = "";
 
     let ws = null;
     try {
@@ -420,10 +442,13 @@ async function doFetch(btn, force) {
         if (ws) ws.close();
         if (data.success) {
             const count = data.stored || 0;
-            btn.innerHTML = `<i class="fas fa-check"></i> <span>${count} images saved</span>`;
+            const label = data.cancelled
+                ? `Stopped — ${count} images saved`
+                : `${count} images saved`;
+            const icon = data.cancelled ? "fa-stop" : "fa-check";
+            btn.innerHTML = `<i class="fas ${icon}"></i> <span>${label}</span>`;
             setTimeout(() => {
                 btn.innerHTML = `<i class="fas ${defaultIcon}"></i> <span>${defaultLabel}</span>`;
-                btn.disabled = false;
             }, 3000);
             await loadPage(1);
         } else {
@@ -437,8 +462,10 @@ async function doFetch(btn, force) {
         setTimeout(() => {
             btn.innerHTML = `<i class="fas ${defaultIcon}"></i> <span>${defaultLabel}</span>`;
             btn.title = "";
-            btn.disabled = false;
         }, 5000);
+    } finally {
+        _isFetching = false;
+        if (cancelBtn) cancelBtn.style.display = "none";
     }
 }
 
