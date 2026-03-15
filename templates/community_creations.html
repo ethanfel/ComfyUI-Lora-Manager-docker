@@ -1,0 +1,49 @@
+{# templates/community_creations.html #}
+{% extends "base.html" %}
+
+{% block title %}Community Creations{% endblock %}
+{% block page_id %}community{% endblock %}
+
+{% block page_css %}
+<link rel="stylesheet" href="/loras_static/css/community_creations.css?v={{ version }}">
+{% endblock %}
+
+{% block content %}
+<div class="controls">
+    <div class="actions">
+        <div class="action-buttons">
+            <div class="control-group">
+                <button id="fetchCommunityBtn" data-action="fetch-community"
+                        title="Fetch community images from CivitAI">
+                    <i class="fas fa-images"></i> <span>Fetch Community Images</span>
+                </button>
+            </div>
+            <div class="control-group">
+                <select id="communitySortSelect" title="Sort community images">
+                    <optgroup label="Sort by">
+                        <option value="reactions:desc">Most Liked</option>
+                        <option value="reactions:asc">Least Liked</option>
+                        <option value="recent:desc">Most Recent</option>
+                        <option value="lora:asc">LoRA Name (A-Z)</option>
+                        <option value="lora:desc">LoRA Name (Z-A)</option>
+                    </optgroup>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="communityGrid" class="community-grid">
+    <!-- Cards rendered by JS -->
+</div>
+
+<div id="communityEmpty" class="community-empty" style="display:none;">
+    <i class="fas fa-images"></i>
+    <h3>No community images yet</h3>
+    <p>Click "Fetch Community Images" to download top community creations for your LoRAs.</p>
+</div>
+{% endblock %}
+
+{% block main_script %}
+<script type="module" src="/loras_static/js/community_creations.js?v={{ version }}"></script>
+{% endblock %}
