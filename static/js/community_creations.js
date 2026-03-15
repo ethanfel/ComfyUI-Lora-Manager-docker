@@ -1,152 +1,150 @@
 /**
- * Community Creations page — card grid of community images grouped by LoRA.
+ * Community Creations page — card grid of community images grouped by LoRA,
+ * paginated by model to avoid loading too much data at once.
  */
 
 // -- State ----------------------------------------------------------------
-let _allImages = {};   // sha256 -> [{image}, ...]
-let _modelNames = {};  // sha256 -> model_name
 let _sortKey = "reactions:desc";
+let _currentPage = 1;
+let _totalPages = 1;
+const PAGE_SIZE = 10;
 
 // -- Init -----------------------------------------------------------------
 async function init() {
     setupFetchButton();
     setupSortSelect();
-    await loadImages();
+    await loadPage(1);
 }
 
-// -- Load images from API -------------------------------------------------
-async function loadImages() {
+// -- Load a single page of models -----------------------------------------
+async function loadPage(page) {
+    _currentPage = page;
+    const grid = document.getElementById("communityGrid");
+    if (grid) grid.innerHTML = '<div class="community-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
+
     try {
-        // Paginate through all lora list pages to collect hashes + names
-        // (server caps page_size at 100)
-        const hashes = [];
-        _modelNames = {};
-        let page = 1;
-        while (true) {
-            const listResp = await fetch(`/api/lm/loras/list?page=${page}&page_size=100`);
-            const listData = await listResp.json();
-            const items = listData.items || [];
-            if (items.length === 0) break;
+        const resp = await fetch(
+            `/api/lm/community-images/by-models?page=${page}&page_size=${PAGE_SIZE}&sort=${encodeURIComponent(_sortKey)}`
+        );
+        const data = await resp.json();
 
-            for (const item of items) {
-                if (item.sha256) {
-                    hashes.push(item.sha256);
-                    _modelNames[item.sha256] = item.model_name || item.file_name || "Unknown";
-                }
-            }
-
-            // Stop if we got fewer than page_size (last page)
-            if (items.length < 100) break;
-            page++;
-        }
-
-        if (hashes.length === 0) {
+        if (!data.success || !data.models || data.models.length === 0) {
             showEmpty();
+            renderPagination(0, 0);
             return;
         }
 
-        // Fetch community images for all hashes
-        const resp = await fetch("/api/lm/community-images/by-hashes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ hashes }),
-        });
-        const data = await resp.json();
-        if (data.success && data.images) {
-            _allImages = data.images;
-        }
-
-        if (Object.keys(_allImages).length === 0) {
-            showEmpty();
-        } else {
-            renderGrid();
-        }
+        _totalPages = data.total_pages;
+        renderGrid(data.models);
+        renderPagination(data.page, data.total_pages);
+        window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
-        console.error("[Community] Failed to load images:", err);
+        console.error("[Community] Failed to load page:", err);
         showEmpty();
+        renderPagination(0, 0);
     }
 }
 
 // -- Render grid ----------------------------------------------------------
-function renderGrid() {
+function renderGrid(models) {
     const grid = document.getElementById("communityGrid");
     const empty = document.getElementById("communityEmpty");
     if (!grid) return;
 
     grid.innerHTML = "";
-    empty.style.display = "none";
+    if (empty) empty.style.display = "none";
 
-    // Build sorted groups
-    const groups = buildSortedGroups();
-
-    if (groups.length === 0) {
-        showEmpty();
-        return;
-    }
-
-    for (const group of groups) {
+    for (const model of models) {
         const section = document.createElement("div");
         section.className = "community-lora-group";
 
         // Header
         const header = document.createElement("div");
         header.className = "community-lora-header";
-        header.innerHTML = `<h3>${escapeHtml(group.name)}</h3>
-            <span class="lora-link">${group.images.length} image${group.images.length !== 1 ? "s" : ""}</span>`;
+        header.innerHTML = `<h3>${escapeHtml(model.model_name)}</h3>
+            <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>`;
         section.appendChild(header);
 
-        // Cards
-        const cardsDiv = document.createElement("div");
-        cardsDiv.className = "community-cards";
-
-        for (const img of group.images) {
-            cardsDiv.appendChild(createCard(img, group.sha256));
-        }
-
-        section.appendChild(cardsDiv);
-        grid.appendChild(section);
-    }
-}
-
-function buildSortedGroups() {
-    const groups = [];
-    for (const [sha256, images] of Object.entries(_allImages)) {
-        if (!images || images.length === 0) continue;
-        const name = _modelNames[sha256] || "Unknown";
-
         // Sort images within group by reactions
-        const sorted = [...images].sort((a, b) => {
+        const sorted = [...model.images].sort((a, b) => {
             const ra = (a.like_count || 0) + (a.heart_count || 0);
             const rb = (b.like_count || 0) + (b.heart_count || 0);
             return rb - ra;
         });
 
-        groups.push({ sha256, name, images: sorted });
+        // Cards
+        const cardsDiv = document.createElement("div");
+        cardsDiv.className = "community-cards";
+        for (const img of sorted) {
+            cardsDiv.appendChild(createCard(img, model.sha256));
+        }
+        section.appendChild(cardsDiv);
+        grid.appendChild(section);
+    }
+}
+
+// -- Pagination -----------------------------------------------------------
+function renderPagination(currentPage, totalPages) {
+    let pager = document.getElementById("communityPagination");
+    if (!pager) {
+        pager = document.createElement("div");
+        pager.id = "communityPagination";
+        pager.className = "community-pagination";
+        const grid = document.getElementById("communityGrid");
+        if (grid) grid.parentNode.insertBefore(pager, grid.nextSibling);
     }
 
-    // Sort groups
-    const [key, dir] = _sortKey.split(":");
-    const asc = dir === "asc" ? 1 : -1;
-
-    if (key === "reactions") {
-        groups.sort((a, b) => {
-            const ra = a.images.reduce((s, i) => s + (i.like_count || 0) + (i.heart_count || 0), 0);
-            const rb = b.images.reduce((s, i) => s + (i.like_count || 0) + (i.heart_count || 0), 0);
-            return (rb - ra) * asc;
-        });
-    } else if (key === "recent") {
-        const newest = (imgs) => imgs.reduce((max, i) => {
-            const d = i.created_at || "";
-            return d > max ? d : max;
-        }, "");
-        groups.sort((a, b) => {
-            return newest(b.images).localeCompare(newest(a.images)) * asc;
-        });
-    } else if (key === "lora") {
-        groups.sort((a, b) => a.name.localeCompare(b.name) * asc);
+    if (totalPages <= 1) {
+        pager.innerHTML = "";
+        return;
     }
 
-    return groups;
+    let html = "";
+
+    // Prev button
+    html += `<button class="page-btn" ${currentPage <= 1 ? "disabled" : ""} data-page="${currentPage - 1}">
+        <i class="fas fa-chevron-left"></i>
+    </button>`;
+
+    // Page numbers — show up to 7 with ellipsis
+    const pages = buildPageNumbers(currentPage, totalPages);
+    for (const p of pages) {
+        if (p === "...") {
+            html += `<span class="page-ellipsis">&hellip;</span>`;
+        } else {
+            html += `<button class="page-btn ${p === currentPage ? "active" : ""}" data-page="${p}">${p}</button>`;
+        }
+    }
+
+    // Next button
+    html += `<button class="page-btn" ${currentPage >= totalPages ? "disabled" : ""} data-page="${currentPage + 1}">
+        <i class="fas fa-chevron-right"></i>
+    </button>`;
+
+    pager.innerHTML = html;
+
+    // Bind click handlers
+    pager.querySelectorAll(".page-btn:not([disabled])").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            const p = parseInt(btn.dataset.page, 10);
+            if (p >= 1 && p <= totalPages) loadPage(p);
+        });
+    });
+}
+
+function buildPageNumbers(current, total) {
+    if (total <= 7) {
+        return Array.from({ length: total }, (_, i) => i + 1);
+    }
+    const pages = [];
+    pages.push(1);
+    if (current > 3) pages.push("...");
+    for (let i = Math.max(2, current - 1); i <= Math.min(total - 1, current + 1); i++) {
+        pages.push(i);
+    }
+    if (current < total - 2) pages.push("...");
+    pages.push(total);
+    return pages;
 }
 
 // -- Card creation --------------------------------------------------------
@@ -155,7 +153,6 @@ function createCard(img, sha256) {
     card.className = "community-card";
     card.addEventListener("click", () => showDetail(img, sha256));
 
-    // Image
     const imgUrl = img.local_filename
         ? `/example_images_static/${img.local_filename}`
         : img.image_url || "";
@@ -187,7 +184,6 @@ function createCard(img, sha256) {
 
 // -- Detail modal ---------------------------------------------------------
 function showDetail(img, sha256) {
-    // Remove existing overlay
     const existing = document.querySelector(".community-detail-overlay");
     if (existing) existing.remove();
 
@@ -242,7 +238,6 @@ function showDetail(img, sha256) {
         </div>
     `;
 
-    // Copy button handler
     document.body.appendChild(overlay);
     const copyBtn = overlay.querySelector(".copy-btn");
     if (copyBtn) {
@@ -257,7 +252,6 @@ function showDetail(img, sha256) {
         });
     }
 
-    // Close on Escape
     const escHandler = (e) => {
         if (e.key === "Escape") removeOverlay();
     };
@@ -273,7 +267,6 @@ function setupFetchButton() {
         btn.disabled = true;
         btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
 
-        // Listen for progress updates via WebSocket
         let ws = null;
         try {
             const proto = location.protocol === "https:" ? "wss:" : "ws:";
@@ -299,8 +292,7 @@ function setupFetchButton() {
                     btn.innerHTML = '<i class="fas fa-images"></i> <span>Fetch Community Images</span>';
                     btn.disabled = false;
                 }, 3000);
-                // Reload images
-                await loadImages();
+                await loadPage(1);
             } else {
                 throw new Error(data.error || "Unknown error");
             }
@@ -324,7 +316,7 @@ function setupSortSelect() {
     if (!select) return;
     select.addEventListener("change", () => {
         _sortKey = select.value;
-        renderGrid();
+        loadPage(1);
     });
 }
 

@@ -220,6 +220,71 @@
     color: var(--text-primary, rgba(255,255,255,0.7));
 }
 
+/* -- Loading state ------------------------------------------------------- */
+.community-loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-secondary, rgba(255,255,255,0.5));
+    font-size: 16px;
+}
+
+.community-loading i {
+    margin-right: 8px;
+}
+
+/* -- Pagination ---------------------------------------------------------- */
+.community-pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    padding: 20px 16px 32px;
+}
+
+.page-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+    height: 36px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 6px;
+    background: var(--card-bg, #1e1e2e);
+    color: var(--text-secondary, rgba(255,255,255,0.7));
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.page-btn:hover:not([disabled]):not(.active) {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary, #fff);
+    border-color: var(--accent-color, #7c3aed);
+}
+
+.page-btn.active {
+    background: var(--accent-color, #7c3aed);
+    color: #fff;
+    border-color: var(--accent-color, #7c3aed);
+    cursor: default;
+}
+
+.page-btn[disabled] {
+    opacity: 0.3;
+    cursor: not-allowed;
+}
+
+.page-ellipsis {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    height: 36px;
+    color: var(--text-secondary, rgba(255,255,255,0.4));
+    font-size: 14px;
+}
+
 /* -- Empty state --------------------------------------------------------- */
 .community-empty {
     text-align: center;

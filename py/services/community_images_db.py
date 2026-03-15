@@ -176,6 +176,75 @@ class CommunityImagesDB:
                 found.add(row["sha256"])
         return found
 
+    def get_models_paginated(
+        self,
+        allowed_hashes: list[str],
+        page: int = 1,
+        page_size: int = 10,
+        sort: str = "reactions:desc",
+    ) -> dict:
+        """Return community images paginated by model (sha256).
+
+        Returns dict with keys: models (list of sha256), total, images (sha256 -> list).
+        Only includes sha256 values present in allowed_hashes that have images.
+        """
+        if not allowed_hashes:
+            return {"models": [], "total": 0, "images": {}}
+
+        conn = self._ensure_conn()
+
+        # Build the set of sha256 values that have images AND are in allowed_hashes
+        # We need to query in chunks due to SQLite variable limits
+        all_model_rows: list[dict] = []
+        chunk_size = 500
+        for i in range(0, len(allowed_hashes), chunk_size):
+            chunk = allowed_hashes[i : i + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"SELECT sha256, "
+                f"  COUNT(*) as image_count, "
+                f"  SUM(like_count + heart_count) as total_reactions, "
+                f"  MAX(created_at) as newest "
+                f"FROM community_images "
+                f"WHERE sha256 IN ({placeholders}) "
+                f"GROUP BY sha256",
+                chunk,
+            ).fetchall()
+            all_model_rows.extend(dict(r) for r in rows)
+
+        if not all_model_rows:
+            return {"models": [], "total": 0, "images": {}}
+
+        # Sort models
+        key, direction = (sort.split(":") + ["desc"])[:2]
+        reverse = direction != "asc"
+
+        if key == "reactions":
+            all_model_rows.sort(key=lambda r: r["total_reactions"] or 0, reverse=reverse)
+        elif key == "recent":
+            all_model_rows.sort(key=lambda r: r["newest"] or "", reverse=reverse)
+        elif key == "lora":
+            # Sort by sha256 as placeholder — caller will re-sort by name
+            pass
+        else:
+            all_model_rows.sort(key=lambda r: r["total_reactions"] or 0, reverse=True)
+
+        total = len(all_model_rows)
+
+        # Paginate
+        offset = (page - 1) * page_size
+        page_models = all_model_rows[offset : offset + page_size]
+        page_hashes = [r["sha256"] for r in page_models]
+
+        # Fetch images for this page's models only
+        images = self.get_by_hashes(page_hashes)
+
+        return {
+            "models": page_hashes,
+            "total": total,
+            "images": images,
+        }
+
     def delete_by_hash(self, sha256: str) -> None:
         """Delete all community images for a given model hash."""
         conn = self._ensure_conn()

@@ -119,6 +119,52 @@ def test_get_hashes_with_images(db):
     assert result == {"aaa", "bbb"}
 
 
+def test_get_models_paginated(db):
+    """Should return paginated models with their images."""
+    # Insert images for 3 models
+    db.upsert_batch([
+        {"civitai_image_id": 1, "sha256": "model_a", "like_count": 10, "heart_count": 5, "created_at": "2026-01-01"},
+        {"civitai_image_id": 2, "sha256": "model_a", "like_count": 3, "heart_count": 1, "created_at": "2026-01-02"},
+        {"civitai_image_id": 3, "sha256": "model_b", "like_count": 20, "heart_count": 10, "created_at": "2026-02-01"},
+        {"civitai_image_id": 4, "sha256": "model_c", "like_count": 1, "heart_count": 0, "created_at": "2026-03-01"},
+    ])
+
+    # Page 1, size 2 — should get 2 models, sorted by reactions desc
+    result = db.get_models_paginated(
+        allowed_hashes=["model_a", "model_b", "model_c"],
+        page=1, page_size=2, sort="reactions:desc",
+    )
+    assert result["total"] == 3
+    assert len(result["models"]) == 2
+    # model_b has 30 total reactions, model_a has 19 — both should be on page 1
+    assert result["models"][0] == "model_b"
+    assert result["models"][1] == "model_a"
+    assert "model_b" in result["images"]
+    assert "model_a" in result["images"]
+
+    # Page 2 — should get remaining model
+    result2 = db.get_models_paginated(
+        allowed_hashes=["model_a", "model_b", "model_c"],
+        page=2, page_size=2, sort="reactions:desc",
+    )
+    assert len(result2["models"]) == 1
+    assert result2["models"][0] == "model_c"
+
+    # Only allowed hashes are returned
+    result3 = db.get_models_paginated(
+        allowed_hashes=["model_a"],
+        page=1, page_size=10, sort="reactions:desc",
+    )
+    assert result3["total"] == 1
+    assert result3["models"] == ["model_a"]
+
+
+def test_get_models_paginated_empty(db):
+    """Should handle empty allowed_hashes."""
+    result = db.get_models_paginated(allowed_hashes=[], page=1, page_size=10)
+    assert result == {"models": [], "total": 0, "images": {}}
+
+
 def test_delete_by_hash(db):
     """Should delete all images for a given hash."""
     db.upsert({"civitai_image_id": 1, "sha256": "del_me", "prompt": "test"})

@@ -140,6 +140,99 @@ class CommunityImagesRoutes:
             )
 
     @staticmethod
+    async def handle_by_models(request: web.Request) -> web.Response:
+        """GET /api/lm/community-images/by-models — paginated models with images."""
+        try:
+            page = int(request.query.get("page", "1"))
+            page_size = int(request.query.get("page_size", "10"))
+            sort = request.query.get("sort", "reactions:desc")
+        except (ValueError, TypeError):
+            page, page_size, sort = 1, 10, "reactions:desc"
+
+        page_size = min(max(page_size, 1), 50)
+        page = max(page, 1)
+
+        try:
+            # Get all lora hashes + names from scanner
+            lora_hashes = []
+            name_map: dict[str, str] = {}
+            try:
+                scanner = await ServiceRegistry.get_lora_scanner()
+                cache = await scanner.get_cached_data()
+                for item in cache.raw_data:
+                    if not item:
+                        continue
+                    sha256 = item.get("sha256")
+                    if sha256:
+                        lora_hashes.append(sha256)
+                        name_map[sha256] = (
+                            item.get("model_name")
+                            or item.get("file_name")
+                            or "Unknown"
+                        )
+            except Exception as exc:
+                logger.info("Failed to get lora scanner data: %s", exc)
+
+            db = CommunityImagesDB.get_instance()
+            result = db.get_models_paginated(
+                allowed_hashes=lora_hashes,
+                page=page,
+                page_size=page_size,
+                sort=sort,
+            )
+
+            # Sort by lora name if requested (DB can't do this — needs name_map)
+            sort_key = sort.split(":")[0]
+            if sort_key == "lora" and result["models"]:
+                direction = sort.split(":")[-1] if ":" in sort else "asc"
+                reverse = direction != "asc"
+                # Re-sort all models by name — need to re-paginate
+                all_hashes = []
+                for i in range(0, len(lora_hashes), 500):
+                    chunk = lora_hashes[i : i + 500]
+                    has_images = db.get_hashes_with_images(chunk)
+                    all_hashes.extend(has_images)
+                all_hashes.sort(
+                    key=lambda h: name_map.get(h, "Unknown").lower(),
+                    reverse=reverse,
+                )
+                total = len(all_hashes)
+                offset = (page - 1) * page_size
+                page_hashes = all_hashes[offset : offset + page_size]
+                images = db.get_by_hashes(page_hashes)
+                result = {"models": page_hashes, "total": total, "images": images}
+
+            # Build response with model names
+            models_out = []
+            for sha in result["models"]:
+                model_images = result["images"].get(sha, [])
+                clean_images = [
+                    {k: v for k, v in img.items() if k != "fetched_at"}
+                    for img in model_images
+                ]
+                models_out.append({
+                    "sha256": sha,
+                    "model_name": name_map.get(sha, "Unknown"),
+                    "image_count": len(clean_images),
+                    "images": clean_images,
+                })
+
+            return web.json_response({
+                "success": True,
+                "models": models_out,
+                "page": page,
+                "page_size": page_size,
+                "total_models": result["total"],
+                "total_pages": (result["total"] + page_size - 1) // page_size,
+            })
+
+        except Exception as exc:
+            logger.exception("Failed to get paginated community models")
+            return web.json_response(
+                {"success": False, "error": str(exc)}, status=500
+            )
+
+    @staticmethod
     async def handle_by_hashes(request: web.Request) -> web.Response:
         """POST /api/lm/community-images/by-hashes — get images for given hashes."""
         try:
@@ -189,6 +282,7 @@ class CommunityImagesRoutes:
         """Register community images routes."""
         app.router.add_get("/community", cls.handle_page)
         app.router.add_post("/api/lm/community-images/fetch", cls.handle_fetch)
+        app.router.add_get("/api/lm/community-images/by-models", cls.handle_by_models)
         app.router.add_post("/api/lm/community-images/by-hashes", cls.handle_by_hashes)
         app.router.add_get("/api/lm/community-images/status", cls.handle_status)
 
