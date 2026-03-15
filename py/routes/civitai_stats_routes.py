@@ -48,6 +48,12 @@ class CivitaiStatsRoutes:
                 except Exception as exc:
                     logger.debug("Failed to get scanner data: %s", exc)
 
+            # Log collection summary for debugging
+            with_vid = sum(1 for m in models if m.get("civitai_version_id"))
+            without_vid = len(models) - with_vid
+            logger.info("Collected %d models for stats fetch (%d with version_id, %d without)",
+                        len(models), with_vid, without_vid)
+
             if not models:
                 return web.json_response({"success": True, "updated": 0, "total": 0})
 

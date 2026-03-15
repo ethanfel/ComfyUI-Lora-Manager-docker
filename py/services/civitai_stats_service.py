@@ -104,10 +104,17 @@ class CivitaiStatsFetchService:
         unique_model_ids = list(model_id_to_locals.keys())
         total = len(unique_model_ids)
         updated = 0
+        api_success = 0
+        api_fail = 0
+        version_mismatches = 0
+
+        logger.info("Fetching CivitAI stats for %d unique models (%d total items)",
+                     total, len(models))
 
         for i, model_id in enumerate(unique_model_ids):
             data = await self._fetch_model(model_id)
             if data:
+                api_success += 1
                 version_stats = extract_version_stats(data)
                 if version_stats:
                     # Map local sha256 → stats using version ID match
@@ -124,9 +131,16 @@ class CivitaiStatsFetchService:
                             local_sha = local_model.get("sha256")
                             if local_sha:
                                 rows.append((local_sha, only_stats))
-                    if rows:
+                    if not rows:
+                        version_mismatches += 1
+                        local_vids = [m.get("civitai_version_id") for m in model_id_to_locals[model_id]]
+                        logger.info("No version match for model %d: local vids=%s, api vids=%s",
+                                     model_id, local_vids, list(version_stats.keys()))
+                    else:
                         self.db.upsert_batch(rows)
                         updated += len(rows)
+            else:
+                api_fail += 1
 
             if progress_callback:
                 await progress_callback(i + 1, total)
@@ -135,6 +149,9 @@ class CivitaiStatsFetchService:
             if i < total - 1:
                 await asyncio.sleep(_RATE_LIMIT_DELAY)
 
+        logger.info("CivitAI stats fetch complete: %d/%d API calls succeeded, "
+                     "%d version mismatches, %d entries updated",
+                     api_success, total, version_mismatches, updated)
         return updated
 
     async def close(self) -> None:
