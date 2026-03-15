@@ -89,11 +89,27 @@ class CivitaiStatsRoutes:
         """GET /api/lm/civitai-stats/status — check stats DB count."""
         db = CivitaiStatsDB.get_instance()
         all_stats = db.get_all()
-        sample_hashes = list(all_stats.keys())[:5]
+        db_hashes = list(all_stats.keys())[:5]
+
+        # Debug: also get sample hashes from the scanner cache
+        scanner_hashes = []
+        try:
+            scanner = await ServiceRegistry.get_lora_scanner()
+            cache = await scanner.get_cached_data()
+            for item in cache.raw_data[:5]:
+                scanner_hashes.append({
+                    "sha256": item.get("sha256", "")[:16],
+                    "name": item.get("model_name", "")[:30],
+                    "keys": [k for k in item.keys() if "sha" in k.lower() or "hash" in k.lower()],
+                })
+        except Exception as exc:
+            scanner_hashes = [{"error": str(exc)}]
+
         return web.json_response({
             "success": True,
             "count": db.count(),
-            "sample_hashes": sample_hashes,
+            "db_sample_hashes": [h[:16] for h in db_hashes],
+            "scanner_sample": scanner_hashes,
         })
 
     @staticmethod
