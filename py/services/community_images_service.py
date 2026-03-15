@@ -1,0 +1,278 @@
+"""Service for fetching CivitAI community images and storing them locally."""
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+from typing import Any, Callable, Optional
+
+import aiohttp
+
+from .community_images_db import CommunityImagesDB
+from ..utils.example_images_paths import get_model_folder, get_model_relative_path
+
+logger = logging.getLogger(__name__)
+
+_CIVITAI_API = "https://civitai.com/api/v1"
+_RATE_LIMIT_DELAY = 1.5  # seconds between requests
+_MIN_PROMPT_LENGTH = 20
+_MAX_IMAGES_PER_MODEL = 10
+
+
+def filter_community_images(
+    items: list[dict], author_username: str
+) -> list[dict]:
+    """Filter CivitAI image items, excluding author and low-quality prompts.
+
+    - Skip images by author (case-insensitive username match)
+    - Skip images without meta.meta.prompt
+    - Skip images with prompt < 20 chars
+    - Return at most 10 images
+    """
+    author_lower = (author_username or "").lower()
+    result: list[dict] = []
+
+    for item in items:
+        # Skip author's own images
+        username = (item.get("username") or "").lower()
+        if username and author_lower and username == author_lower:
+            continue
+
+        # Skip images without prompt (double-nested meta)
+        meta = item.get("meta")
+        if not meta or not isinstance(meta, dict):
+            continue
+        inner_meta = meta.get("meta")
+        if not inner_meta or not isinstance(inner_meta, dict):
+            continue
+        prompt = inner_meta.get("prompt") or ""
+        if len(prompt) < _MIN_PROMPT_LENGTH:
+            continue
+
+        result.append(item)
+        if len(result) >= _MAX_IMAGES_PER_MODEL:
+            break
+
+    return result
+
+
+def _extract_image_data(
+    item: dict, sha256: str, civitai_model_id: int
+) -> dict:
+    """Convert a CivitAI API image item to DB row format."""
+    stats = item.get("stats") or {}
+    meta = item.get("meta") or {}
+    inner_meta = meta.get("meta") or {} if isinstance(meta, dict) else {}
+
+    return {
+        "civitai_image_id": item.get("id"),
+        "sha256": sha256,
+        "civitai_model_id": civitai_model_id,
+        "username": item.get("username"),
+        "image_url": item.get("url"),
+        "local_filename": None,
+        "width": item.get("width"),
+        "height": item.get("height"),
+        "prompt": inner_meta.get("prompt"),
+        "negative_prompt": inner_meta.get("negativePrompt"),
+        "steps": inner_meta.get("steps"),
+        "sampler": inner_meta.get("sampler"),
+        "cfg_scale": inner_meta.get("cfgScale"),
+        "seed": inner_meta.get("seed"),
+        "denoise": inner_meta.get("denoise"),
+        "base_model": item.get("baseModel"),
+        "like_count": stats.get("likeCount", 0),
+        "heart_count": stats.get("heartCount", 0),
+        "laugh_count": stats.get("laughCount", 0),
+        "comment_count": stats.get("commentCount", 0),
+        "created_at": item.get("createdAt"),
+    }
+
+
+class CommunityImagesFetchService:
+    """Fetches CivitAI community images and stores them via CommunityImagesDB."""
+
+    def __init__(self, db: CommunityImagesDB, api_key: str | None = None):
+        self.db = db
+        self._api_key = api_key
+        self._session: aiohttp.ClientSession | None = None
+
+    async def _get_session(self) -> aiohttp.ClientSession:
+        """Lazy aiohttp session with auth header."""
+        if self._session is None or self._session.closed:
+            headers = {}
+            if self._api_key:
+                headers["Authorization"] = f"Bearer {self._api_key}"
+            timeout = aiohttp.ClientTimeout(total=30)
+            self._session = aiohttp.ClientSession(
+                headers=headers, timeout=timeout
+            )
+        return self._session
+
+    async def _fetch_images_api(
+        self, model_id: int, _retries: int = 2
+    ) -> dict | None:
+        """GET /api/v1/images with retries and 429 backoff."""
+        url = f"{_CIVITAI_API}/images"
+        params = {
+            "modelId": str(model_id),
+            "sort": "Most Reactions",
+            "limit": "20",
+        }
+        session = await self._get_session()
+        for attempt in range(_retries + 1):
+            try:
+                async with session.get(url, params=params) as resp:
+                    if resp.status == 429:
+                        logger.warning(
+                            "CivitAI rate limited, backing off (attempt %d)",
+                            attempt + 1,
+                        )
+                        await asyncio.sleep(5 * (attempt + 1))
+                        continue
+                    if resp.status != 200:
+                        logger.debug(
+                            "CivitAI images returned %d for model %d",
+                            resp.status,
+                            model_id,
+                        )
+                        return None
+                    return await resp.json()
+            except Exception as exc:
+                logger.warning(
+                    "CivitAI images fetch failed for model %d: %s",
+                    model_id,
+                    exc,
+                )
+                return None
+        return None
+
+    async def _download_image(
+        self, image_url: str, sha256: str, image_id: int
+    ) -> str | None:
+        """Download image to {model_folder}/community/{image_id}.jpg.
+
+        Returns relative path from static mount, or None on failure.
+        """
+        model_folder = get_model_folder(sha256)
+        if not model_folder:
+            logger.warning("No model folder for hash %s, skipping download", sha256)
+            return None
+
+        community_dir = os.path.join(model_folder, "community")
+        os.makedirs(community_dir, exist_ok=True)
+
+        filename = f"{image_id}.jpg"
+        filepath = os.path.join(community_dir, filename)
+
+        try:
+            session = await self._get_session()
+            async with session.get(image_url) as resp:
+                if resp.status != 200:
+                    logger.debug(
+                        "Failed to download image %d: HTTP %d",
+                        image_id,
+                        resp.status,
+                    )
+                    return None
+                data = await resp.read()
+                with open(filepath, "wb") as f:
+                    f.write(data)
+        except Exception as exc:
+            logger.warning("Failed to download image %d: %s", image_id, exc)
+            return None
+
+        rel_path = get_model_relative_path(sha256)
+        if not rel_path:
+            return None
+        return f"{rel_path}/community/{image_id}.jpg"
+
+    async def fetch_images_for_model(
+        self,
+        sha256: str,
+        civitai_model_id: int,
+        author_username: str,
+    ) -> int:
+        """Fetch, filter, download, and store community images for one model.
+
+        Returns the number of images stored.
+        """
+        response = await self._fetch_images_api(civitai_model_id)
+        if not response:
+            return 0
+
+        items = response.get("items", [])
+        filtered = filter_community_images(items, author_username)
+        if not filtered:
+            return 0
+
+        rows: list[dict] = []
+        for item in filtered:
+            image_id = item.get("id")
+            image_url = item.get("url")
+            if not image_id or not image_url:
+                continue
+
+            local_path = await self._download_image(image_url, sha256, image_id)
+
+            row = _extract_image_data(item, sha256, civitai_model_id)
+            row["local_filename"] = local_path
+            rows.append(row)
+
+        if rows:
+            self.db.upsert_batch(rows)
+
+        return len(rows)
+
+    async def fetch_all(
+        self,
+        models: list[dict],
+        progress_callback: Optional[Callable] = None,
+    ) -> int:
+        """Bulk fetch community images with rate limiting.
+
+        Args:
+            models: list of dicts with 'sha256', 'civitai_model_id',
+                     and 'author_username' keys.
+            progress_callback: optional async callable(current, total).
+
+        Returns:
+            Total number of images stored.
+        """
+        total = len(models)
+        total_stored = 0
+
+        logger.info("Fetching community images for %d models", total)
+
+        for i, model in enumerate(models):
+            sha256 = model.get("sha256")
+            model_id = model.get("civitai_model_id")
+            author = model.get("author_username", "")
+
+            if not sha256 or not model_id:
+                if progress_callback:
+                    await progress_callback(i + 1, total)
+                continue
+
+            count = await self.fetch_images_for_model(sha256, model_id, author)
+            total_stored += count
+
+            if progress_callback:
+                await progress_callback(i + 1, total)
+
+            # Rate limiting between requests
+            if i < total - 1:
+                await asyncio.sleep(_RATE_LIMIT_DELAY)
+
+        logger.info(
+            "Community images fetch complete: %d images stored for %d models",
+            total_stored,
+            total,
+        )
+        return total_stored
+
+    async def close(self) -> None:
+        """Close the aiohttp session."""
+        if self._session and not self._session.closed:
+            await self._session.close()
+            self._session = None
