@@ -72,6 +72,68 @@ class ExampleImagesProcessor:
             return False
 
     @staticmethod
+    def _extract_workflow_from_file(file_path):
+        """Extract ComfyUI workflow from an existing PNG file on disk.
+
+        Returns True if a workflow was found and saved as a sidecar JSON.
+        """
+        try:
+            img = Image.open(file_path)
+            if not hasattr(img, "info") or not isinstance(img.info, dict):
+                return False
+            workflow_data = {}
+            if "workflow" in img.info:
+                workflow_data["workflow"] = img.info["workflow"]
+            if "prompt" in img.info:
+                workflow_data["prompt"] = img.info["prompt"]
+            if not workflow_data:
+                return False
+            workflow_path = os.path.splitext(file_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(workflow_data, f)
+            return True
+        except Exception:
+            logger.debug("Failed to extract workflow from %s", file_path, exc_info=True)
+            return False
+
+    @staticmethod
+    def scan_existing_workflows(example_images_root):
+        """Scan all existing PNG example images and extract embedded workflows.
+
+        Walks all model hash folders under example_images_root, finds PNG files
+        that don't already have a .workflow.json sidecar, and extracts any
+        embedded ComfyUI workflow/prompt metadata.
+
+        Returns dict with scanned/found/error counts.
+        """
+        scanned = 0
+        found = 0
+        errors = 0
+
+        if not example_images_root or not os.path.isdir(example_images_root):
+            return {"scanned": scanned, "found": found, "errors": errors}
+
+        for root, dirs, files in os.walk(example_images_root):
+            for filename in files:
+                if not filename.lower().endswith(".png"):
+                    continue
+                file_path = os.path.join(root, filename)
+                # Skip if sidecar already exists
+                sidecar = os.path.splitext(file_path)[0] + ".workflow.json"
+                if os.path.exists(sidecar):
+                    continue
+                scanned += 1
+                try:
+                    if ExampleImagesProcessor._extract_workflow_from_file(file_path):
+                        found += 1
+                        logger.info("Extracted workflow from %s", file_path)
+                except Exception:
+                    errors += 1
+                    logger.error("Error scanning %s", file_path, exc_info=True)
+
+        return {"scanned": scanned, "found": found, "errors": errors}
+
+    @staticmethod
     def _get_file_extension_from_content_or_headers(content, headers, fallback_url=None, media_type_hint=None):
         """Determine file extension from content magic bytes or headers
         

@@ -69,6 +69,12 @@ class ExampleImagesRoutes:
             self._handle_workflow,
         )
 
+        # Scan existing PNGs for embedded workflows
+        app.router.add_post(
+            "/api/lm/example-images/scan-workflows",
+            self._handle_scan_workflows,
+        )
+
     @staticmethod
     async def _handle_workflow(request: web.Request) -> web.Response:
         """GET /api/lm/example-images/workflow?model_hash=X&filename=Y"""
@@ -99,6 +105,26 @@ class ExampleImagesRoutes:
             workflow_data = json.load(f)
 
         return web.json_response({"success": True, "data": workflow_data})
+
+    @staticmethod
+    async def _handle_scan_workflows(request: web.Request) -> web.Response:
+        """POST /api/lm/example-images/scan-workflows — scan existing PNGs for embedded workflows."""
+        from ..utils.example_images_paths import get_example_images_root
+
+        root = get_example_images_root()
+        if not root or not os.path.isdir(root):
+            return web.json_response(
+                {"success": False, "error": "No example images path configured or path not found"},
+                status=400,
+            )
+
+        result = ExampleImagesProcessor.scan_existing_workflows(root)
+        return web.json_response({
+            "success": True,
+            "scanned": result["scanned"],
+            "found": result["found"],
+            "errors": result["errors"],
+        })
 
     def to_route_mapping(self) -> Mapping[str, Callable[[web.Request], web.StreamResponse]]:
         """Return the registrar-compatible mapping of handler names to callables."""

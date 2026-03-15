@@ -22,6 +22,7 @@ export class GlobalContextMenu extends BaseContextMenu {
         const licenseRefreshItem = this.menu.querySelector('[data-action="fetch-missing-licenses"]');
         const downloadExamplesItem = this.menu.querySelector('[data-action="download-example-images"]');
         const cleanupExamplesItem = this.menu.querySelector('[data-action="cleanup-example-images-folders"]');
+        const scanWorkflowsItem = this.menu.querySelector('[data-action="scan-workflows"]');
         const repairRecipesItem = this.menu.querySelector('[data-action="repair-recipes"]');
 
         if (isRecipesPage) {
@@ -29,12 +30,14 @@ export class GlobalContextMenu extends BaseContextMenu {
             licenseRefreshItem?.classList.add('hidden');
             downloadExamplesItem?.classList.add('hidden');
             cleanupExamplesItem?.classList.add('hidden');
+            scanWorkflowsItem?.classList.add('hidden');
             repairRecipesItem?.classList.remove('hidden');
         } else {
             modelUpdateItem?.classList.remove('hidden');
             licenseRefreshItem?.classList.remove('hidden');
             downloadExamplesItem?.classList.remove('hidden');
             cleanupExamplesItem?.classList.remove('hidden');
+            scanWorkflowsItem?.classList.remove('hidden');
             repairRecipesItem?.classList.add('hidden');
         }
 
@@ -61,6 +64,11 @@ export class GlobalContextMenu extends BaseContextMenu {
             case 'fetch-missing-licenses':
                 this.fetchMissingLicenses(menuItem).catch((error) => {
                     console.error('Failed to refresh missing license metadata:', error);
+                });
+                break;
+            case 'scan-workflows':
+                this.scanWorkflows(menuItem).catch((error) => {
+                    console.error('Failed to scan workflows:', error);
                 });
                 break;
             case 'repair-recipes':
@@ -296,6 +304,39 @@ export class GlobalContextMenu extends BaseContextMenu {
         }
 
         return `${displayName}s`;
+    }
+
+    async scanWorkflows(menuItem) {
+        if (this._scanWorkflowsInProgress) {
+            return;
+        }
+
+        this._scanWorkflowsInProgress = true;
+        menuItem?.classList.add('disabled');
+        showToast('Scanning example images for embedded workflows...', {}, 'info');
+
+        try {
+            const response = await fetch('/api/lm/example-images/scan-workflows', {
+                method: 'POST',
+            });
+
+            const result = await response.json();
+            if (response.ok && result.success) {
+                if (result.found > 0) {
+                    showToast(`Found ${result.found} workflows in ${result.scanned} images scanned.`, {}, 'success');
+                } else {
+                    showToast(`Scanned ${result.scanned} images, no new workflows found.`, {}, 'info');
+                }
+            } else {
+                showToast(result.error || 'Scan failed', {}, 'error');
+            }
+        } catch (error) {
+            console.error('Workflow scan failed:', error);
+            showToast('Workflow scan failed: ' + (error.message || 'Unknown error'), {}, 'error');
+        } finally {
+            this._scanWorkflowsInProgress = false;
+            menuItem?.classList.remove('disabled');
+        }
     }
 
     async repairRecipes(menuItem) {
