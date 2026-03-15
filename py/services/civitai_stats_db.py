@@ -38,6 +38,7 @@ class CivitaiStatsDB:
 
     _instance: CivitaiStatsDB | None = None
     _lock = threading.Lock()
+    _db_lock = threading.Lock()
 
     def __init__(self, db_path: Path | None = None):
         self._db_path = db_path or _default_db_path()
@@ -68,98 +69,103 @@ class CivitaiStatsDB:
 
     def upsert(self, sha256: str, data: dict) -> None:
         """Insert or update stats for a single model."""
-        conn = self._ensure_conn()
-        conn.execute(
-            """INSERT INTO model_stats
-               (sha256, civitai_model_id, civitai_version_id,
-                download_count, rating, rating_count, thumbs_up_count, fetched_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(sha256) DO UPDATE SET
-                 civitai_model_id = COALESCE(excluded.civitai_model_id, civitai_model_id),
-                 civitai_version_id = COALESCE(excluded.civitai_version_id, civitai_version_id),
-                 download_count = excluded.download_count,
-                 rating = excluded.rating,
-                 rating_count = excluded.rating_count,
-                 thumbs_up_count = excluded.thumbs_up_count,
-                 fetched_at = excluded.fetched_at
-            """,
-            (
-                sha256,
-                data.get("civitai_model_id"),
-                data.get("civitai_version_id"),
-                data.get("download_count", 0),
-                data.get("rating", 0),
-                data.get("rating_count", 0),
-                data.get("thumbs_up_count", 0),
-                time.time(),
-            ),
-        )
-        conn.commit()
+        with self._db_lock:
+            conn = self._ensure_conn()
+            conn.execute(
+                """INSERT INTO model_stats
+                   (sha256, civitai_model_id, civitai_version_id,
+                    download_count, rating, rating_count, thumbs_up_count, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(sha256) DO UPDATE SET
+                     civitai_model_id = COALESCE(excluded.civitai_model_id, civitai_model_id),
+                     civitai_version_id = COALESCE(excluded.civitai_version_id, civitai_version_id),
+                     download_count = excluded.download_count,
+                     rating = excluded.rating,
+                     rating_count = excluded.rating_count,
+                     thumbs_up_count = excluded.thumbs_up_count,
+                     fetched_at = excluded.fetched_at
+                """,
+                (
+                    sha256,
+                    data.get("civitai_model_id"),
+                    data.get("civitai_version_id"),
+                    data.get("download_count", 0),
+                    data.get("rating", 0),
+                    data.get("rating_count", 0),
+                    data.get("thumbs_up_count", 0),
+                    time.time(),
+                ),
+            )
+            conn.commit()
 
     def upsert_batch(self, rows: list[tuple[str, dict]]) -> None:
         """Insert or update stats for multiple models."""
         if not rows:
             return
-        conn = self._ensure_conn()
-        now = time.time()
-        conn.executemany(
-            """INSERT INTO model_stats
-               (sha256, civitai_model_id, civitai_version_id,
-                download_count, rating, rating_count, thumbs_up_count, fetched_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-               ON CONFLICT(sha256) DO UPDATE SET
-                 civitai_model_id = COALESCE(excluded.civitai_model_id, civitai_model_id),
-                 civitai_version_id = COALESCE(excluded.civitai_version_id, civitai_version_id),
-                 download_count = excluded.download_count,
-                 rating = excluded.rating,
-                 rating_count = excluded.rating_count,
-                 thumbs_up_count = excluded.thumbs_up_count,
-                 fetched_at = excluded.fetched_at
-            """,
-            [
-                (
-                    sha256,
-                    d.get("civitai_model_id"),
-                    d.get("civitai_version_id"),
-                    d.get("download_count", 0),
-                    d.get("rating", 0),
-                    d.get("rating_count", 0),
-                    d.get("thumbs_up_count", 0),
-                    now,
-                )
-                for sha256, d in rows
-            ],
-        )
-        conn.commit()
+        with self._db_lock:
+            conn = self._ensure_conn()
+            now = time.time()
+            conn.executemany(
+                """INSERT INTO model_stats
+                   (sha256, civitai_model_id, civitai_version_id,
+                    download_count, rating, rating_count, thumbs_up_count, fetched_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(sha256) DO UPDATE SET
+                     civitai_model_id = COALESCE(excluded.civitai_model_id, civitai_model_id),
+                     civitai_version_id = COALESCE(excluded.civitai_version_id, civitai_version_id),
+                     download_count = excluded.download_count,
+                     rating = excluded.rating,
+                     rating_count = excluded.rating_count,
+                     thumbs_up_count = excluded.thumbs_up_count,
+                     fetched_at = excluded.fetched_at
+                """,
+                [
+                    (
+                        sha256,
+                        d.get("civitai_model_id"),
+                        d.get("civitai_version_id"),
+                        d.get("download_count", 0),
+                        d.get("rating", 0),
+                        d.get("rating_count", 0),
+                        d.get("thumbs_up_count", 0),
+                        now,
+                    )
+                    for sha256, d in rows
+                ],
+            )
+            conn.commit()
 
     def get_by_hashes(self, hashes: list[str]) -> dict[str, dict]:
         """Return stats keyed by sha256 for the given hashes."""
         if not hashes:
             return {}
-        conn = self._ensure_conn()
-        result = {}
-        chunk_size = 500
-        for i in range(0, len(hashes), chunk_size):
-            chunk = hashes[i:i + chunk_size]
-            placeholders = ",".join("?" for _ in chunk)
-            rows = conn.execute(
-                f"SELECT * FROM model_stats WHERE sha256 IN ({placeholders})",
-                chunk,
-            ).fetchall()
-            for row in rows:
-                result[row["sha256"]] = dict(row)
+        with self._db_lock:
+            conn = self._ensure_conn()
+            result = {}
+            chunk_size = 500
+            for i in range(0, len(hashes), chunk_size):
+                chunk = hashes[i:i + chunk_size]
+                placeholders = ",".join("?" for _ in chunk)
+                rows = conn.execute(
+                    f"SELECT * FROM model_stats WHERE sha256 IN ({placeholders})",
+                    chunk,
+                ).fetchall()
+                for row in rows:
+                    result[row["sha256"]] = dict(row)
         return result
 
     def get_all(self) -> dict[str, dict]:
         """Return all stats keyed by sha256."""
-        conn = self._ensure_conn()
-        rows = conn.execute("SELECT * FROM model_stats").fetchall()
-        return {row["sha256"]: dict(row) for row in rows}
+        with self._db_lock:
+            conn = self._ensure_conn()
+            rows = conn.execute("SELECT * FROM model_stats").fetchall()
+            return {row["sha256"]: dict(row) for row in rows}
 
     def count(self) -> int:
         """Return number of rows in model_stats."""
-        conn = self._ensure_conn()
-        return conn.execute("SELECT COUNT(*) FROM model_stats").fetchone()[0]
+        with self._db_lock:
+            conn = self._ensure_conn()
+            return conn.execute("SELECT COUNT(*) FROM model_stats").fetchone()[0]
 
     def close(self) -> None:
         if self._conn:

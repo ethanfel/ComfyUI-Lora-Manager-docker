@@ -103,11 +103,13 @@
     }
 
     // ── Intercept list API to collect hashes ───────────────────────
+    // Only model pages (loras, checkpoints, embeddings) have SHA256 hashes
+    const _MODEL_LIST_RE = /\/api\/lm\/(loras|checkpoints|embeddings)\/list/;
     const _origFetch = window.fetch;
     window.fetch = async function (...args) {
         const response = await _origFetch.apply(this, args);
         const url = typeof args[0] === "string" ? args[0] : args[0]?.url;
-        if (url && url.includes("/api/lm/") && url.includes("/list")) {
+        if (url && _MODEL_LIST_RE.test(url)) {
             try {
                 const clone = response.clone();
                 const data = await clone.json();
