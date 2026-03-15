@@ -230,7 +230,8 @@ class CommunityImagesDB:
                 f"SELECT sha256, "
                 f"  COUNT(*) as image_count, "
                 f"  SUM(like_count + heart_count) as total_reactions, "
-                f"  MAX(created_at) as newest "
+                f"  MAX(created_at) as newest, "
+                f"  MAX(fetched_at) as last_fetched "
                 f"FROM community_images "
                 f"WHERE sha256 IN ({placeholders}) "
                 f"GROUP BY sha256",
@@ -249,6 +250,8 @@ class CommunityImagesDB:
             all_model_rows.sort(key=lambda r: r["total_reactions"] or 0, reverse=reverse)
         elif key == "recent":
             all_model_rows.sort(key=lambda r: r["newest"] or "", reverse=reverse)
+        elif key == "fetched":
+            all_model_rows.sort(key=lambda r: r["last_fetched"] or 0, reverse=reverse)
         elif key == "lora":
             # Sort by sha256 as placeholder — caller will re-sort by name
             pass
