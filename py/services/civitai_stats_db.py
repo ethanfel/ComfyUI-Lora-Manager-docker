@@ -132,12 +132,18 @@ class CivitaiStatsDB:
         if not hashes:
             return {}
         conn = self._ensure_conn()
-        placeholders = ",".join("?" for _ in hashes)
-        rows = conn.execute(
-            f"SELECT * FROM model_stats WHERE sha256 IN ({placeholders})",
-            hashes,
-        ).fetchall()
-        return {row["sha256"]: dict(row) for row in rows}
+        result = {}
+        chunk_size = 500
+        for i in range(0, len(hashes), chunk_size):
+            chunk = hashes[i:i + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"SELECT * FROM model_stats WHERE sha256 IN ({placeholders})",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                result[row["sha256"]] = dict(row)
+        return result
 
     def get_all(self) -> dict[str, dict]:
         """Return all stats keyed by sha256."""
@@ -154,3 +160,5 @@ class CivitaiStatsDB:
         if self._conn:
             self._conn.close()
             self._conn = None
+        if CivitaiStatsDB._instance is self:
+            CivitaiStatsDB._instance = None

@@ -263,9 +263,13 @@ class ModelCache:
             with_stats = [item for item in data if item.get('sha256', '') in all_stats]
             without_stats = [item for item in data if item.get('sha256', '') not in all_stats]
             with_stats.sort(
-                key=lambda x: all_stats.get(x.get('sha256', ''), {}).get(stats_field, 0),
+                key=lambda x: (
+                    all_stats.get(x.get('sha256', ''), {}).get(stats_field, 0),
+                    self._get_display_name(x).lower(),
+                ),
                 reverse=reverse,
             )
+            without_stats.sort(key=lambda x: self._get_display_name(x).lower())
             result = with_stats + without_stats
         else:
             # Fallback: no sort

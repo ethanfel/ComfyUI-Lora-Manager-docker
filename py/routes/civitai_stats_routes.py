@@ -83,6 +83,11 @@ class CivitaiStatsRoutes:
             hashes = body.get("hashes", [])
         except Exception:
             return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
+        if not isinstance(hashes, list) or len(hashes) > 5000:
+            return web.json_response(
+                {"success": False, "error": "Invalid or too many hashes (max 5000)"},
+                status=400,
+            )
         if not hashes:
             return web.json_response({"success": True, "stats": {}})
         db = CivitaiStatsDB.get_instance()
