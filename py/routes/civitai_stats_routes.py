@@ -113,16 +113,33 @@ class CivitaiStatsRoutes:
                         "in_stats_db": bool(db_match),
                     }
                     break
-            # Also check: what sha256 is in the DB for the same civitai_model_id?
-            if debug.get("civitai_model_id"):
-                conn = db._ensure_conn()
-                row = conn.execute(
-                    "SELECT sha256, civitai_model_id FROM model_stats WHERE civitai_model_id = ? LIMIT 1",
-                    (debug["civitai_model_id"],),
-                ).fetchone()
-                if row:
-                    debug["db_sha256_for_same_model"] = row["sha256"]
-                    debug["hashes_match"] = row["sha256"] == debug["scanner_sha256"]
+            # Reverse lookup: pick a DB entry, find same model in scanner
+            conn = db._ensure_conn()
+            db_row = conn.execute(
+                "SELECT sha256, civitai_model_id, civitai_version_id FROM model_stats LIMIT 1"
+            ).fetchone()
+            if db_row:
+                db_mid = db_row["civitai_model_id"]
+                db_vid = db_row["civitai_version_id"]
+                db_sha = db_row["sha256"]
+                # Find this model_id in scanner cache
+                scanner_match = None
+                for item in cache.raw_data:
+                    if not item:
+                        continue
+                    c = item.get("civitai") or {}
+                    if c.get("modelId") == db_mid:
+                        scanner_match = {
+                            "sha256": item.get("sha256", ""),
+                            "name": item.get("model_name", "")[:40],
+                        }
+                        break
+                debug["db_entry"] = {
+                    "sha256": db_sha,
+                    "civitai_model_id": db_mid,
+                    "civitai_version_id": db_vid,
+                }
+                debug["scanner_match_for_db_model"] = scanner_match
         except Exception as exc:
             debug = {"error": str(exc)}
 
