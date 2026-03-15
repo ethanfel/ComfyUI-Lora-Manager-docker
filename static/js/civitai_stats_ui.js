@@ -61,6 +61,29 @@
     // ── Stats cache ────────────────────────────────────────────────
     const _statsMap = {};
 
+    // ── Community images cache ──────────────────────────────────────
+    const _communityMap = {};  // sha256 -> [{image}, ...]
+
+    async function fetchCommunityForHashes(hashes) {
+        if (!hashes.length) return;
+        try {
+            const resp = await _origFetch("/api/lm/community-images/by-hashes", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ hashes }),
+            });
+            const data = await resp.json();
+            if (data.success && data.images) {
+                Object.assign(_communityMap, data.images);
+            }
+        } catch (e) {
+            console.debug("[CivitAI Stats] Failed to fetch community images:", e);
+        }
+    }
+
+    // Make community map accessible for modal tab
+    window._lmCommunityMap = _communityMap;
+
     // Fetch stats for a batch of hashes from local DB
     async function fetchStatsForHashes(hashes) {
         if (!hashes.length) return;
@@ -94,6 +117,7 @@
                 if (hashes.length > 0) {
                     // Fire and forget — cards will be patched when data arrives
                     fetchStatsForHashes(hashes).then(() => patchCards());
+                    fetchCommunityForHashes(hashes).then(() => patchCards());
                 }
             } catch (e) { /* ignore parse errors */ }
         }
@@ -105,22 +129,30 @@
         const cards = document.querySelectorAll(".model-card:not([data-stats-patched])");
         cards.forEach((card) => {
             const sha = card.dataset.sha256;
-            if (!sha || !_statsMap[sha]) return;
+            if (!sha || (!_statsMap[sha] && !_communityMap[sha])) return;
 
             card.setAttribute("data-stats-patched", "1");
 
             const stats = _statsMap[sha];
+            const communityImages = _communityMap[sha];
             const container = document.createElement("div");
             container.className = "lm-stat-badges";
 
-            const dlBadge = createStatBadge("download", stats.download_count, "Downloads");
-            const ratingBadge = createStatBadge("star",
-                stats.rating ? Number(stats.rating.toFixed(1)) : null, "Rating");
-            const thumbsBadge = createStatBadge("thumbs-up", stats.thumbs_up_count, "Likes");
+            if (stats) {
+                const dlBadge = createStatBadge("download", stats.download_count, "Downloads");
+                const ratingBadge = createStatBadge("star",
+                    stats.rating ? Number(stats.rating.toFixed(1)) : null, "Rating");
+                const thumbsBadge = createStatBadge("thumbs-up", stats.thumbs_up_count, "Likes");
 
-            [dlBadge, ratingBadge, thumbsBadge].forEach((b) => {
-                if (b) container.appendChild(b);
-            });
+                [dlBadge, ratingBadge, thumbsBadge].forEach((b) => {
+                    if (b) container.appendChild(b);
+                });
+            }
+
+            if (communityImages && communityImages.length > 0) {
+                const communityBadge = createStatBadge("images", communityImages.length, "Community Creations");
+                if (communityBadge) container.appendChild(communityBadge);
+            }
 
             if (container.children.length > 0) {
                 const modelInfo = card.querySelector(".model-info");
