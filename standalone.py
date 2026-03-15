@@ -323,6 +323,7 @@ class StandaloneLoraManager(LoraManager):
         from py.routes.preview_routes import PreviewRoutes
         from py.routes.stats_routes import StatsRoutes
         from py.routes.civitai_stats_routes import CivitaiStatsRoutes
+        from py.routes.community_images_routes import CommunityImagesRoutes
         from py.services.websocket_manager import ws_manager
 
         register_default_model_types()
@@ -340,6 +341,7 @@ class StandaloneLoraManager(LoraManager):
         ExampleImagesRoutes.setup_routes(app, ws_manager=ws_manager)
         PreviewRoutes.setup_routes(app)
         CivitaiStatsRoutes.setup_routes(app)
+        CommunityImagesRoutes.setup_routes(app)
 
         # Setup WebSocket routes that are shared across all model types
         app.router.add_get("/ws/fetch-progress", ws_manager.handle_connection)

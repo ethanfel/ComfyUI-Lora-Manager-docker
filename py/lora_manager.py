@@ -27,6 +27,7 @@ from .routes.update_routes import UpdateRoutes
 from .routes.misc_routes import MiscRoutes
 from .routes.preview_routes import PreviewRoutes
 from .routes.civitai_stats_routes import CivitaiStatsRoutes
+from .routes.community_images_routes import CommunityImagesRoutes
 from .routes.example_images_routes import ExampleImagesRoutes
 from .services.service_registry import ServiceRegistry
 from .services.settings_manager import get_settings_manager
@@ -171,6 +172,10 @@ class LoraManager:
             CivitaiStatsRoutes.setup_routes(app)
         except Exception:
             logger.exception("Failed to register CivitAI stats routes")
+        try:
+            CommunityImagesRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register community images routes")
 
         # Setup WebSocket routes that are shared across all model types
         app.router.add_get("/ws/fetch-progress", ws_manager.handle_connection)
