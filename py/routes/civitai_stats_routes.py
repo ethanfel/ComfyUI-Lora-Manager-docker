@@ -26,16 +26,21 @@ class CivitaiStatsRoutes:
 
             # Collect all models with modelId from all scanners
             models = []
-            for getter in [
+            scanner_names = ["lora", "checkpoint", "embedding"]
+            for name, getter in zip(scanner_names, [
                 ServiceRegistry.get_lora_scanner,
                 ServiceRegistry.get_checkpoint_scanner,
                 ServiceRegistry.get_embedding_scanner,
-            ]:
+            ]):
                 try:
                     scanner = await getter()
                     cache = await scanner.get_cached_data()
+                    count_before = len(models)
+                    total_items = len(cache.raw_data) if cache.raw_data else 0
                     for item in cache.raw_data:
-                        civitai = item.get("civitai", {})
+                        if not item:
+                            continue
+                        civitai = item.get("civitai") or {}
                         model_id = civitai.get("modelId")
                         version_id = civitai.get("id")  # civitai version id
                         sha256 = item.get("sha256")
@@ -45,8 +50,11 @@ class CivitaiStatsRoutes:
                                 "civitai_model_id": model_id,
                                 "civitai_version_id": version_id,
                             })
+                    added = len(models) - count_before
+                    logger.info("Scanner %s: %d total items, %d with civitai modelId",
+                                name, total_items, added)
                 except Exception as exc:
-                    logger.debug("Failed to get scanner data: %s", exc)
+                    logger.info("Failed to get %s scanner data: %s", name, exc)
 
             # Log collection summary for debugging
             with_vid = sum(1 for m in models if m.get("civitai_version_id"))
