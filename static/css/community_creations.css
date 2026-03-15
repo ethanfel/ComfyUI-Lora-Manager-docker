@@ -357,7 +357,7 @@ a.community-resource-tag:hover {
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    color: var(--accent-color, #7c3aed);
+    color: var(--text-secondary, rgba(255,255,255,0.6));
     text-decoration: none;
     font-size: 14px;
     font-weight: 600;
