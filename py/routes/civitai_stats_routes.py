@@ -182,6 +182,29 @@ class CivitaiStatsRoutes:
                      [h[:16] for h in hashes[:3]])
         stats = db.get_by_hashes(hashes)
         logger.info("by-hashes result: %d matches out of %d queried", len(stats), len(hashes))
+
+        # One-shot diagnostic: check first queried hash against scanner raw_data
+        if not stats and hashes:
+            try:
+                scanner = await ServiceRegistry.get_lora_scanner()
+                cache = await scanner.get_cached_data()
+                test_hash = hashes[0]
+                found_in_cache = None
+                for item in cache.raw_data:
+                    if not item:
+                        continue
+                    if item.get("sha256") == test_hash:
+                        c = item.get("civitai") or {}
+                        found_in_cache = {
+                            "name": item.get("model_name", "")[:30],
+                            "has_civitai": bool(c.get("modelId")),
+                            "model_id": c.get("modelId"),
+                        }
+                        break
+                logger.info("DIAG: hash %s in scanner cache? %s", test_hash[:16],
+                            found_in_cache if found_in_cache else "NOT FOUND")
+            except Exception as exc:
+                logger.info("DIAG error: %s", exc)
         # Convert for JSON (remove fetched_at internal field)
         clean = {}
         for sha, data in stats.items():
