@@ -194,7 +194,7 @@ async def test_fetch_images_for_model(community_db, tmp_path):
     with patch.object(
         service, "_fetch_images_api", new_callable=AsyncMock, return_value=api_response
     ), patch.object(
-        service, "_download_image", new_callable=AsyncMock, return_value="abc123/community/2.jpg"
+        service, "_download_image", new_callable=AsyncMock, return_value=("abc123/community/2.webp", False)
     ):
         count = await service.fetch_images_for_model(
             sha256="abc123",
@@ -210,7 +210,7 @@ async def test_fetch_images_for_model(community_db, tmp_path):
     assert "abc123" in result
     assert len(result["abc123"]) == 1
     assert result["abc123"][0]["civitai_image_id"] == 2
-    assert result["abc123"][0]["local_filename"] == "abc123/community/2.jpg"
+    assert result["abc123"][0]["local_filename"] == "abc123/community/2.webp"
 
     await service.close()
 

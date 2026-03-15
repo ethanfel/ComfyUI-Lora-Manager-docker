@@ -228,7 +228,9 @@ function createCard(img, sha256) {
                     ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
                     ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${img.comment_count}</span>` : ""}
                 </div>
-                <span class="community-card-user">${escapeHtml(img.username || "")}</span>
+                <span class="community-card-user">
+                    ${img.has_workflow ? '<i class="fas fa-project-diagram" title="Has workflow"></i> ' : ""}${escapeHtml(img.username || "")}
+                </span>
             </div>
         </div>
     `;
@@ -287,6 +289,13 @@ function showDetail(img, sha256) {
                     by ${escapeHtml(img.username || "unknown")}
                     ${img.created_at ? ` &middot; ${new Date(img.created_at).toLocaleDateString()}` : ""}
                 </div>
+                ${img.has_workflow ? `
+                <div class="community-detail-actions" style="margin-top:12px;">
+                    <button class="workflow-btn" data-image-id="${img.civitai_image_id}" title="Download ComfyUI workflow">
+                        <i class="fas fa-project-diagram"></i> Download Workflow
+                    </button>
+                </div>
+                ` : ""}
             </div>
         </div>
     `;
@@ -302,6 +311,35 @@ function showDetail(img, sha256) {
                     copyBtn.innerHTML = '<i class="fas fa-copy"></i> Copy';
                 }, 2000);
             });
+        });
+    }
+
+    // Workflow download handler
+    const workflowBtn = overlay.querySelector(".workflow-btn");
+    if (workflowBtn) {
+        workflowBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            const imageId = workflowBtn.dataset.imageId;
+            try {
+                const resp = await fetch(`/api/lm/community-images/workflow/${imageId}`);
+                const data = await resp.json();
+                if (data.success && data.data) {
+                    // Download the workflow portion as JSON file
+                    const workflow = data.data.workflow || data.data;
+                    const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: "application/json" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `workflow_${imageId}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } else {
+                    alert("No workflow found for this image.");
+                }
+            } catch (err) {
+                console.error("[Community] Failed to fetch workflow:", err);
+                alert("Failed to download workflow.");
+            }
         });
     }
 

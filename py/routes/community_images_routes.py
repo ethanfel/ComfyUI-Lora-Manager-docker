@@ -1,7 +1,10 @@
 """Route registrar for Community Creations endpoints."""
 from __future__ import annotations
 
+import json
 import logging
+import os
+
 import jinja2
 from aiohttp import web
 
@@ -291,6 +294,47 @@ class CommunityImagesRoutes:
         return web.json_response({"success": True, "images": clean})
 
     @staticmethod
+    async def handle_workflow(request: web.Request) -> web.Response:
+        """GET /api/lm/community-images/workflow/{image_id} — return workflow JSON."""
+        try:
+            image_id = int(request.match_info["image_id"])
+        except (KeyError, ValueError):
+            return web.json_response(
+                {"success": False, "error": "Invalid image ID"}, status=400
+            )
+
+        db = CommunityImagesDB.get_instance()
+        conn = db._ensure_conn()
+        row = conn.execute(
+            "SELECT sha256 FROM community_images WHERE civitai_image_id = ?",
+            (image_id,),
+        ).fetchone()
+        if not row:
+            return web.json_response(
+                {"success": False, "error": "Image not found"}, status=404
+            )
+
+        from ..utils.example_images_paths import get_model_folder
+        model_folder = get_model_folder(row["sha256"])
+        if not model_folder:
+            return web.json_response(
+                {"success": False, "error": "Model folder not found"}, status=404
+            )
+
+        workflow_path = os.path.join(
+            model_folder, "community", f"{image_id}.workflow.json"
+        )
+        if not os.path.exists(workflow_path):
+            return web.json_response(
+                {"success": False, "error": "No workflow found"}, status=404
+            )
+
+        with open(workflow_path, "r", encoding="utf-8") as f:
+            workflow_data = json.load(f)
+
+        return web.json_response({"success": True, "data": workflow_data})
+
+    @staticmethod
     async def handle_status(request: web.Request) -> web.Response:
         """GET /api/lm/community-images/status — DB count."""
         try:
@@ -312,6 +356,9 @@ class CommunityImagesRoutes:
         app.router.add_post("/api/lm/community-images/fetch", cls.handle_fetch)
         app.router.add_get("/api/lm/community-images/by-models", cls.handle_by_models)
         app.router.add_post("/api/lm/community-images/by-hashes", cls.handle_by_hashes)
+        app.router.add_get(
+            "/api/lm/community-images/workflow/{image_id}", cls.handle_workflow
+        )
         app.router.add_get("/api/lm/community-images/status", cls.handle_status)
 
         async def cleanup(app):

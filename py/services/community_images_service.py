@@ -7,6 +7,7 @@ import os
 from collections.abc import Callable
 
 import io
+import json
 
 import aiohttp
 from PIL import Image
@@ -154,22 +155,26 @@ class CommunityImagesFetchService:
 
     async def _download_image(
         self, image_url: str, sha256: str, image_id: int
-    ) -> str | None:
-        """Download image, convert to WebP, resize if needed.
+    ) -> tuple[str | None, bool]:
+        """Download image, convert to WebP, extract workflow if present.
 
-        Saves to {model_folder}/community/{image_id}.webp.
-        Returns relative path from static mount, or None on failure.
+        Saves image to {model_folder}/community/{image_id}.webp.
+        If a ComfyUI workflow is found in PNG metadata, saves it as
+        {image_id}.workflow.json alongside the image.
+
+        Returns (relative_path, has_workflow) or (None, False) on failure.
         """
         model_folder = get_model_folder(sha256)
         rel_path = get_model_relative_path(sha256)
         if not model_folder or not rel_path:
             logger.warning("No model folder for hash %s, skipping download", sha256)
-            return None
+            return None, False
 
         community_dir = os.path.join(model_folder, "community")
         os.makedirs(community_dir, exist_ok=True)
 
         filepath = os.path.join(community_dir, f"{image_id}.webp")
+        has_workflow = False
 
         try:
             session = await self._get_session()
@@ -180,11 +185,28 @@ class CommunityImagesFetchService:
                         image_id,
                         resp.status,
                     )
-                    return None
+                    return None, False
                 data = await resp.read()
 
-            # Convert to WebP with resize
             img = Image.open(io.BytesIO(data))
+
+            # Extract ComfyUI workflow from PNG tEXt chunks
+            workflow_data = {}
+            if hasattr(img, "info") and isinstance(img.info, dict):
+                if "workflow" in img.info:
+                    workflow_data["workflow"] = img.info["workflow"]
+                if "prompt" in img.info:
+                    workflow_data["prompt"] = img.info["prompt"]
+
+            if workflow_data:
+                workflow_path = os.path.join(
+                    community_dir, f"{image_id}.workflow.json"
+                )
+                with open(workflow_path, "w", encoding="utf-8") as f:
+                    json.dump(workflow_data, f)
+                has_workflow = True
+
+            # Convert to WebP with resize
             img.thumbnail(
                 (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
                 Image.LANCZOS,
@@ -197,9 +219,9 @@ class CommunityImagesFetchService:
                 os.remove(old_jpg)
         except Exception as exc:
             logger.warning("Failed to download image %d: %s", image_id, exc)
-            return None
+            return None, False
 
-        return f"{rel_path}/community/{image_id}.webp"
+        return f"{rel_path}/community/{image_id}.webp", has_workflow
 
     async def fetch_images_for_model(
         self,
@@ -227,10 +249,13 @@ class CommunityImagesFetchService:
             if not image_id or not image_url:
                 continue
 
-            local_path = await self._download_image(image_url, sha256, image_id)
+            local_path, has_workflow = await self._download_image(
+                image_url, sha256, image_id
+            )
 
             row = _extract_image_data(item, sha256, civitai_model_id)
             row["local_filename"] = local_path
+            row["has_workflow"] = 1 if has_workflow else 0
             rows.append(row)
 
         if rows:
