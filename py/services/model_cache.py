@@ -251,6 +251,26 @@ class ModelCache:
                 ),
                 reverse=reverse
             )
+        elif sort_key in ('downloads', 'rating', 'thumbsup'):
+            # Sort by CivitAI stats from separate stats DB
+            from .civitai_stats_db import CivitaiStatsDB
+            stats_db = CivitaiStatsDB()
+            try:
+                all_stats = stats_db.get_all()
+            finally:
+                stats_db.close()
+            stats_field = {
+                'downloads': 'download_count',
+                'rating': 'rating',
+                'thumbsup': 'thumbs_up_count',
+            }[sort_key]
+            with_stats = [item for item in data if item.get('sha256', '') in all_stats]
+            without_stats = [item for item in data if item.get('sha256', '') not in all_stats]
+            with_stats.sort(
+                key=lambda x: all_stats.get(x.get('sha256', ''), {}).get(stats_field, 0),
+                reverse=reverse,
+            )
+            result = with_stats + without_stats
         else:
             # Fallback: no sort
             result = list(data)
