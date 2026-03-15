@@ -8,19 +8,9 @@ from ..services.civitai_stats_db import CivitaiStatsDB
 from ..services.civitai_stats_service import CivitaiStatsFetchService
 from ..services.service_registry import ServiceRegistry
 from ..services.settings_manager import get_settings_manager
+from ..services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
-
-# Module-level singleton
-_stats_db: CivitaiStatsDB | None = None
-
-
-def _get_stats_db() -> CivitaiStatsDB:
-    global _stats_db
-    if _stats_db is None:
-        _stats_db = CivitaiStatsDB()
-        _stats_db.init()
-    return _stats_db
 
 
 class CivitaiStatsRoutes:
@@ -29,7 +19,7 @@ class CivitaiStatsRoutes:
     @staticmethod
     async def handle_fetch_stats(request: web.Request) -> web.Response:
         """POST /api/lm/civitai-stats/fetch — trigger bulk CivitAI stats fetch."""
-        db = _get_stats_db()
+        db = CivitaiStatsDB.get_instance()
         settings = get_settings_manager()
         api_key = settings.get("civitai_api_key", "")
 
@@ -59,8 +49,17 @@ class CivitaiStatsRoutes:
             return web.json_response({"success": True, "updated": 0, "total": 0})
 
         service = CivitaiStatsFetchService(db=db, api_key=api_key)
+
+        async def progress_callback(current: int, total: int) -> None:
+            await ws_manager.broadcast({
+                "type": "civitai_stats_progress",
+                "current": current,
+                "total": total,
+                "progress": round(current / total * 100) if total else 0,
+            })
+
         try:
-            updated = await service.fetch_stats_for_models(models)
+            updated = await service.fetch_stats_for_models(models, progress_callback=progress_callback)
         finally:
             await service.close()
 
@@ -69,7 +68,7 @@ class CivitaiStatsRoutes:
     @staticmethod
     async def handle_stats_status(request: web.Request) -> web.Response:
         """GET /api/lm/civitai-stats/status — check stats DB count."""
-        db = _get_stats_db()
+        db = CivitaiStatsDB.get_instance()
         return web.json_response({"success": True, "count": db.count()})
 
     @staticmethod
@@ -86,7 +85,7 @@ class CivitaiStatsRoutes:
             return web.json_response({"success": False, "error": "Invalid JSON"}, status=400)
         if not hashes:
             return web.json_response({"success": True, "stats": {}})
-        db = _get_stats_db()
+        db = CivitaiStatsDB.get_instance()
         stats = db.get_by_hashes(hashes)
         # Convert for JSON (remove fetched_at internal field)
         clean = {}
@@ -108,10 +107,10 @@ class CivitaiStatsRoutes:
 
         # Cleanup on shutdown
         async def cleanup(app):
-            global _stats_db
-            if _stats_db:
-                _stats_db.close()
-                _stats_db = None
+            instance = CivitaiStatsDB._instance
+            if instance:
+                instance.close()
+                CivitaiStatsDB._instance = None
 
         app.on_shutdown.append(cleanup)
         logger.info("CivitAI stats routes registered")

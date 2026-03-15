@@ -35,9 +35,19 @@ def _default_db_path() -> Path:
 class CivitaiStatsDB:
     """Thin wrapper around a SQLite database for CivitAI stats."""
 
+    _instance: CivitaiStatsDB | None = None
+
     def __init__(self, db_path: Path | None = None):
         self._db_path = db_path or _default_db_path()
         self._conn: sqlite3.Connection | None = None
+
+    @classmethod
+    def get_instance(cls) -> CivitaiStatsDB:
+        """Return the singleton instance, creating it if needed."""
+        if cls._instance is None:
+            cls._instance = cls()
+            cls._instance.init()
+        return cls._instance
 
     def init(self) -> None:
         """Create the database and table if they don't exist."""

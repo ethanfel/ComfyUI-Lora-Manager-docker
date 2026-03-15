@@ -252,13 +252,9 @@ class ModelCache:
                 reverse=reverse
             )
         elif sort_key in ('downloads', 'rating', 'thumbsup'):
-            # Sort by CivitAI stats from separate stats DB
+            # Sort by CivitAI stats from separate stats DB (reuse singleton)
             from .civitai_stats_db import CivitaiStatsDB
-            stats_db = CivitaiStatsDB()
-            try:
-                all_stats = stats_db.get_all()
-            finally:
-                stats_db.close()
+            all_stats = CivitaiStatsDB.get_instance().get_all()
             stats_field = {
                 'downloads': 'download_count',
                 'rating': 'rating',
