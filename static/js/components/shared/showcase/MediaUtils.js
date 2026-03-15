@@ -476,9 +476,9 @@ export function initMediaControlHandlers(container) {
 
     // Initialize NSFW level buttons
     initSetNsfwHandlers(container);
-    
-    // Media control visibility is now handled in initMetadataPanelHandlers
-    // Any click handlers or other functionality can still be added here
+
+    // Initialize workflow download buttons
+    initWorkflowDownloadHandlers(container);
 }
 
 /**
@@ -733,6 +733,50 @@ function initSetNsfwHandlers(container) {
                     }
                 },
             });
+        });
+    });
+}
+
+function initWorkflowDownloadHandlers(container) {
+    container.querySelectorAll('.workflow-download-btn').forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            const filename = this.dataset.filename;
+            if (!filename) return;
+
+            // Get model hash from the showcase section
+            const showcase = this.closest('.showcase-section') || this.closest('[data-model-hash]');
+            const hash = showcase?.dataset?.modelHash;
+            if (!hash) {
+                console.error('[Showcase] Cannot find model hash for workflow download');
+                return;
+            }
+
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            this.disabled = true;
+            try {
+                const resp = await fetch(
+                    `/api/lm/example-images/workflow?model_hash=${encodeURIComponent(hash)}&filename=${encodeURIComponent(filename)}`
+                );
+                const data = await resp.json();
+                if (data.success && data.data) {
+                    const workflow = data.data.workflow || data.data;
+                    const blob = new Blob([JSON.stringify(workflow, null, 2)], { type: 'application/json' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `workflow_${filename.replace(/\.[^.]+$/, '')}.json`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                } else {
+                    console.warn('[Showcase] No workflow found');
+                }
+            } catch (err) {
+                console.error('[Showcase] Failed to download workflow:', err);
+            } finally {
+                this.innerHTML = '<i class="fas fa-project-diagram"></i>';
+                this.disabled = false;
+            }
         });
     });
 }

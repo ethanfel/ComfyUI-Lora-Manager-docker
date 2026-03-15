@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import os
 from typing import Callable, Mapping
 
 from aiohttp import web
@@ -60,6 +62,43 @@ class ExampleImagesRoutes:
 
         registrar = ExampleImagesRouteRegistrar(app)
         registrar.register_routes(self.to_route_mapping())
+
+        # Workflow download endpoint (simple file read, not part of handler set)
+        app.router.add_get(
+            "/api/lm/example-images/workflow",
+            self._handle_workflow,
+        )
+
+    @staticmethod
+    async def _handle_workflow(request: web.Request) -> web.Response:
+        """GET /api/lm/example-images/workflow?model_hash=X&filename=Y"""
+        from ..utils.example_images_paths import get_model_folder
+
+        model_hash = request.query.get("model_hash")
+        filename = request.query.get("filename")
+        if not model_hash or not filename:
+            return web.json_response(
+                {"success": False, "error": "Missing model_hash or filename"},
+                status=400,
+            )
+
+        model_folder = get_model_folder(model_hash)
+        if not model_folder:
+            return web.json_response(
+                {"success": False, "error": "Model folder not found"}, status=404
+            )
+
+        base_name = os.path.splitext(filename)[0]
+        workflow_path = os.path.join(model_folder, f"{base_name}.workflow.json")
+        if not os.path.exists(workflow_path):
+            return web.json_response(
+                {"success": False, "error": "No workflow found"}, status=404
+            )
+
+        with open(workflow_path, "r", encoding="utf-8") as f:
+            workflow_data = json.load(f)
+
+        return web.json_response({"success": True, "data": workflow_data})
 
     def to_route_mapping(self) -> Mapping[str, Callable[[web.Request], web.StreamResponse]]:
         """Return the registrar-compatible mapping of handler names to callables."""

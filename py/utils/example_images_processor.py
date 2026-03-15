@@ -1,9 +1,12 @@
+import io
+import json
 import logging
 import os
 import re
 import random
 import string
 from aiohttp import web
+from PIL import Image
 from ..utils.constants import SUPPORTED_MEDIA_EXTENSIONS
 from ..services.service_registry import ServiceRegistry
 from ..services.settings_manager import get_settings_manager
@@ -43,7 +46,31 @@ class ExampleImagesProcessor:
             return f"{base_url}/optimized=true"
 
         return media_url
-    
+
+    @staticmethod
+    def _extract_workflow(content, save_path):
+        """Extract ComfyUI workflow from image content and save as sidecar JSON.
+
+        Returns True if a workflow was found and saved.
+        """
+        try:
+            img = Image.open(io.BytesIO(content))
+            if not hasattr(img, "info") or not isinstance(img.info, dict):
+                return False
+            workflow_data = {}
+            if "workflow" in img.info:
+                workflow_data["workflow"] = img.info["workflow"]
+            if "prompt" in img.info:
+                workflow_data["prompt"] = img.info["prompt"]
+            if not workflow_data:
+                return False
+            workflow_path = os.path.splitext(save_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(workflow_data, f)
+            return True
+        except Exception:
+            return False
+
     @staticmethod
     def _get_file_extension_from_content_or_headers(content, headers, fallback_url=None, media_type_hint=None):
         """Determine file extension from content magic bytes or headers
@@ -172,7 +199,11 @@ class ExampleImagesProcessor:
                     # Save the file
                     with open(save_path, 'wb') as f:
                         f.write(content)
-                    
+
+                    # Extract workflow from PNG metadata
+                    if is_image and media_ext == '.png':
+                        ExampleImagesProcessor._extract_workflow(content, save_path)
+
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
                     logger.warning(error_msg)
@@ -255,7 +286,11 @@ class ExampleImagesProcessor:
                     # Save the file
                     with open(save_path, 'wb') as f:
                         f.write(content)
-                    
+
+                    # Extract workflow from PNG metadata
+                    if is_image and media_ext == '.png':
+                        ExampleImagesProcessor._extract_workflow(content, save_path)
+
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
                     logger.warning(error_msg)
