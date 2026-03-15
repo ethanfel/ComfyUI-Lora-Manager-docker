@@ -140,6 +140,31 @@ class CommunityImagesRoutes:
             )
 
     @staticmethod
+    async def _get_lora_metadata() -> tuple[list[str], dict[str, str], dict[str, str]]:
+        """Return (hashes, name_map, base_model_map) from the lora scanner."""
+        lora_hashes: list[str] = []
+        name_map: dict[str, str] = {}
+        base_model_map: dict[str, str] = {}
+        try:
+            scanner = await ServiceRegistry.get_lora_scanner()
+            cache = await scanner.get_cached_data()
+            for item in cache.raw_data:
+                if not item:
+                    continue
+                sha256 = item.get("sha256")
+                if sha256:
+                    lora_hashes.append(sha256)
+                    name_map[sha256] = (
+                        item.get("model_name")
+                        or item.get("file_name")
+                        or "Unknown"
+                    )
+                    base_model_map[sha256] = item.get("base_model") or ""
+        except Exception as exc:
+            logger.info("Failed to get lora scanner data: %s", exc)
+        return lora_hashes, name_map, base_model_map
+
+    @staticmethod
     async def handle_by_models(request: web.Request) -> web.Response:
         """GET /api/lm/community-images/by-models — paginated models with images."""
         try:
@@ -151,27 +176,19 @@ class CommunityImagesRoutes:
 
         page_size = min(max(page_size, 1), 50)
         page = max(page, 1)
+        base_model_filter = request.query.get("base_model", "")
 
         try:
-            # Get all lora hashes + names from scanner
-            lora_hashes = []
-            name_map: dict[str, str] = {}
-            try:
-                scanner = await ServiceRegistry.get_lora_scanner()
-                cache = await scanner.get_cached_data()
-                for item in cache.raw_data:
-                    if not item:
-                        continue
-                    sha256 = item.get("sha256")
-                    if sha256:
-                        lora_hashes.append(sha256)
-                        name_map[sha256] = (
-                            item.get("model_name")
-                            or item.get("file_name")
-                            or "Unknown"
-                        )
-            except Exception as exc:
-                logger.info("Failed to get lora scanner data: %s", exc)
+            lora_hashes, name_map, base_model_map = (
+                await CommunityImagesRoutes._get_lora_metadata()
+            )
+
+            # Filter by base model if requested
+            if base_model_filter:
+                lora_hashes = [
+                    h for h in lora_hashes
+                    if base_model_map.get(h, "") == base_model_filter
+                ]
 
             db = CommunityImagesDB.get_instance()
             result = db.get_models_paginated(
@@ -186,7 +203,6 @@ class CommunityImagesRoutes:
             if sort_key == "lora" and result["models"]:
                 direction = sort.split(":")[-1] if ":" in sort else "asc"
                 reverse = direction != "asc"
-                # Re-sort all models by name — need to re-paginate
                 all_hashes = []
                 for i in range(0, len(lora_hashes), 500):
                     chunk = lora_hashes[i : i + 500]
@@ -213,9 +229,20 @@ class CommunityImagesRoutes:
                 models_out.append({
                     "sha256": sha,
                     "model_name": name_map.get(sha, "Unknown"),
+                    "base_model": base_model_map.get(sha, ""),
                     "image_count": len(clean_images),
                     "images": clean_images,
                 })
+
+            # Collect available base models (only those with community images)
+            hashes_with_images = db.get_hashes_with_images(
+                list(base_model_map.keys())
+            )
+            base_model_counts: dict[str, int] = {}
+            for h in hashes_with_images:
+                bm = base_model_map.get(h, "")
+                if bm:
+                    base_model_counts[bm] = base_model_counts.get(bm, 0) + 1
 
             return web.json_response({
                 "success": True,
@@ -224,6 +251,7 @@ class CommunityImagesRoutes:
                 "page_size": page_size,
                 "total_models": result["total"],
                 "total_pages": (result["total"] + page_size - 1) // page_size,
+                "base_models": base_model_counts,
             })
 
         except Exception as exc:

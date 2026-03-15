@@ -1,5 +1,38 @@
 /* static/css/community_creations.css */
 
+/* -- Base model tabs ----------------------------------------------------- */
+.community-base-model-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 0 16px 12px;
+}
+
+.base-model-tab {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.1));
+    border-radius: 20px;
+    background: transparent;
+    color: var(--text-secondary, rgba(255,255,255,0.6));
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.base-model-tab:hover {
+    background: rgba(255,255,255,0.06);
+    color: var(--text-primary, #fff);
+    border-color: var(--accent-color, #7c3aed);
+}
+
+.base-model-tab.active {
+    background: var(--accent-color, #7c3aed);
+    color: #fff;
+    border-color: var(--accent-color, #7c3aed);
+}
+
 /* -- Grid layout --------------------------------------------------------- */
 .community-grid {
     padding: 16px;
@@ -34,6 +67,17 @@
 
 .community-lora-header .lora-link:hover {
     color: var(--accent-color, #7c3aed);
+}
+
+.community-base-tag {
+    display: inline-flex;
+    align-items: center;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 10px;
+    background: var(--accent-color, #7c3aed);
+    color: #fff;
+    font-weight: 500;
 }
 
 .community-cards {

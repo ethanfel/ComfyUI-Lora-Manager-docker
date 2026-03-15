@@ -1,18 +1,21 @@
 /**
  * Community Creations page — card grid of community images grouped by LoRA,
- * paginated by model to avoid loading too much data at once.
+ * filtered by base model tabs and paginated.
  */
 
 // -- State ----------------------------------------------------------------
 let _sortKey = "reactions:desc";
 let _currentPage = 1;
 let _totalPages = 1;
-const PAGE_SIZE = 10;
+let _pageSize = 10;
+let _baseModelFilter = "";  // "" = all
+let _baseModelCounts = {};  // { "Flux.1 D": 12, "Pony": 8, ... }
 
 // -- Init -----------------------------------------------------------------
 async function init() {
     setupFetchButton();
     setupSortSelect();
+    setupPageSizeSelect();
     await loadPage(1);
 }
 
@@ -23,12 +26,27 @@ async function loadPage(page) {
     if (grid) grid.innerHTML = '<div class="community-loading"><i class="fas fa-spinner fa-spin"></i> Loading...</div>';
 
     try {
-        const resp = await fetch(
-            `/api/lm/community-images/by-models?page=${page}&page_size=${PAGE_SIZE}&sort=${encodeURIComponent(_sortKey)}`
-        );
+        let url = `/api/lm/community-images/by-models?page=${page}&page_size=${_pageSize}&sort=${encodeURIComponent(_sortKey)}`;
+        if (_baseModelFilter) {
+            url += `&base_model=${encodeURIComponent(_baseModelFilter)}`;
+        }
+
+        const resp = await fetch(url);
         const data = await resp.json();
 
-        if (!data.success || !data.models || data.models.length === 0) {
+        if (!data.success) {
+            showEmpty();
+            renderPagination(0, 0);
+            return;
+        }
+
+        // Update base model tabs (always from full data, not filtered)
+        if (data.base_models) {
+            _baseModelCounts = data.base_models;
+            renderBaseModelTabs();
+        }
+
+        if (!data.models || data.models.length === 0) {
             showEmpty();
             renderPagination(0, 0);
             return;
@@ -43,6 +61,38 @@ async function loadPage(page) {
         showEmpty();
         renderPagination(0, 0);
     }
+}
+
+// -- Base model tabs ------------------------------------------------------
+function renderBaseModelTabs() {
+    const container = document.getElementById("communityBaseModelTabs");
+    if (!container) return;
+
+    const entries = Object.entries(_baseModelCounts)
+        .sort((a, b) => b[1] - a[1]);  // sort by count desc
+
+    if (entries.length <= 1) {
+        container.innerHTML = "";
+        return;
+    }
+
+    // Total count across all base models
+    const totalCount = entries.reduce((sum, [, count]) => sum + count, 0);
+
+    let html = `<button class="base-model-tab ${!_baseModelFilter ? "active" : ""}" data-base-model="">All (${totalCount})</button>`;
+    for (const [name, count] of entries) {
+        const active = _baseModelFilter === name ? "active" : "";
+        html += `<button class="base-model-tab ${active}" data-base-model="${escapeHtml(name)}">${escapeHtml(name)} (${count})</button>`;
+    }
+
+    container.innerHTML = html;
+
+    container.querySelectorAll(".base-model-tab").forEach((btn) => {
+        btn.addEventListener("click", () => {
+            _baseModelFilter = btn.dataset.baseModel;
+            loadPage(1);
+        });
+    });
 }
 
 // -- Render grid ----------------------------------------------------------
@@ -61,7 +111,11 @@ function renderGrid(models) {
         // Header
         const header = document.createElement("div");
         header.className = "community-lora-header";
+        const baseTag = model.base_model
+            ? `<span class="community-base-tag">${escapeHtml(model.base_model)}</span>`
+            : "";
         header.innerHTML = `<h3>${escapeHtml(model.model_name)}</h3>
+            ${baseTag}
             <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>`;
         section.appendChild(header);
 
@@ -106,7 +160,7 @@ function renderPagination(currentPage, totalPages) {
         <i class="fas fa-chevron-left"></i>
     </button>`;
 
-    // Page numbers — show up to 7 with ellipsis
+    // Page numbers
     const pages = buildPageNumbers(currentPage, totalPages);
     for (const p of pages) {
         if (p === "...") {
@@ -123,7 +177,6 @@ function renderPagination(currentPage, totalPages) {
 
     pager.innerHTML = html;
 
-    // Bind click handlers
     pager.querySelectorAll(".page-btn:not([disabled])").forEach((btn) => {
         btn.addEventListener("click", () => {
             const p = parseInt(btn.dataset.page, 10);
@@ -316,6 +369,16 @@ function setupSortSelect() {
     if (!select) return;
     select.addEventListener("change", () => {
         _sortKey = select.value;
+        loadPage(1);
+    });
+}
+
+// -- Page size select -----------------------------------------------------
+function setupPageSizeSelect() {
+    const select = document.getElementById("communityPageSizeSelect");
+    if (!select) return;
+    select.addEventListener("change", () => {
+        _pageSize = parseInt(select.value, 10) || 10;
         loadPage(1);
     });
 }
