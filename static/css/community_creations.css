@@ -366,7 +366,7 @@ a.community-resource-tag:hover {
     white-space: pre-wrap;
     word-break: break-word;
     position: relative;
-    max-height: 150px;
+    max-height: 250px;
     overflow-y: auto;
 }
 
