@@ -1,5 +1,65 @@
 /* static/css/community_creations.css */
 
+/* -- Fetch dropdown ------------------------------------------------------ */
+.community-fetch-group {
+    position: relative;
+    display: inline-flex !important;
+    align-items: stretch;
+}
+
+.community-fetch-group > #fetchCommunityBtn {
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.fetch-dropdown-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+    border-left: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+}
+
+.fetch-dropdown-toggle i {
+    font-size: 10px;
+}
+
+.fetch-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin-top: 4px;
+    min-width: 100%;
+    background: var(--card-bg, #1e1e2e);
+    border: 1px solid var(--border-color, rgba(255,255,255,0.12));
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    z-index: 100;
+    overflow: hidden;
+}
+
+.fetch-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 14px;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary, rgba(255,255,255,0.7));
+    font-size: 13px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.fetch-dropdown-item:hover {
+    background: rgba(255,255,255,0.08);
+    color: var(--text-primary, #fff);
+}
+
 /* -- Base model tabs ----------------------------------------------------- */
 .community-base-model-tabs {
     display: flex;

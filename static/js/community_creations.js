@@ -354,14 +354,32 @@ function showDetail(img, sha256) {
 function setupFetchButton() {
     const fetchBtn = document.getElementById("fetchCommunityBtn");
     const refetchBtn = document.getElementById("refetchCommunityBtn");
+    const dropdownToggle = document.getElementById("fetchDropdownToggle");
+    const dropdownMenu = document.getElementById("fetchDropdownMenu");
 
     if (fetchBtn) {
         fetchBtn.addEventListener("click", () => doFetch(fetchBtn, false));
     }
+
+    // Dropdown toggle
+    if (dropdownToggle && dropdownMenu) {
+        dropdownToggle.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const open = dropdownMenu.style.display !== "none";
+            dropdownMenu.style.display = open ? "none" : "";
+        });
+        // Close on outside click
+        document.addEventListener("click", () => {
+            dropdownMenu.style.display = "none";
+        });
+        dropdownMenu.addEventListener("click", (e) => e.stopPropagation());
+    }
+
     if (refetchBtn) {
         refetchBtn.addEventListener("click", () => {
+            if (dropdownMenu) dropdownMenu.style.display = "none";
             if (!confirm("Re-fetch all community images? This will re-download and convert all images to WebP.")) return;
-            doFetch(refetchBtn, true);
+            doFetch(fetchBtn || refetchBtn, true);
         });
     }
 }

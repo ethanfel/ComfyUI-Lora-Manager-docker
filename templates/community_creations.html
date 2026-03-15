@@ -8,15 +8,20 @@
 <div class="controls">
     <div class="actions">
         <div class="action-buttons">
-            <div class="control-group">
+            <div class="control-group community-fetch-group">
                 <button id="fetchCommunityBtn" data-action="fetch-community"
                         title="Fetch community images from CivitAI">
                     <i class="fas fa-images"></i> <span>Fetch Community Images</span>
                 </button>
-                <button id="refetchCommunityBtn" data-action="refetch-community"
-                        title="Re-fetch all community images (converts to WebP)">
-                    <i class="fas fa-sync-alt"></i> <span>Re-fetch All</span>
+                <button id="fetchDropdownToggle" class="fetch-dropdown-toggle"
+                        title="More fetch options">
+                    <i class="fas fa-chevron-down"></i>
                 </button>
+                <div id="fetchDropdownMenu" class="fetch-dropdown-menu" style="display:none;">
+                    <button id="refetchCommunityBtn" class="fetch-dropdown-item">
+                        <i class="fas fa-sync-alt"></i> Re-fetch All
+                    </button>
+                </div>
             </div>
             <div class="control-group">
                 <select id="communitySortSelect" title="Sort community images">
