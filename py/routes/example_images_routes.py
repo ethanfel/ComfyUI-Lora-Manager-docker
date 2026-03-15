@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -88,21 +89,42 @@ class ExampleImagesRoutes:
                 status=400,
             )
 
+        # Reject path traversal attempts
+        base_name = os.path.basename(filename)
+        if not base_name or base_name != filename:
+            return web.json_response(
+                {"success": False, "error": "Invalid filename"}, status=400
+            )
+
         model_folder = get_model_folder(model_hash)
         if not model_folder:
             return web.json_response(
                 {"success": False, "error": "Model folder not found"}, status=404
             )
 
-        base_name = os.path.splitext(filename)[0]
-        workflow_path = os.path.join(model_folder, f"{base_name}.workflow.json")
+        stem = os.path.splitext(base_name)[0]
+        workflow_path = os.path.realpath(
+            os.path.join(model_folder, f"{stem}.workflow.json")
+        )
+        # Ensure resolved path stays inside the model folder
+        if not workflow_path.startswith(os.path.realpath(model_folder) + os.sep):
+            return web.json_response(
+                {"success": False, "error": "Invalid filename"}, status=400
+            )
+
         if not os.path.exists(workflow_path):
             return web.json_response(
                 {"success": False, "error": "No workflow found"}, status=404
             )
 
-        with open(workflow_path, "r", encoding="utf-8") as f:
-            workflow_data = json.load(f)
+        try:
+            with open(workflow_path, "r", encoding="utf-8") as f:
+                workflow_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read workflow file %s: %s", workflow_path, exc)
+            return web.json_response(
+                {"success": False, "error": "Workflow file is corrupted"}, status=500
+            )
 
         return web.json_response({"success": True, "data": workflow_data})
 
@@ -118,7 +140,9 @@ class ExampleImagesRoutes:
                 status=400,
             )
 
-        result = ExampleImagesProcessor.scan_existing_workflows(root)
+        result = await asyncio.to_thread(
+            ExampleImagesProcessor.scan_existing_workflows, root
+        )
         return web.json_response({
             "success": True,
             "scanned": result["scanned"],

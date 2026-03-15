@@ -48,6 +48,25 @@ class ExampleImagesProcessor:
         return media_url
 
     @staticmethod
+    def _parse_workflow_from_image(img):
+        """Extract workflow/prompt metadata from a PIL Image's info dict.
+
+        Returns a dict with parsed JSON data, or None if no metadata found.
+        PNG tEXt chunks store these as JSON strings, so we parse them.
+        """
+        if not hasattr(img, "info") or not isinstance(img.info, dict):
+            return None
+        workflow_data = {}
+        for key in ("workflow", "prompt"):
+            if key in img.info:
+                raw = img.info[key]
+                try:
+                    workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    workflow_data[key] = raw
+        return workflow_data or None
+
+    @staticmethod
     def _extract_workflow(content, save_path):
         """Extract ComfyUI workflow from image content and save as sidecar JSON.
 
@@ -55,13 +74,10 @@ class ExampleImagesProcessor:
         """
         try:
             img = Image.open(io.BytesIO(content))
-            if not hasattr(img, "info") or not isinstance(img.info, dict):
-                return False
-            workflow_data = {}
-            if "workflow" in img.info:
-                workflow_data["workflow"] = img.info["workflow"]
-            if "prompt" in img.info:
-                workflow_data["prompt"] = img.info["prompt"]
+            try:
+                workflow_data = ExampleImagesProcessor._parse_workflow_from_image(img)
+            finally:
+                img.close()
             if not workflow_data:
                 return False
             workflow_path = os.path.splitext(save_path)[0] + ".workflow.json"
@@ -79,13 +95,10 @@ class ExampleImagesProcessor:
         """
         try:
             img = Image.open(file_path)
-            if not hasattr(img, "info") or not isinstance(img.info, dict):
-                return False
-            workflow_data = {}
-            if "workflow" in img.info:
-                workflow_data["workflow"] = img.info["workflow"]
-            if "prompt" in img.info:
-                workflow_data["prompt"] = img.info["prompt"]
+            try:
+                workflow_data = ExampleImagesProcessor._parse_workflow_from_image(img)
+            finally:
+                img.close()
             if not workflow_data:
                 return False
             workflow_path = os.path.splitext(file_path)[0] + ".workflow.json"
