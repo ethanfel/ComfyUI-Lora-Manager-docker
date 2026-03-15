@@ -31,15 +31,17 @@ class ExampleImagesProcessor:
         return ''.join(random.choice(chars) for _ in range(length))
     
     @staticmethod
-    def get_civitai_optimized_url(media_url):
-        """Convert Civitai media URL (image or video) to its optimized version"""
+    def get_civitai_optimized_url(media_url, media_type=None):
+        """Convert Civitai media URL (image or video) to its optimized version."""
         base_pattern = r'(https://image\.civitai\.com/[^/]+/[^/]+)'
         match = re.match(base_pattern, media_url)
-        
+
         if match:
             base_url = match.group(1)
+            if (media_type or "").lower() == "video":
+                return f"{base_url}/transcode=true,optimized=true"
             return f"{base_url}/optimized=true"
-        
+
         return media_url
     
     @staticmethod
@@ -131,7 +133,7 @@ class ExampleImagesProcessor:
             # Apply optimization for Civitai URLs if enabled
             original_url = image_url
             if optimize and 'civitai.com' in image_url:
-                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url)
+                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url, image.get("type"))
             
             # Download the file first to determine the actual file type
             try:
@@ -214,7 +216,7 @@ class ExampleImagesProcessor:
             # Apply optimization for Civitai URLs if enabled
             original_url = image_url
             if optimize and 'civitai.com' in image_url:
-                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url)
+                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url, image.get("type"))
             
             # Download the file first to determine the actual file type
             try:
