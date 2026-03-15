@@ -4,7 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from typing import Callable, Optional
+from collections.abc import Callable
 
 import aiohttp
 
@@ -62,7 +62,7 @@ def _extract_image_data(
     """Convert a CivitAI API image item to DB row format."""
     stats = item.get("stats") or {}
     meta = item.get("meta") or {}
-    inner_meta = meta.get("meta") or {} if isinstance(meta, dict) else {}
+    inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
 
     return {
         "civitai_image_id": item.get("id"),
@@ -110,7 +110,7 @@ class CommunityImagesFetchService:
         return self._session
 
     async def _fetch_images_api(
-        self, model_id: int, _retries: int = 2
+        self, model_id: int, retries: int = 2
     ) -> dict | None:
         """GET /api/v1/images with retries and 429 backoff."""
         url = f"{_CIVITAI_API}/images"
@@ -120,7 +120,7 @@ class CommunityImagesFetchService:
             "limit": "20",
         }
         session = await self._get_session()
-        for attempt in range(_retries + 1):
+        for attempt in range(retries + 1):
             try:
                 async with session.get(url, params=params) as resp:
                     if resp.status == 429:
@@ -155,15 +155,15 @@ class CommunityImagesFetchService:
         Returns relative path from static mount, or None on failure.
         """
         model_folder = get_model_folder(sha256)
-        if not model_folder:
+        rel_path = get_model_relative_path(sha256)
+        if not model_folder or not rel_path:
             logger.warning("No model folder for hash %s, skipping download", sha256)
             return None
 
         community_dir = os.path.join(model_folder, "community")
         os.makedirs(community_dir, exist_ok=True)
 
-        filename = f"{image_id}.jpg"
-        filepath = os.path.join(community_dir, filename)
+        filepath = os.path.join(community_dir, f"{image_id}.jpg")
 
         try:
             session = await self._get_session()
@@ -182,9 +182,6 @@ class CommunityImagesFetchService:
             logger.warning("Failed to download image %d: %s", image_id, exc)
             return None
 
-        rel_path = get_model_relative_path(sha256)
-        if not rel_path:
-            return None
         return f"{rel_path}/community/{image_id}.jpg"
 
     async def fetch_images_for_model(
@@ -227,7 +224,7 @@ class CommunityImagesFetchService:
     async def fetch_all(
         self,
         models: list[dict],
-        progress_callback: Optional[Callable] = None,
+        progress_callback: Callable | None = None,
     ) -> int:
         """Bulk fetch community images with rate limiting.
 

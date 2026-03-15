@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from py.services.community_images_service import (
     filter_community_images,
@@ -211,5 +211,42 @@ async def test_fetch_images_for_model(community_db, tmp_path):
     assert len(result["abc123"]) == 1
     assert result["abc123"][0]["civitai_image_id"] == 2
     assert result["abc123"][0]["local_filename"] == "abc123/community/2.jpg"
+
+    await service.close()
+
+
+def test_extract_image_data_missing_fields():
+    """Should handle items with missing stats, meta, or None values gracefully."""
+    item = {"id": 99, "username": "u", "url": "https://x.com/i.jpg"}
+    result = _extract_image_data(item, "hash1", 10)
+    assert result["civitai_image_id"] == 99
+    assert result["prompt"] is None
+    assert result["like_count"] == 0
+    assert result["steps"] is None
+    assert result["base_model"] is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_all(community_db):
+    """Should iterate models, skip invalid entries, rate limit, and report progress."""
+    models = [
+        {"sha256": "h1", "civitai_model_id": 1, "author_username": "a1"},
+        {"sha256": None, "civitai_model_id": 2, "author_username": "a2"},  # skipped
+        {"sha256": "h3", "civitai_model_id": 3, "author_username": "a3"},
+    ]
+    service = CommunityImagesFetchService(db=community_db)
+    progress_calls = []
+
+    async def track_progress(current, total):
+        progress_calls.append((current, total))
+
+    with patch.object(
+        service, "fetch_images_for_model", new_callable=AsyncMock, return_value=2
+    ), patch("py.services.community_images_service.asyncio.sleep", new_callable=AsyncMock):
+        total = await service.fetch_all(models, progress_callback=track_progress)
+
+    # h1 and h3 fetched (2 each), skipped model returns 0 but progress still called
+    assert total == 4
+    assert progress_calls == [(1, 3), (2, 3), (3, 3)]
 
     await service.close()
