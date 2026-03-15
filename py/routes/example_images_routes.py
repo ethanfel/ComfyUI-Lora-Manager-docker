@@ -79,6 +79,7 @@ class ExampleImagesRoutes:
     @staticmethod
     async def _handle_workflow(request: web.Request) -> web.Response:
         """GET /api/lm/example-images/workflow?model_hash=X&filename=Y"""
+        import re
         from ..utils.example_images_paths import get_model_folder
 
         model_hash = request.query.get("model_hash")
@@ -87,6 +88,12 @@ class ExampleImagesRoutes:
             return web.json_response(
                 {"success": False, "error": "Missing model_hash or filename"},
                 status=400,
+            )
+
+        # Validate model_hash is a hex string
+        if not re.fullmatch(r"[a-fA-F0-9]{64}", model_hash):
+            return web.json_response(
+                {"success": False, "error": "Invalid model_hash"}, status=400
             )
 
         # Reject path traversal attempts

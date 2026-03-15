@@ -85,6 +85,7 @@ class ExampleImagesProcessor:
                 json.dump(workflow_data, f)
             return True
         except Exception:
+            logger.debug("Failed to extract workflow for %s", save_path, exc_info=True)
             return False
 
     @staticmethod
