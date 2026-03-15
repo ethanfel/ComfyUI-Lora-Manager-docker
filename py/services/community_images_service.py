@@ -190,6 +190,11 @@ class CommunityImagesFetchService:
                 Image.LANCZOS,
             )
             img.save(filepath, "webp", quality=_WEBP_QUALITY)
+
+            # Remove old .jpg if it exists (migration from pre-WebP format)
+            old_jpg = os.path.join(community_dir, f"{image_id}.jpg")
+            if os.path.exists(old_jpg):
+                os.remove(old_jpg)
         except Exception as exc:
             logger.warning("Failed to download image %d: %s", image_id, exc)
             return None

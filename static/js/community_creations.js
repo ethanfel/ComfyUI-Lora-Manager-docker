@@ -311,56 +311,74 @@ function showDetail(img, sha256) {
     document.addEventListener("keydown", escHandler);
 }
 
-// -- Fetch button ---------------------------------------------------------
+// -- Fetch buttons --------------------------------------------------------
 function setupFetchButton() {
-    const btn = document.getElementById("fetchCommunityBtn");
-    if (!btn) return;
+    const fetchBtn = document.getElementById("fetchCommunityBtn");
+    const refetchBtn = document.getElementById("refetchCommunityBtn");
 
-    btn.addEventListener("click", async () => {
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
+    if (fetchBtn) {
+        fetchBtn.addEventListener("click", () => doFetch(fetchBtn, false));
+    }
+    if (refetchBtn) {
+        refetchBtn.addEventListener("click", () => {
+            if (!confirm("Re-fetch all community images? This will re-download and convert all images to WebP.")) return;
+            doFetch(refetchBtn, true);
+        });
+    }
+}
 
-        let ws = null;
-        try {
-            const proto = location.protocol === "https:" ? "wss:" : "ws:";
-            ws = new WebSocket(`${proto}//${location.host}/ws/fetch-progress`);
-            ws.onmessage = (e) => {
-                try {
-                    const msg = JSON.parse(e.data);
-                    if (msg.type === "community_images_progress") {
-                        btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}</span>`;
-                    }
-                } catch {}
-            };
-        } catch {}
+async function doFetch(btn, force) {
+    const defaultIcon = force ? "fa-sync-alt" : "fa-images";
+    const defaultLabel = force ? "Re-fetch All" : "Fetch Community Images";
 
-        try {
-            const resp = await fetch("/api/lm/community-images/fetch", { method: "POST" });
-            const data = await resp.json();
-            if (ws) ws.close();
-            if (data.success) {
-                const count = data.stored || 0;
-                btn.innerHTML = `<i class="fas fa-check"></i> <span>${count} images saved</span>`;
-                setTimeout(() => {
-                    btn.innerHTML = '<i class="fas fa-images"></i> <span>Fetch Community Images</span>';
-                    btn.disabled = false;
-                }, 3000);
-                await loadPage(1);
-            } else {
-                throw new Error(data.error || "Unknown error");
-            }
-        } catch (err) {
-            if (ws) ws.close();
-            btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error</span>';
-            btn.title = err.message || String(err);
-            console.error("[Community] Fetch failed:", err);
-            setTimeout(() => {
-                btn.innerHTML = '<i class="fas fa-images"></i> <span>Fetch Community Images</span>';
-                btn.title = "Fetch community images from CivitAI";
-                btn.disabled = false;
-            }, 5000);
+    btn.disabled = true;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
+
+    let ws = null;
+    try {
+        const proto = location.protocol === "https:" ? "wss:" : "ws:";
+        ws = new WebSocket(`${proto}//${location.host}/ws/fetch-progress`);
+        ws.onmessage = (e) => {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === "community_images_progress") {
+                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}</span>`;
+                }
+            } catch {}
+        };
+    } catch {}
+
+    try {
+        const fetchOpts = { method: "POST" };
+        if (force) {
+            fetchOpts.headers = { "Content-Type": "application/json" };
+            fetchOpts.body = JSON.stringify({ force: true });
         }
-    });
+        const resp = await fetch("/api/lm/community-images/fetch", fetchOpts);
+        const data = await resp.json();
+        if (ws) ws.close();
+        if (data.success) {
+            const count = data.stored || 0;
+            btn.innerHTML = `<i class="fas fa-check"></i> <span>${count} images saved</span>`;
+            setTimeout(() => {
+                btn.innerHTML = `<i class="fas ${defaultIcon}"></i> <span>${defaultLabel}</span>`;
+                btn.disabled = false;
+            }, 3000);
+            await loadPage(1);
+        } else {
+            throw new Error(data.error || "Unknown error");
+        }
+    } catch (err) {
+        if (ws) ws.close();
+        btn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> <span>Error</span>';
+        btn.title = err.message || String(err);
+        console.error("[Community] Fetch failed:", err);
+        setTimeout(() => {
+            btn.innerHTML = `<i class="fas ${defaultIcon}"></i> <span>${defaultLabel}</span>`;
+            btn.title = "";
+            btn.disabled = false;
+        }, 5000);
+    }
 }
 
 // -- Sort select ----------------------------------------------------------
