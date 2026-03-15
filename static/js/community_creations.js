@@ -292,13 +292,16 @@ function showDetail(img, sha256) {
                     by ${escapeHtml(img.username || "unknown")}
                     ${img.created_at ? ` &middot; ${new Date(img.created_at).toLocaleDateString()}` : ""}
                 </div>
-                ${img.has_workflow ? `
                 <div class="community-detail-actions" style="margin-top:12px;">
+                    ${img.civitai_image_id ? `
+                    <a class="workflow-btn" href="https://civitai.com/images/${img.civitai_image_id}" target="_blank" rel="noopener" title="View on CivitAI">
+                        <i class="fas fa-external-link-alt"></i> View on CivitAI
+                    </a>` : ""}
+                    ${img.has_workflow ? `
                     <button class="workflow-btn" data-image-id="${img.civitai_image_id}" title="Download ComfyUI workflow">
                         <i class="fas fa-project-diagram"></i> Download Workflow
-                    </button>
+                    </button>` : ""}
                 </div>
-                ` : ""}
             </div>
         </div>
     `;

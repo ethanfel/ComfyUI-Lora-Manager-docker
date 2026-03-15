@@ -403,6 +403,12 @@ a.community-resource-tag:hover {
 }
 
 /* -- Workflow button ------------------------------------------------------ */
+.community-detail-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .workflow-btn {
     display: inline-flex;
     align-items: center;
@@ -413,6 +419,7 @@ a.community-resource-tag:hover {
     background: transparent;
     color: var(--accent-color, #7c3aed);
     font-size: 12px;
+    text-decoration: none;
     cursor: pointer;
     transition: background 0.15s, color 0.15s;
 }
