@@ -131,11 +131,21 @@
         });
     }
 
+    // ── Page type detection ────────────────────────────────────────
+    function _getPageType() {
+        const path = window.location.pathname;
+        if (path.includes("checkpoints")) return "checkpoints";
+        if (path.includes("embeddings")) return "embeddings";
+        if (path.includes("loras") || path === "/") return "loras";
+        return null;
+    }
+
     // ── Stats sort keys ──────────────────────────────────────────
     const _STATS_SORT_KEYS = new Set(["downloads", "rating", "thumbsup"]);
 
     // ── Patch sort dropdown ────────────────────────────────────────
     function patchSortDropdown() {
+        if (!_getPageType()) return;  // skip non-model pages (recipes, statistics)
         const select = document.getElementById("sortSelect");
         if (!select || select.querySelector('[value="downloads:desc"]')) return;
 
@@ -163,9 +173,7 @@
         // Restore persisted stats sort — our options didn't exist when
         // PageControls.loadSortPreference() ran, so the saved value
         // was silently ignored. Re-apply it now.
-        const path = window.location.pathname;
-        const pageType = path.includes("checkpoints") ? "checkpoints"
-            : path.includes("embeddings") ? "embeddings" : "loras";
+        const pageType = _getPageType();
         const saved = localStorage.getItem("lora_manager_" + pageType + "_sort")
             || localStorage.getItem(pageType + "_sort");  // legacy fallback
         if (saved && _STATS_SORT_KEYS.has(saved.split(":")[0]) && select.value !== saved) {
@@ -176,6 +184,7 @@
 
     // ── Toolbar "Fetch Stats" button ───────────────────────────────
     function addFetchStatsButton() {
+        if (!_getPageType()) return;  // skip non-model pages (recipes, statistics)
         const toolbar = document.querySelector(".action-buttons");
         if (!toolbar || document.getElementById("fetchStatsBtn")) return;
 
