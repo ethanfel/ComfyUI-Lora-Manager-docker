@@ -168,8 +168,9 @@ class CivitaiStatsDB:
             return conn.execute("SELECT COUNT(*) FROM model_stats").fetchone()[0]
 
     def close(self) -> None:
-        if self._conn:
-            self._conn.close()
-            self._conn = None
+        with self._db_lock:
+            if self._conn:
+                self._conn.close()
+                self._conn = None
         if CivitaiStatsDB._instance is self:
             CivitaiStatsDB._instance = None
