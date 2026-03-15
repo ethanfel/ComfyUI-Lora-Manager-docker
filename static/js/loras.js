@@ -4,8 +4,6 @@ import { updateCardsForBulkMode } from './components/shared/ModelCard.js';
 import { createPageControls } from './components/controls/index.js';
 import { confirmDelete, closeDeleteModal, confirmExclude, closeExcludeModal } from './utils/modalUtils.js';
 import { ModelDuplicatesManager } from './components/ModelDuplicatesManager.js';
-import { showModelModal } from './components/shared/ModelModal.js';
-import { MODEL_TYPES } from './state/constants.js';
 
 // Initialize the LoRA page
 export class LoraPageManager {
@@ -46,22 +44,6 @@ export class LoraPageManager {
     }
 }
 
-async function openModelByHash(sha256) {
-    // Wait for virtual scroller to have items loaded
-    const scroller = state.virtualScroller;
-    if (!scroller || !scroller.items.length) {
-        // Retry after a short delay if items haven't loaded yet
-        await new Promise(r => setTimeout(r, 1000));
-    }
-    const items = state.virtualScroller?.items || [];
-    const model = items.find(m => m.sha256 === sha256);
-    if (model) {
-        await showModelModal(model, MODEL_TYPES.LORA);
-        // Clear hash so refreshing doesn't re-open
-        history.replaceState(null, '', location.pathname);
-    }
-}
-
 export async function initializeLoraPage() {
     // Initialize core application
     await appCore.initialize();
@@ -70,11 +52,17 @@ export async function initializeLoraPage() {
     const loraPage = new LoraPageManager();
     await loraPage.initialize();
 
-    // Deep link: open modal for specific LoRA via hash fragment
-    const hashParams = new URLSearchParams(location.hash.slice(1));
-    const targetSha256 = hashParams.get('sha256');
-    if (targetSha256) {
-        openModelByHash(targetSha256);
+    // Deep link: pre-fill search from URL query param
+    const params = new URLSearchParams(location.search);
+    const searchQuery = params.get('search');
+    if (searchQuery) {
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.value = searchQuery;
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            // Clean URL without reloading
+            history.replaceState(null, '', location.pathname);
+        }
     }
 
     return loraPage;

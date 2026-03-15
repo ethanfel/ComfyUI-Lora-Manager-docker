@@ -116,7 +116,7 @@ function renderGrid(models) {
             : "";
         header.innerHTML = `<h3>${escapeHtml(model.model_name)}</h3>
             ${baseTag}
-            <a class="lora-link" href="/loras#sha256=${encodeURIComponent(model.sha256)}" title="View LoRA details"><i class="fas fa-external-link-alt"></i> View LoRA</a>
+            <a class="lora-link" href="/loras?search=${encodeURIComponent(model.model_name)}" title="View LoRA details"><i class="fas fa-external-link-alt"></i> View LoRA</a>
             <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>`;
         section.appendChild(header);
 
@@ -267,7 +267,7 @@ function showDetail(img, sha256, modelName) {
             <img class="community-detail-image" src="${escapeHtml(imgUrl)}" alt="Community creation">
             <div class="community-detail-info">
                 <div class="community-detail-lora-link">
-                    <a href="/loras#sha256=${encodeURIComponent(sha256)}" title="View LoRA details">
+                    <a href="/loras?search=${encodeURIComponent(modelName || '')}" title="View LoRA details">
                         <i class="fas fa-puzzle-piece"></i> ${escapeHtml(modelName || "View LoRA")}
                     </a>
                 </div>
