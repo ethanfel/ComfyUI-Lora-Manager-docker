@@ -185,12 +185,23 @@ class CivitaiStatsRoutes:
             }
         return web.json_response({"success": True, "stats": clean})
 
+    @staticmethod
+    async def handle_clear(request: web.Request) -> web.Response:
+        """POST /api/lm/civitai-stats/clear — wipe all stats from DB."""
+        db = CivitaiStatsDB.get_instance()
+        conn = db._ensure_conn()
+        conn.execute("DELETE FROM model_stats")
+        conn.commit()
+        logger.info("CivitAI stats DB cleared")
+        return web.json_response({"success": True, "cleared": True})
+
     @classmethod
     def setup_routes(cls, app: web.Application) -> None:
         """Register CivitAI stats routes."""
         app.router.add_post("/api/lm/civitai-stats/fetch", cls.handle_fetch_stats)
         app.router.add_get("/api/lm/civitai-stats/status", cls.handle_stats_status)
         app.router.add_post("/api/lm/civitai-stats/by-hashes", cls.handle_enrich)
+        app.router.add_post("/api/lm/civitai-stats/clear", cls.handle_clear)
 
         # Cleanup on shutdown
         async def cleanup(app):
