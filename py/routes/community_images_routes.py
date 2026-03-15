@@ -60,35 +60,26 @@ class CommunityImagesRoutes:
             settings = get_settings_manager()
             api_key = settings.get("civitai_api_key", "")
 
-            # Collect models with civitai data from all scanners
+            # Collect LoRA models with civitai data
             models = []
-            scanner_names = ["lora", "checkpoint", "embedding"]
-            for name, getter in zip(
-                scanner_names,
-                [
-                    ServiceRegistry.get_lora_scanner,
-                    ServiceRegistry.get_checkpoint_scanner,
-                    ServiceRegistry.get_embedding_scanner,
-                ],
-            ):
-                try:
-                    scanner = await getter()
-                    cache = await scanner.get_cached_data()
-                    for item in cache.raw_data:
-                        if not item:
-                            continue
-                        civitai = item.get("civitai") or {}
-                        model_id = civitai.get("modelId")
-                        sha256 = item.get("sha256")
-                        creator = (civitai.get("creator") or {}).get("username")
-                        if model_id and sha256:
-                            models.append({
-                                "sha256": sha256,
-                                "civitai_model_id": model_id,
-                                "author_username": creator or "",
-                            })
-                except Exception as exc:
-                    logger.info("Failed to get %s scanner data: %s", name, exc)
+            try:
+                scanner = await ServiceRegistry.get_lora_scanner()
+                cache = await scanner.get_cached_data()
+                for item in cache.raw_data:
+                    if not item:
+                        continue
+                    civitai = item.get("civitai") or {}
+                    model_id = civitai.get("modelId")
+                    sha256 = item.get("sha256")
+                    creator = (civitai.get("creator") or {}).get("username")
+                    if model_id and sha256:
+                        models.append({
+                            "sha256": sha256,
+                            "civitai_model_id": model_id,
+                            "author_username": creator or "",
+                        })
+            except Exception as exc:
+                logger.info("Failed to get lora scanner data: %s", exc)
 
             if not models:
                 return web.json_response({"success": True, "stored": 0, "total": 0})

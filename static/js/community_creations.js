@@ -134,10 +134,12 @@ function buildSortedGroups() {
             return (rb - ra) * asc;
         });
     } else if (key === "recent") {
+        const newest = (imgs) => imgs.reduce((max, i) => {
+            const d = i.created_at || "";
+            return d > max ? d : max;
+        }, "");
         groups.sort((a, b) => {
-            const da = a.images[0]?.created_at || "";
-            const db_ = b.images[0]?.created_at || "";
-            return db_.localeCompare(da) * asc;
+            return newest(b.images).localeCompare(newest(a.images)) * asc;
         });
     } else if (key === "lora") {
         groups.sort((a, b) => a.name.localeCompare(b.name) * asc);
@@ -194,8 +196,12 @@ function showDetail(img, sha256) {
 
     const overlay = document.createElement("div");
     overlay.className = "community-detail-overlay";
+    const removeOverlay = () => {
+        overlay.remove();
+        document.removeEventListener("keydown", escHandler);
+    };
     overlay.addEventListener("click", (e) => {
-        if (e.target === overlay) overlay.remove();
+        if (e.target === overlay) removeOverlay();
     });
 
     overlay.innerHTML = `
@@ -252,10 +258,7 @@ function showDetail(img, sha256) {
 
     // Close on Escape
     const escHandler = (e) => {
-        if (e.key === "Escape") {
-            overlay.remove();
-            document.removeEventListener("keydown", escHandler);
-        }
+        if (e.key === "Escape") removeOverlay();
     };
     document.addEventListener("keydown", escHandler);
 }
