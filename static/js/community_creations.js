@@ -204,7 +204,10 @@ function buildPageNumbers(current, total) {
 function createCard(img, sha256) {
     const card = document.createElement("div");
     card.className = "community-card";
-    card.addEventListener("click", () => showDetail(img, sha256));
+    card.addEventListener("click", (e) => {
+        if (e.target.closest("a")) return;
+        showDetail(img, sha256);
+    });
 
     const imgUrl = img.local_filename
         ? `/example_images_static/${img.local_filename}`
@@ -294,11 +297,11 @@ function showDetail(img, sha256) {
                 </div>
                 <div class="community-detail-actions" style="margin-top:12px;">
                     ${img.civitai_image_id ? `
-                    <a class="workflow-btn" href="https://civitai.com/images/${img.civitai_image_id}" target="_blank" rel="noopener" title="View on CivitAI">
+                    <a class="workflow-btn civitai-link" href="https://civitai.com/images/${img.civitai_image_id}" target="_blank" rel="noopener" title="View on CivitAI">
                         <i class="fas fa-external-link-alt"></i> View on CivitAI
                     </a>` : ""}
                     ${img.has_workflow ? `
-                    <button class="workflow-btn" data-image-id="${img.civitai_image_id}" title="Download ComfyUI workflow">
+                    <button class="workflow-btn workflow-download-btn" data-image-id="${img.civitai_image_id}" title="Download ComfyUI workflow">
                         <i class="fas fa-project-diagram"></i> Download Workflow
                     </button>` : ""}
                 </div>
@@ -321,7 +324,7 @@ function showDetail(img, sha256) {
     }
 
     // Workflow download handler
-    const workflowBtn = overlay.querySelector(".workflow-btn");
+    const workflowBtn = overlay.querySelector(".workflow-download-btn");
     if (workflowBtn) {
         workflowBtn.addEventListener("click", async (e) => {
             e.stopPropagation();
