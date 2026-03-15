@@ -349,6 +349,25 @@ a.community-resource-tag:hover {
     overflow-y: auto;
 }
 
+.community-detail-lora-link {
+    margin-bottom: 12px;
+}
+
+.community-detail-lora-link a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-color, #7c3aed);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    transition: color 0.15s;
+}
+
+.community-detail-lora-link a:hover {
+    color: var(--text-primary, #fff);
+}
+
 .community-detail-info h4 {
     margin: 0 0 12px;
     font-size: 14px;

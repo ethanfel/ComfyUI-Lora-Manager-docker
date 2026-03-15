@@ -116,6 +116,7 @@ function renderGrid(models) {
             : "";
         header.innerHTML = `<h3>${escapeHtml(model.model_name)}</h3>
             ${baseTag}
+            <a class="lora-link" href="/loras#sha256=${encodeURIComponent(model.sha256)}" title="View LoRA details"><i class="fas fa-external-link-alt"></i> View LoRA</a>
             <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>`;
         section.appendChild(header);
 
@@ -130,7 +131,7 @@ function renderGrid(models) {
         const cardsDiv = document.createElement("div");
         cardsDiv.className = "community-cards";
         for (const img of sorted) {
-            cardsDiv.appendChild(createCard(img, model.sha256));
+            cardsDiv.appendChild(createCard(img, model.sha256, model.model_name));
         }
         section.appendChild(cardsDiv);
         grid.appendChild(section);
@@ -201,12 +202,12 @@ function buildPageNumbers(current, total) {
 }
 
 // -- Card creation --------------------------------------------------------
-function createCard(img, sha256) {
+function createCard(img, sha256, modelName) {
     const card = document.createElement("div");
     card.className = "community-card";
     card.addEventListener("click", (e) => {
         if (e.target.closest("a")) return;
-        showDetail(img, sha256);
+        showDetail(img, sha256, modelName);
     });
 
     const imgUrl = img.local_filename
@@ -243,7 +244,7 @@ function createCard(img, sha256) {
 }
 
 // -- Detail modal ---------------------------------------------------------
-function showDetail(img, sha256) {
+function showDetail(img, sha256, modelName) {
     const existing = document.querySelector(".community-detail-overlay");
     if (existing) existing.remove();
 
@@ -265,6 +266,11 @@ function showDetail(img, sha256) {
         <div class="community-detail">
             <img class="community-detail-image" src="${escapeHtml(imgUrl)}" alt="Community creation">
             <div class="community-detail-info">
+                <div class="community-detail-lora-link">
+                    <a href="/loras#sha256=${encodeURIComponent(sha256)}" title="View LoRA details">
+                        <i class="fas fa-puzzle-piece"></i> ${escapeHtml(modelName || "View LoRA")}
+                    </a>
+                </div>
                 <h4>Prompt</h4>
                 <div class="community-detail-prompt">
                     <button class="copy-btn" title="Copy prompt"><i class="fas fa-copy"></i> Copy</button>
