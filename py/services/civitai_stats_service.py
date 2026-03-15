@@ -15,37 +15,28 @@ _CIVITAI_API = "https://civitai.com/api/v1"
 _RATE_LIMIT_DELAY = 1.5  # seconds between requests
 
 
-def extract_version_stats(model_data: dict) -> list[tuple[str, dict]]:
-    """Extract (sha256, stats_dict) pairs from a CivitAI model response.
+def extract_version_stats(model_data: dict) -> dict[int, dict]:
+    """Extract {version_id: stats_dict} from a CivitAI model response.
 
-    Each model has multiple versions; each version has files with hashes.
-    Returns one entry per version that has a SHA256 hash.
+    Returns a dict keyed by version ID so callers can map stats
+    to local sha256 hashes (which may differ from CivitAI's file hashes).
     """
     model_id = model_data.get("id")
-    results = []
+    results = {}
 
     for version in model_data.get("modelVersions", []):
         version_id = version.get("id")
-        sha256 = None
-        for f in version.get("files", []):
-            sha256 = (f.get("hashes") or {}).get("SHA256")
-            if sha256:
-                break
-        if not sha256:
+        if not version_id:
             continue
-
         stats = version.get("stats") or {}
-        results.append((
-            sha256.lower(),
-            {
-                "civitai_model_id": model_id,
-                "civitai_version_id": version_id,
-                "download_count": stats.get("downloadCount", 0),
-                "rating": stats.get("rating", 0),
-                "rating_count": stats.get("ratingCount", 0),
-                "thumbs_up_count": stats.get("thumbsUpCount", 0),
-            },
-        ))
+        results[version_id] = {
+            "civitai_model_id": model_id,
+            "civitai_version_id": version_id,
+            "download_count": stats.get("downloadCount", 0),
+            "rating": stats.get("rating", 0),
+            "rating_count": stats.get("ratingCount", 0),
+            "thumbs_up_count": stats.get("thumbsUpCount", 0),
+        }
 
     return results
 
@@ -103,26 +94,39 @@ class CivitaiStatsFetchService:
         Returns:
             Number of model versions successfully updated.
         """
-        # Deduplicate by model_id
-        seen_model_ids: set[int] = set()
-        unique_models: list[dict] = []
+        # Group local models by civitai_model_id, collecting (sha256, version_id) pairs
+        model_id_to_locals: dict[int, list[dict]] = {}
         for m in models:
             mid = m.get("civitai_model_id")
-            if mid and mid not in seen_model_ids:
-                seen_model_ids.add(mid)
-                unique_models.append(m)
+            if mid:
+                model_id_to_locals.setdefault(mid, []).append(m)
 
-        total = len(unique_models)
+        unique_model_ids = list(model_id_to_locals.keys())
+        total = len(unique_model_ids)
         updated = 0
 
-        for i, model in enumerate(unique_models):
-            model_id = model["civitai_model_id"]
+        for i, model_id in enumerate(unique_model_ids):
             data = await self._fetch_model(model_id)
             if data:
-                rows = extract_version_stats(data)
-                if rows:
-                    self.db.upsert_batch(rows)
-                    updated += len(rows)
+                version_stats = extract_version_stats(data)
+                if version_stats:
+                    # Map local sha256 → stats using version ID match
+                    rows = []
+                    for local_model in model_id_to_locals[model_id]:
+                        local_sha = local_model.get("sha256")
+                        local_vid = local_model.get("civitai_version_id")
+                        if local_sha and local_vid and local_vid in version_stats:
+                            rows.append((local_sha, version_stats[local_vid]))
+                    # Fallback: if no version ID match but only one version, use it
+                    if not rows and len(version_stats) == 1:
+                        only_stats = next(iter(version_stats.values()))
+                        for local_model in model_id_to_locals[model_id]:
+                            local_sha = local_model.get("sha256")
+                            if local_sha:
+                                rows.append((local_sha, only_stats))
+                    if rows:
+                        self.db.upsert_batch(rows)
+                        updated += len(rows)
 
             if progress_callback:
                 await progress_callback(i + 1, total)

@@ -37,11 +37,13 @@ class CivitaiStatsRoutes:
                     for item in cache.raw_data:
                         civitai = item.get("civitai", {})
                         model_id = civitai.get("modelId")
+                        version_id = civitai.get("id")  # civitai version id
                         sha256 = item.get("sha256")
                         if model_id and sha256:
                             models.append({
                                 "sha256": sha256,
                                 "civitai_model_id": model_id,
+                                "civitai_version_id": version_id,
                             })
                 except Exception as exc:
                     logger.debug("Failed to get scanner data: %s", exc)
@@ -76,7 +78,13 @@ class CivitaiStatsRoutes:
     async def handle_stats_status(request: web.Request) -> web.Response:
         """GET /api/lm/civitai-stats/status — check stats DB count."""
         db = CivitaiStatsDB.get_instance()
-        return web.json_response({"success": True, "count": db.count()})
+        all_stats = db.get_all()
+        sample_hashes = list(all_stats.keys())[:5]
+        return web.json_response({
+            "success": True,
+            "count": db.count(),
+            "sample_hashes": sample_hashes,
+        })
 
     @staticmethod
     async def handle_enrich(request: web.Request) -> web.Response:
