@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import sqlite3
+import threading
 import time
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class CivitaiStatsDB:
     """Thin wrapper around a SQLite database for CivitAI stats."""
 
     _instance: CivitaiStatsDB | None = None
+    _lock = threading.Lock()
 
     def __init__(self, db_path: Path | None = None):
         self._db_path = db_path or _default_db_path()
@@ -45,8 +47,11 @@ class CivitaiStatsDB:
     def get_instance(cls) -> CivitaiStatsDB:
         """Return the singleton instance, creating it if needed."""
         if cls._instance is None:
-            cls._instance = cls()
-            cls._instance.init()
+            with cls._lock:
+                if cls._instance is None:
+                    inst = cls()
+                    inst.init()
+                    cls._instance = inst
         return cls._instance
 
     def init(self) -> None:

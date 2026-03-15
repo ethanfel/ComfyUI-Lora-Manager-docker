@@ -340,7 +340,10 @@ class StandaloneLoraManager(LoraManager):
         MiscRoutes.setup_routes(app)
         ExampleImagesRoutes.setup_routes(app, ws_manager=ws_manager)
         PreviewRoutes.setup_routes(app)
-        CivitaiStatsRoutes.setup_routes(app)
+        try:
+            CivitaiStatsRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register CivitAI stats routes")
         CommunityImagesRoutes.setup_routes(app)
 
         # Setup WebSocket routes that are shared across all model types

@@ -1,6 +1,7 @@
 """Route registrar for CivitAI community stats endpoints."""
 from __future__ import annotations
 
+import asyncio
 import logging
 from aiohttp import web
 
@@ -12,151 +13,79 @@ from ..services.websocket_manager import ws_manager
 
 logger = logging.getLogger(__name__)
 
+_fetch_lock = asyncio.Lock()
+
 
 class CivitaiStatsRoutes:
-    """Route handlers for CivitAI stats fetch and status endpoints."""
+    """Route handlers for CivitAI stats fetch and retrieval endpoints."""
 
     @staticmethod
     async def handle_fetch_stats(request: web.Request) -> web.Response:
         """POST /api/lm/civitai-stats/fetch — trigger bulk CivitAI stats fetch."""
-        try:
-            db = CivitaiStatsDB.get_instance()
-            settings = get_settings_manager()
-            api_key = settings.get("civitai_api_key", "")
-
-            # Collect all models with modelId from all scanners
-            models = []
-            scanner_names = ["lora", "checkpoint", "embedding"]
-            for name, getter in zip(scanner_names, [
-                ServiceRegistry.get_lora_scanner,
-                ServiceRegistry.get_checkpoint_scanner,
-                ServiceRegistry.get_embedding_scanner,
-            ]):
-                try:
-                    scanner = await getter()
-                    cache = await scanner.get_cached_data()
-                    count_before = len(models)
-                    total_items = len(cache.raw_data) if cache.raw_data else 0
-                    for item in cache.raw_data:
-                        if not item:
-                            continue
-                        civitai = item.get("civitai") or {}
-                        model_id = civitai.get("modelId")
-                        version_id = civitai.get("id")  # civitai version id
-                        sha256 = item.get("sha256")
-                        if model_id and sha256:
-                            models.append({
-                                "sha256": sha256,
-                                "civitai_model_id": model_id,
-                                "civitai_version_id": version_id,
-                            })
-                    added = len(models) - count_before
-                    logger.info("Scanner %s: %d total items, %d with civitai modelId",
-                                name, total_items, added)
-                except Exception as exc:
-                    logger.info("Failed to get %s scanner data: %s", name, exc)
-
-            # Log collection summary for debugging
-            with_vid = sum(1 for m in models if m.get("civitai_version_id"))
-            without_vid = len(models) - with_vid
-            logger.info("Collected %d models for stats fetch (%d with version_id, %d without)",
-                        len(models), with_vid, without_vid)
-            if models:
-                sample = models[:3]
-                logger.info("Sample collected sha256 values: %s",
-                            [(m["sha256"][:16], m["civitai_model_id"]) for m in sample])
-
-            if not models:
-                return web.json_response({"success": True, "updated": 0, "total": 0})
-
-            service = CivitaiStatsFetchService(db=db, api_key=api_key)
-
-            async def progress_callback(current: int, total: int) -> None:
-                await ws_manager.broadcast({
-                    "type": "civitai_stats_progress",
-                    "current": current,
-                    "total": total,
-                    "progress": round(current / total * 100) if total else 0,
-                })
-
-            try:
-                updated = await service.fetch_stats_for_models(models, progress_callback=progress_callback)
-            finally:
-                await service.close()
-
-            return web.json_response({"success": True, "updated": updated, "total": len(models)})
-        except Exception as exc:
-            logger.exception("CivitAI stats fetch failed")
+        if _fetch_lock.locked():
             return web.json_response(
-                {"success": False, "error": str(exc)},
-                status=500,
+                {"success": False, "error": "Stats fetch already in progress"},
+                status=409,
             )
+        async with _fetch_lock:
+            try:
+                db = CivitaiStatsDB.get_instance()
+                settings = get_settings_manager()
+                api_key = settings.get("civitai_api_key", "")
 
-    @staticmethod
-    async def handle_stats_status(request: web.Request) -> web.Response:
-        """GET /api/lm/civitai-stats/status — check stats DB count."""
-        db = CivitaiStatsDB.get_instance()
-        all_stats = db.get_all()
-        db_hashes = list(all_stats.keys())[:5]
+                # Collect all models with modelId from all scanners
+                models = []
+                for name, getter in [
+                    ("lora", ServiceRegistry.get_lora_scanner),
+                    ("checkpoint", ServiceRegistry.get_checkpoint_scanner),
+                    ("embedding", ServiceRegistry.get_embedding_scanner),
+                ]:
+                    try:
+                        scanner = await getter()
+                        cache = await scanner.get_cached_data()
+                        for item in cache.raw_data:
+                            if not item:
+                                continue
+                            civitai = item.get("civitai") or {}
+                            model_id = civitai.get("modelId")
+                            version_id = civitai.get("id")
+                            sha256 = item.get("sha256")
+                            if model_id and sha256:
+                                models.append({
+                                    "sha256": sha256,
+                                    "civitai_model_id": model_id,
+                                    "civitai_version_id": version_id,
+                                })
+                    except Exception as exc:
+                        logger.warning("Failed to get %s scanner data: %s", name, exc)
 
-        # Debug: find a model WITH civitai data and check if its hash is in the DB
-        debug = {}
-        try:
-            scanner = await ServiceRegistry.get_lora_scanner()
-            cache = await scanner.get_cached_data()
-            # Find first model with civitai modelId
-            for item in cache.raw_data:
-                if not item:
-                    continue
-                civitai = item.get("civitai") or {}
-                mid = civitai.get("modelId")
-                if mid:
-                    item_sha = item.get("sha256", "")
-                    db_match = db.get_by_hashes([item_sha])
-                    debug = {
-                        "scanner_sha256": item_sha,
-                        "model_name": item.get("model_name", "")[:40],
-                        "civitai_model_id": mid,
-                        "civitai_version_id": civitai.get("id"),
-                        "in_stats_db": bool(db_match),
-                    }
-                    break
-            # Reverse lookup: pick a DB entry, find same model in scanner
-            conn = db._ensure_conn()
-            db_row = conn.execute(
-                "SELECT sha256, civitai_model_id, civitai_version_id FROM model_stats LIMIT 1"
-            ).fetchone()
-            if db_row:
-                db_mid = db_row["civitai_model_id"]
-                db_vid = db_row["civitai_version_id"]
-                db_sha = db_row["sha256"]
-                # Find this model_id in scanner cache
-                scanner_match = None
-                for item in cache.raw_data:
-                    if not item:
-                        continue
-                    c = item.get("civitai") or {}
-                    if c.get("modelId") == db_mid:
-                        scanner_match = {
-                            "sha256": item.get("sha256", ""),
-                            "name": item.get("model_name", "")[:40],
-                        }
-                        break
-                debug["db_entry"] = {
-                    "sha256": db_sha,
-                    "civitai_model_id": db_mid,
-                    "civitai_version_id": db_vid,
-                }
-                debug["scanner_match_for_db_model"] = scanner_match
-        except Exception as exc:
-            debug = {"error": str(exc)}
+                logger.info("Collected %d models for stats fetch", len(models))
 
-        return web.json_response({
-            "success": True,
-            "count": db.count(),
-            "db_sample_hashes": [h[:16] for h in db_hashes],
-            "debug": debug,
-        })
+                if not models:
+                    return web.json_response({"success": True, "updated": 0, "total": 0})
+
+                service = CivitaiStatsFetchService(db=db, api_key=api_key)
+
+                async def progress_callback(current: int, total: int) -> None:
+                    await ws_manager.broadcast({
+                        "type": "civitai_stats_progress",
+                        "current": current,
+                        "total": total,
+                        "progress": round(current / total * 100) if total else 0,
+                    })
+
+                try:
+                    updated = await service.fetch_stats_for_models(models, progress_callback=progress_callback)
+                finally:
+                    await service.close()
+
+                return web.json_response({"success": True, "updated": updated, "total": len(models)})
+            except Exception as exc:
+                logger.exception("CivitAI stats fetch failed")
+                return web.json_response(
+                    {"success": False, "error": str(exc)},
+                    status=500,
+                )
 
     @staticmethod
     async def handle_enrich(request: web.Request) -> web.Response:
@@ -175,37 +104,12 @@ class CivitaiStatsRoutes:
                 {"success": False, "error": "Invalid or too many hashes (max 5000)"},
                 status=400,
             )
+        # Filter to valid string hashes only
+        hashes = [h for h in hashes if isinstance(h, str) and h]
         if not hashes:
             return web.json_response({"success": True, "stats": {}})
         db = CivitaiStatsDB.get_instance()
-        logger.info("by-hashes query: %d hashes, sample=%s", len(hashes),
-                     [h[:16] for h in hashes[:3]])
         stats = db.get_by_hashes(hashes)
-        logger.info("by-hashes result: %d matches out of %d queried", len(stats), len(hashes))
-
-        # One-shot diagnostic: check first queried hash against scanner raw_data
-        if not stats and hashes:
-            try:
-                scanner = await ServiceRegistry.get_lora_scanner()
-                cache = await scanner.get_cached_data()
-                test_hash = hashes[0]
-                found_in_cache = None
-                for item in cache.raw_data:
-                    if not item:
-                        continue
-                    if item.get("sha256") == test_hash:
-                        c = item.get("civitai") or {}
-                        found_in_cache = {
-                            "name": item.get("model_name", "")[:30],
-                            "has_civitai": bool(c.get("modelId")),
-                            "model_id": c.get("modelId"),
-                        }
-                        break
-                logger.info("DIAG: hash %s in scanner cache? %s", test_hash[:16],
-                            found_in_cache if found_in_cache else "NOT FOUND")
-            except Exception as exc:
-                logger.info("DIAG error: %s", exc)
-        # Convert for JSON (remove fetched_at internal field)
         clean = {}
         for sha, data in stats.items():
             clean[sha] = {
@@ -216,23 +120,11 @@ class CivitaiStatsRoutes:
             }
         return web.json_response({"success": True, "stats": clean})
 
-    @staticmethod
-    async def handle_clear(request: web.Request) -> web.Response:
-        """POST /api/lm/civitai-stats/clear — wipe all stats from DB."""
-        db = CivitaiStatsDB.get_instance()
-        conn = db._ensure_conn()
-        conn.execute("DELETE FROM model_stats")
-        conn.commit()
-        logger.info("CivitAI stats DB cleared")
-        return web.json_response({"success": True, "cleared": True})
-
     @classmethod
     def setup_routes(cls, app: web.Application) -> None:
         """Register CivitAI stats routes."""
         app.router.add_post("/api/lm/civitai-stats/fetch", cls.handle_fetch_stats)
-        app.router.add_get("/api/lm/civitai-stats/status", cls.handle_stats_status)
         app.router.add_post("/api/lm/civitai-stats/by-hashes", cls.handle_enrich)
-        app.router.add_post("/api/lm/civitai-stats/clear", cls.handle_clear)
 
         # Cleanup on shutdown
         async def cleanup(app):
