@@ -53,6 +53,10 @@ class CivitaiStatsRoutes:
             without_vid = len(models) - with_vid
             logger.info("Collected %d models for stats fetch (%d with version_id, %d without)",
                         len(models), with_vid, without_vid)
+            if models:
+                sample = models[:3]
+                logger.info("Sample collected sha256 values: %s",
+                            [(m["sha256"][:16], m["civitai_model_id"]) for m in sample])
 
             if not models:
                 return web.json_response({"success": True, "updated": 0, "total": 0})
@@ -112,7 +116,10 @@ class CivitaiStatsRoutes:
         if not hashes:
             return web.json_response({"success": True, "stats": {}})
         db = CivitaiStatsDB.get_instance()
+        logger.info("by-hashes query: %d hashes, sample=%s", len(hashes),
+                     [h[:16] for h in hashes[:3]])
         stats = db.get_by_hashes(hashes)
+        logger.info("by-hashes result: %d matches out of %d queried", len(stats), len(hashes))
         # Convert for JSON (remove fetched_at internal field)
         clean = {}
         for sha, data in stats.items():
