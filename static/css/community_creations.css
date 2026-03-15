@@ -366,6 +366,8 @@ a.community-resource-tag:hover {
     white-space: pre-wrap;
     word-break: break-word;
     position: relative;
+    max-height: 150px;
+    overflow-y: auto;
 }
 
 .community-detail-prompt .copy-btn {
