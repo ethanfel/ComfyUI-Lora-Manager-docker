@@ -402,6 +402,8 @@ async function doFetch(btn, force) {
                 const msg = JSON.parse(e.data);
                 if (msg.type === "community_images_progress") {
                     btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}</span>`;
+                } else if (msg.type === "community_images_warning") {
+                    showWarning(msg.message);
                 }
             } catch {}
         };
@@ -463,20 +465,38 @@ function setupPageSizeSelect() {
 // -- Resource tags --------------------------------------------------------
 function renderResourceTags(resources) {
     if (!resources || !resources.length) return "";
-    const tags = resources
-        .filter(r => r.name)
-        .map(r => {
-            const icon = r.type === "lora" ? "fa-puzzle-piece" : r.type === "checkpoint" ? "fa-cube" : "fa-box";
-            const weight = r.weight != null && r.type === "lora" ? ` (${r.weight})` : "";
-            return `<span class="community-resource-tag" title="${escapeHtml(r.type || '')}">
-                <i class="fas ${icon}"></i> ${escapeHtml(r.name)}${weight}
-            </span>`;
-        });
-    if (!tags.length) return "";
+    const tags = resources.map(r => {
+        const icon = r.type === "lora" ? "fa-puzzle-piece" : r.type === "checkpoint" ? "fa-cube" : "fa-box";
+        const label = r.name || (r.type || "model");
+        const weight = r.weight != null && r.type === "lora" ? ` (${r.weight})` : "";
+        return `<span class="community-resource-tag" title="${escapeHtml(r.type || '')}">
+            <i class="fas ${icon}"></i> ${escapeHtml(label)}${weight}
+        </span>`;
+    });
     return `<div class="community-card-resources">${tags.join("")}</div>`;
 }
 
 // -- Helpers --------------------------------------------------------------
+function showWarning(message) {
+    // Show a dismissible warning banner above the grid
+    let banner = document.getElementById("communityWarning");
+    if (!banner) {
+        banner = document.createElement("div");
+        banner.id = "communityWarning";
+        banner.className = "community-warning";
+        const grid = document.getElementById("communityGrid");
+        if (grid) grid.parentNode.insertBefore(banner, grid);
+    }
+    banner.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${escapeHtml(message)}
+        <button class="warning-dismiss" title="Dismiss"><i class="fas fa-times"></i></button>`;
+    banner.style.display = "";
+    banner.querySelector(".warning-dismiss").addEventListener("click", () => {
+        banner.style.display = "none";
+    });
+    // Auto-dismiss after 10s
+    setTimeout(() => { banner.style.display = "none"; }, 10000);
+}
+
 function showEmpty() {
     const grid = document.getElementById("communityGrid");
     const empty = document.getElementById("communityEmpty");

@@ -13,6 +13,7 @@ import aiohttp
 from PIL import Image
 
 from .community_images_db import CommunityImagesDB
+from .websocket_manager import ws_manager
 from ..utils.example_images_paths import get_model_folder, get_model_relative_path
 
 logger = logging.getLogger(__name__)
@@ -148,6 +149,12 @@ class CommunityImagesFetchService:
             async with session.get(
                 f"{_CIVITAI_API}/model-versions/{version_id}"
             ) as resp:
+                if resp.status == 429:
+                    await ws_manager.broadcast({
+                        "type": "community_images_warning",
+                        "message": "Rate limited resolving resource names, some names may be missing",
+                    })
+                    return None
                 if resp.status != 200:
                     return None
                 data = await resp.json()
@@ -162,9 +169,9 @@ class CommunityImagesFetchService:
     async def _resolve_resources(self, items: list[dict]) -> None:
         """Resolve modelVersionId → name for all civitaiResources across items.
 
-        Batches unique IDs and caches results to minimize API calls.
+        Best-effort: failures are silently skipped (resources still stored
+        without names). Batches unique IDs and caches results.
         """
-        # Collect unique version IDs that need resolving
         version_ids: set[int] = set()
         for item in items:
             meta = item.get("meta")
@@ -176,10 +183,21 @@ class CommunityImagesFetchService:
                 if vid and vid not in self._version_name_cache:
                     version_ids.add(vid)
 
-        # Resolve in order, with rate limiting
+        if not version_ids:
+            return
+
+        resolved = 0
         for vid in version_ids:
-            await self._resolve_version_name(vid)
-            await asyncio.sleep(0.3)  # light rate limit for name lookups
+            name = await self._resolve_version_name(vid)
+            if name:
+                resolved += 1
+            # Light delay to avoid rate limiting, but skip if already cached
+            await asyncio.sleep(0.2)
+
+        if version_ids:
+            logger.debug(
+                "Resolved %d/%d resource names", resolved, len(version_ids)
+            )
 
     async def _fetch_images_api(
         self, model_id: int, retries: int = 2
@@ -196,11 +214,17 @@ class CommunityImagesFetchService:
             try:
                 async with session.get(url, params=params) as resp:
                     if resp.status == 429:
+                        wait_time = 5 * (attempt + 1)
                         logger.warning(
-                            "CivitAI rate limited, backing off (attempt %d)",
+                            "CivitAI rate limited, backing off %ds (attempt %d)",
+                            wait_time,
                             attempt + 1,
                         )
-                        await asyncio.sleep(5 * (attempt + 1))
+                        await ws_manager.broadcast({
+                            "type": "community_images_warning",
+                            "message": f"Rate limited by CivitAI, waiting {wait_time}s...",
+                        })
+                        await asyncio.sleep(wait_time)
                         continue
                     if resp.status != 200:
                         logger.debug(

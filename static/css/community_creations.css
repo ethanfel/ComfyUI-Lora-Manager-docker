@@ -391,6 +391,38 @@
     color: #fff;
 }
 
+/* -- Warning banner ------------------------------------------------------ */
+.community-warning {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 16px 12px;
+    padding: 10px 14px;
+    border-radius: 6px;
+    background: rgba(234, 179, 8, 0.15);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    color: #eab308;
+    font-size: 13px;
+}
+
+.community-warning i.fa-exclamation-triangle {
+    flex-shrink: 0;
+}
+
+.warning-dismiss {
+    margin-left: auto;
+    background: none;
+    border: none;
+    color: rgba(234, 179, 8, 0.6);
+    cursor: pointer;
+    padding: 2px 4px;
+    font-size: 12px;
+}
+
+.warning-dismiss:hover {
+    color: #eab308;
+}
+
 /* -- Loading state ------------------------------------------------------- */
 .community-loading {
     text-align: center;
