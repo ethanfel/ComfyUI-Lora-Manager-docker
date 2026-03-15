@@ -67,7 +67,7 @@ def _extract_image_data(
     item: dict,
     sha256: str,
     civitai_model_id: int,
-    version_name_cache: dict[int, str] | None = None,
+    version_cache: dict[int, dict] | None = None,
 ) -> dict:
     """Convert a CivitAI API image item to DB row format."""
     stats = item.get("stats") or {}
@@ -79,7 +79,7 @@ def _extract_image_data(
     raw_resources = inner_meta.get("civitaiResources") or []
     if raw_resources:
         enriched = []
-        cache = version_name_cache or {}
+        cache = version_cache or {}
         for res in raw_resources:
             entry = {
                 "type": res.get("type"),
@@ -88,7 +88,9 @@ def _extract_image_data(
             }
             vid = res.get("modelVersionId")
             if vid and vid in cache:
-                entry["name"] = cache[vid]
+                info = cache[vid]
+                entry["name"] = info.get("name")
+                entry["modelId"] = info.get("modelId")
             enriched.append(entry)
         resources_json = json.dumps(enriched)
 
@@ -125,7 +127,8 @@ class CommunityImagesFetchService:
         self.db = db
         self._api_key = api_key
         self._session: aiohttp.ClientSession | None = None
-        self._version_name_cache: dict[int, str] = {}  # modelVersionId -> name
+        # modelVersionId -> {"name": str, "modelId": int}
+        self._version_cache: dict[int, dict] = {}
 
     async def _get_session(self) -> aiohttp.ClientSession:
         """Lazy aiohttp session with auth header."""
@@ -139,10 +142,10 @@ class CommunityImagesFetchService:
             )
         return self._session
 
-    async def _resolve_version_name(self, version_id: int) -> str | None:
-        """Resolve a CivitAI modelVersionId to its model name. Cached."""
-        if version_id in self._version_name_cache:
-            return self._version_name_cache[version_id]
+    async def _resolve_version(self, version_id: int) -> dict | None:
+        """Resolve a CivitAI modelVersionId to name + modelId. Cached."""
+        if version_id in self._version_cache:
+            return self._version_cache[version_id]
 
         session = await self._get_session()
         try:
@@ -160,9 +163,12 @@ class CommunityImagesFetchService:
                 data = await resp.json()
                 model = data.get("model") or {}
                 name = model.get("name") or data.get("name")
+                model_id = model.get("id")
                 if name:
-                    self._version_name_cache[version_id] = name
-                return name
+                    info = {"name": name, "modelId": model_id}
+                    self._version_cache[version_id] = info
+                    return info
+                return None
         except Exception:
             return None
 
@@ -180,7 +186,7 @@ class CommunityImagesFetchService:
             inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
             for res in inner_meta.get("civitaiResources") or []:
                 vid = res.get("modelVersionId")
-                if vid and vid not in self._version_name_cache:
+                if vid and vid not in self._version_cache:
                     version_ids.add(vid)
 
         if not version_ids:
@@ -188,10 +194,9 @@ class CommunityImagesFetchService:
 
         resolved = 0
         for vid in version_ids:
-            name = await self._resolve_version_name(vid)
-            if name:
+            info = await self._resolve_version(vid)
+            if info:
                 resolved += 1
-            # Light delay to avoid rate limiting, but skip if already cached
             await asyncio.sleep(0.2)
 
         if version_ids:
@@ -347,7 +352,7 @@ class CommunityImagesFetchService:
             )
 
             row = _extract_image_data(
-                item, sha256, civitai_model_id, self._version_name_cache
+                item, sha256, civitai_model_id, self._version_cache
             )
             row["local_filename"] = local_path
             row["has_workflow"] = 1 if has_workflow else 0

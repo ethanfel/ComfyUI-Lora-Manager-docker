@@ -469,9 +469,13 @@ function renderResourceTags(resources) {
         const icon = r.type === "lora" ? "fa-puzzle-piece" : r.type === "checkpoint" ? "fa-cube" : "fa-box";
         const label = r.name || (r.type || "model");
         const weight = r.weight != null && r.type === "lora" ? ` (${r.weight})` : "";
-        return `<span class="community-resource-tag" title="${escapeHtml(r.type || '')}">
-            <i class="fas ${icon}"></i> ${escapeHtml(label)}${weight}
-        </span>`;
+        const title = escapeHtml(r.type || "");
+        const content = `<i class="fas ${icon}"></i> ${escapeHtml(label)}${weight}`;
+        if (r.modelId) {
+            const url = `https://civitai.com/models/${r.modelId}`;
+            return `<a class="community-resource-tag" href="${url}" target="_blank" rel="noopener" title="${title}" onclick="event.stopPropagation()">${content}</a>`;
+        }
+        return `<span class="community-resource-tag" title="${title}">${content}</span>`;
     });
     return `<div class="community-card-resources">${tags.join("")}</div>`;
 }
