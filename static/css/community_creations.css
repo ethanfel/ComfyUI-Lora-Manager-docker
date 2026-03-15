@@ -101,12 +101,32 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
+.community-card-image-wrap {
+    position: relative;
+}
+
 .community-card-image {
     width: 100%;
     aspect-ratio: 4/3;
     object-fit: cover;
     display: block;
     background: var(--bg-secondary, #111);
+}
+
+.community-workflow-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(124, 58, 237, 0.85);
+    color: #fff;
+    font-size: 10px;
+    font-weight: 600;
+    pointer-events: none;
 }
 
 .community-card-body {

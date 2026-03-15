@@ -211,9 +211,12 @@ function createCard(img, sha256) {
         : img.image_url || "";
 
     card.innerHTML = `
-        <img class="community-card-image" src="${escapeHtml(imgUrl)}"
-             alt="Community creation" loading="lazy"
-             onerror="this.style.display='none'">
+        <div class="community-card-image-wrap">
+            <img class="community-card-image" src="${escapeHtml(imgUrl)}"
+                 alt="Community creation" loading="lazy"
+                 onerror="this.style.display='none'">
+            ${img.has_workflow ? '<span class="community-workflow-badge" title="ComfyUI workflow available"><i class="fas fa-project-diagram"></i> Workflow</span>' : ""}
+        </div>
         <div class="community-card-body">
             <div class="community-card-prompt">${escapeHtml(img.prompt || "")}</div>
             <div class="community-card-meta">
@@ -228,9 +231,7 @@ function createCard(img, sha256) {
                     ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
                     ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${img.comment_count}</span>` : ""}
                 </div>
-                <span class="community-card-user">
-                    ${img.has_workflow ? '<i class="fas fa-project-diagram" title="Has workflow"></i> ' : ""}${escapeHtml(img.username || "")}
-                </span>
+                <span class="community-card-user">${escapeHtml(img.username || "")}</span>
             </div>
         </div>
     `;
