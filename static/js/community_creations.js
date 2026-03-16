@@ -160,11 +160,20 @@ function renderGrid(models) {
                 }
             } catch (err) {
                 console.error("[Community] Refresh model failed:", err);
+                const msg = err.message || String(err);
                 refreshBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                refreshBtn.title = msg;
+                // Also show a brief inline message next to the button
+                const errSpan = document.createElement("span");
+                errSpan.className = "community-refresh-error";
+                errSpan.textContent = msg;
+                refreshBtn.parentNode.insertBefore(errSpan, refreshBtn.nextSibling);
                 setTimeout(() => {
                     refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    refreshBtn.title = "Re-fetch community images for this LoRA";
                     refreshBtn.disabled = false;
-                }, 3000);
+                    errSpan.remove();
+                }, 5000);
             }
         });
 

@@ -177,6 +177,12 @@
     cursor: not-allowed;
 }
 
+.community-refresh-error {
+    color: #f87171;
+    font-size: 11px;
+    margin-left: 6px;
+}
+
 .community-base-tag {
     display: inline-flex;
     align-items: center;
