@@ -134,17 +134,18 @@ class CommunityImagesRoutes:
                 body = {}
             force = body.get("force", False)
 
-            # Skip models that already have community images (unless force)
-            existing = set()
+            # Skip models that already have enough community images (unless force)
+            skipped = 0
             if not force:
                 all_hashes = [m["sha256"] for m in models]
-                existing = db.get_hashes_with_images(all_hashes)
-                models = [m for m in models if m["sha256"] not in existing]
+                counts = db.get_image_counts(all_hashes)
+                models = [m for m in models if counts.get(m["sha256"], 0) < 10]
+                skipped = len(all_hashes) - len(models)
 
             logger.info(
-                "Fetching community images for %d models (%d already have images)",
+                "Fetching community images for %d models (%d already have 10+ images)",
                 len(models),
-                len(existing),
+                skipped,
             )
 
             if not models:
@@ -152,7 +153,7 @@ class CommunityImagesRoutes:
                     "success": True,
                     "stored": 0,
                     "total": 0,
-                    "skipped": len(existing),
+                    "skipped": skipped,
                 })
 
             service = CommunityImagesFetchService(db=db, api_key=api_key)
@@ -179,7 +180,7 @@ class CommunityImagesRoutes:
                 "success": True,
                 "stored": stored,
                 "total": len(models),
-                "skipped": len(existing),
+                "skipped": skipped,
                 "cancelled": service.cancelled,
             })
         except Exception:

@@ -209,6 +209,25 @@ class CommunityImagesDB:
                 found.add(row["sha256"])
         return found
 
+    def get_image_counts(self, hashes: list[str]) -> dict[str, int]:
+        """Return image count per sha256 for the given hashes."""
+        if not hashes:
+            return {}
+        conn = self._ensure_conn()
+        result: dict[str, int] = {}
+        chunk_size = 500
+        for i in range(0, len(hashes), chunk_size):
+            chunk = hashes[i : i + chunk_size]
+            placeholders = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"SELECT sha256, COUNT(*) as cnt FROM community_images "
+                f"WHERE sha256 IN ({placeholders}) GROUP BY sha256",
+                chunk,
+            ).fetchall()
+            for row in rows:
+                result[row["sha256"]] = row["cnt"]
+        return result
+
     def get_models_paginated(
         self,
         allowed_hashes: list[str],
