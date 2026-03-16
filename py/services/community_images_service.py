@@ -26,66 +26,94 @@ _WEBP_QUALITY = 85
 _MAX_IMAGE_DIMENSION = 1280  # resize longest side
 
 
+def _quality_filter(items: list[dict], model_name: str = "") -> tuple[list[dict], dict]:
+    """Apply quality filters (meta/prompt checks). Returns (passed, skip_counts)."""
+    result: list[dict] = []
+    counts = {"no_meta": 0, "no_prompt": 0, "short": 0}
+
+    for item in items:
+        meta = item.get("meta")
+        if not meta or not isinstance(meta, dict):
+            counts["no_meta"] += 1
+            continue
+        inner_meta = meta.get("meta")
+        if not inner_meta or not isinstance(inner_meta, dict):
+            counts["no_meta"] += 1
+            continue
+        prompt = inner_meta.get("prompt") or ""
+        if not prompt:
+            counts["no_prompt"] += 1
+            continue
+        if len(prompt) < _MIN_PROMPT_LENGTH:
+            counts["short"] += 1
+            continue
+        result.append(item)
+
+    return result, counts
+
+
 def filter_community_images(
     items: list[dict], author_username: str, model_name: str = "",
 ) -> list[dict]:
-    """Filter CivitAI image items, excluding author and low-quality prompts.
+    """Filter CivitAI image items, preferring non-author community images.
 
-    - Skip images by author (case-insensitive username match)
+    - Prefer non-author images, fall back to author images if none exist
     - Skip images without meta.meta.prompt
     - Skip images with prompt < _MIN_PROMPT_LENGTH chars
     - Return at most _MAX_IMAGES_PER_MODEL images
     """
     author_lower = (author_username or "").lower()
-    result: list[dict] = []
-    skipped_author = 0
-    skipped_no_meta = 0
-    skipped_no_prompt = 0
-    skipped_short = 0
+    tag = f"[{model_name}] " if model_name else ""
 
+    # Split into community vs author images
+    community_items: list[dict] = []
+    author_items: list[dict] = []
     for item in items:
-        # Skip author's own images
         username = (item.get("username") or "").lower()
         if username and author_lower and username == author_lower:
-            skipped_author += 1
-            continue
+            author_items.append(item)
+        else:
+            community_items.append(item)
 
-        # Skip images without prompt (double-nested meta)
-        meta = item.get("meta")
-        if not meta or not isinstance(meta, dict):
-            skipped_no_meta += 1
-            continue
-        inner_meta = meta.get("meta")
-        if not inner_meta or not isinstance(inner_meta, dict):
-            skipped_no_meta += 1
-            continue
-        prompt = inner_meta.get("prompt") or ""
-        if not prompt:
-            skipped_no_prompt += 1
-            continue
-        if len(prompt) < _MIN_PROMPT_LENGTH:
-            skipped_short += 1
-            continue
+    # Try community images first
+    result, counts = _quality_filter(community_items, model_name)
 
-        result.append(item)
-        if len(result) >= _MAX_IMAGES_PER_MODEL:
-            break
-
-    tag = f"[{model_name}] " if model_name else ""
     if result:
+        result = result[:_MAX_IMAGES_PER_MODEL]
         logger.info(
-            "%sKept %d/%d images (skipped: %d author, %d no meta, %d no prompt, %d short)",
+            "%sKept %d/%d community images (skipped: %d no meta, %d no prompt, %d short, %d author available)",
             tag, len(result), len(items),
-            skipped_author, skipped_no_meta, skipped_no_prompt, skipped_short,
+            counts["no_meta"], counts["no_prompt"], counts["short"], len(author_items),
         )
-    elif items:
+        return result
+
+    # Fall back to author images
+    if author_items:
+        result, counts = _quality_filter(author_items, model_name)
+        if result:
+            result = result[:_MAX_IMAGES_PER_MODEL]
+            logger.info(
+                "%sNo community images, using %d/%d author images (skipped: %d no meta, %d no prompt, %d short)",
+                tag, len(result), len(author_items),
+                counts["no_meta"], counts["no_prompt"], counts["short"],
+            )
+            return result
+
+    # Nothing passed
+    total_no_meta = 0
+    total_no_prompt = 0
+    total_short = 0
+    if items:
+        _, all_counts = _quality_filter(items, model_name)
+        total_no_meta = all_counts["no_meta"]
+        total_no_prompt = all_counts["no_prompt"]
+        total_short = all_counts["short"]
         logger.info(
-            "%s0/%d images passed filter (skipped: %d author, %d no meta, %d no prompt, %d short)",
-            tag, len(items),
-            skipped_author, skipped_no_meta, skipped_no_prompt, skipped_short,
+            "%s0/%d images passed filter (skipped: %d no meta, %d no prompt, %d short)",
+            tag, len(items), total_no_meta, total_no_prompt, total_short,
         )
 
-    return result
+    return []
 
 
 def _extract_image_data(
