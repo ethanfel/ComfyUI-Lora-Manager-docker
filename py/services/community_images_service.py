@@ -215,6 +215,7 @@ class CommunityImagesFetchService:
             "modelId": str(model_id),
             "sort": "Most Reactions",
             "limit": "20",
+            "nsfw": "X",  # include all content levels
         }
         if version_id:
             params["modelVersionId"] = str(version_id)
