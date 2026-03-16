@@ -344,7 +344,10 @@ class StandaloneLoraManager(LoraManager):
             CivitaiStatsRoutes.setup_routes(app)
         except Exception:
             logger.exception("Failed to register CivitAI stats routes")
-        CommunityImagesRoutes.setup_routes(app)
+        try:
+            CommunityImagesRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register community images routes")
 
         # Setup WebSocket routes that are shared across all model types
         app.router.add_get("/ws/fetch-progress", ws_manager.handle_connection)

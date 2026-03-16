@@ -285,33 +285,35 @@ class CommunityImagesFetchService:
                 data = await resp.read()
 
             img = Image.open(io.BytesIO(data))
+            try:
+                # Extract ComfyUI workflow from PNG tEXt chunks
+                # PNG text chunks store JSON as strings — parse them to avoid double-encoding
+                workflow_data = {}
+                if hasattr(img, "info") and isinstance(img.info, dict):
+                    for key in ("workflow", "prompt"):
+                        if key in img.info:
+                            raw = img.info[key]
+                            try:
+                                workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
+                            except (json.JSONDecodeError, TypeError):
+                                workflow_data[key] = raw
 
-            # Extract ComfyUI workflow from PNG tEXt chunks
-            # PNG text chunks store JSON as strings — parse them to avoid double-encoding
-            workflow_data = {}
-            if hasattr(img, "info") and isinstance(img.info, dict):
-                for key in ("workflow", "prompt"):
-                    if key in img.info:
-                        raw = img.info[key]
-                        try:
-                            workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
-                        except (json.JSONDecodeError, TypeError):
-                            workflow_data[key] = raw
+                if workflow_data:
+                    workflow_path = os.path.join(
+                        community_dir, f"{image_id}.workflow.json"
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as f:
+                        json.dump(workflow_data, f)
+                    has_workflow = True
 
-            if workflow_data:
-                workflow_path = os.path.join(
-                    community_dir, f"{image_id}.workflow.json"
+                # Convert to WebP with resize
+                img.thumbnail(
+                    (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
+                    Image.LANCZOS,
                 )
-                with open(workflow_path, "w", encoding="utf-8") as f:
-                    json.dump(workflow_data, f)
-                has_workflow = True
-
-            # Convert to WebP with resize
-            img.thumbnail(
-                (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
-                Image.LANCZOS,
-            )
-            img.save(filepath, "webp", quality=_WEBP_QUALITY)
+                img.save(filepath, "webp", quality=_WEBP_QUALITY)
+            finally:
+                img.close()
 
             # Remove old .jpg if it exists (migration from pre-WebP format)
             old_jpg = os.path.join(community_dir, f"{image_id}.jpg")
