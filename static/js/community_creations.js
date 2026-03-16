@@ -218,7 +218,7 @@ function createCard(img, sha256, modelName) {
     card.innerHTML = `
         <div class="community-card-image-wrap">
             ${isVideo
-                ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}" muted loop playsinline preload="metadata" onerror="this.style.display='none'"></video>
+                ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}#t=0.001" muted loop playsinline preload="metadata" onerror="this.style.display='none'"></video>
                    <span class="community-video-badge" title="Video"><i class="fas fa-play"></i></span>`
                 : `<img class="community-card-image" src="${escapeHtml(mediaUrl)}" alt="Community creation" loading="lazy" onerror="this.style.display='none'">`
             }
@@ -279,7 +279,7 @@ function showDetail(img, sha256, modelName) {
     overlay.innerHTML = `
         <div class="community-detail">
             ${isVideo
-                ? `<video class="community-detail-image" src="${escapeHtml(mediaUrl)}" controls loop playsinline></video>`
+                ? `<video class="community-detail-image" src="${escapeHtml(mediaUrl)}#t=0.001" controls loop playsinline></video>`
                 : `<img class="community-detail-image" src="${escapeHtml(mediaUrl)}" alt="Community creation">`
             }
             <div class="community-detail-info">

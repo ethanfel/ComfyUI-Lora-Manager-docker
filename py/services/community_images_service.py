@@ -351,6 +351,15 @@ class CommunityImagesFetchService:
                         json.dump(workflow_data, f)
                     has_workflow = True
 
+                # Ensure RGB mode for WebP (palette/grayscale/RGBA → RGB)
+                if img.mode in ("RGBA", "LA", "PA"):
+                    background = Image.new("RGB", img.size, (0, 0, 0))
+                    background.paste(img, mask=img.split()[-1])
+                    img.close()
+                    img = background
+                elif img.mode != "RGB":
+                    img = img.convert("RGB")
+
                 # Convert to WebP with resize
                 img.thumbnail(
                     (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
