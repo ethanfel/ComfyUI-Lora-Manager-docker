@@ -175,6 +175,40 @@ class ExampleImagesProcessor:
         return {"scanned": scanned, "found": found, "errors": errors}
 
     @staticmethod
+    def collect_files_needing_metadata_workflow(example_images_root):
+        """Find non-PNG media files without workflow sidecars, grouped by model hash.
+
+        Returns dict mapping model_hash -> list of (file_path, filename) tuples.
+        These files can't have embedded workflows (not PNG), so workflow data
+        must come from CivitAI API metadata.
+        """
+        result: dict[str, list[tuple[str, str]]] = {}
+
+        if not example_images_root or not os.path.isdir(example_images_root):
+            return result
+
+        all_media_exts = (
+            set(SUPPORTED_MEDIA_EXTENSIONS['images'])
+            | set(SUPPORTED_MEDIA_EXTENSIONS['videos'])
+        )
+
+        for root_dir, dirs, files in os.walk(example_images_root):
+            for filename in files:
+                file_ext = os.path.splitext(filename)[1].lower()
+                # Skip PNGs (handled by scan_existing_workflows) and non-media
+                if file_ext == '.png' or file_ext not in all_media_exts:
+                    continue
+                file_path = os.path.join(root_dir, filename)
+                sidecar = os.path.splitext(file_path)[0] + ".workflow.json"
+                if os.path.exists(sidecar):
+                    continue
+                # Extract model hash from folder name
+                model_hash = os.path.basename(root_dir)
+                result.setdefault(model_hash, []).append((file_path, filename))
+
+        return result
+
+    @staticmethod
     def _get_file_extension_from_content_or_headers(content, headers, fallback_url=None, media_type_hint=None):
         """Determine file extension from content magic bytes or headers
         

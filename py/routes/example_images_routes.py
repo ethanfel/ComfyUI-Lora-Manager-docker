@@ -137,8 +137,15 @@ class ExampleImagesRoutes:
 
     @staticmethod
     async def _handle_scan_workflows(request: web.Request) -> web.Response:
-        """POST /api/lm/example-images/scan-workflows — scan existing PNGs for embedded workflows."""
+        """POST /api/lm/example-images/scan-workflows — scan existing media for workflows.
+
+        Phase 1: Extract workflows from PNG metadata (embedded in file).
+        Phase 2: For non-PNG files (videos, WebP, etc.), look up CivitAI
+        metadata and extract workflow from the API ``meta.comfy`` field.
+        """
         from ..utils.example_images_paths import get_example_images_root
+        from ..services.service_registry import ServiceRegistry
+        from ..utils.metadata_manager import MetadataManager
 
         root = get_example_images_root()
         if not root or not os.path.isdir(root):
@@ -147,14 +154,76 @@ class ExampleImagesRoutes:
                 status=400,
             )
 
+        # Phase 1: PNG embedded workflows
         result = await asyncio.to_thread(
             ExampleImagesProcessor.scan_existing_workflows, root
         )
+        scanned = result["scanned"]
+        found = result["found"]
+        errors = result["errors"]
+
+        # Phase 2: Non-PNG files — extract workflow from CivitAI API metadata
+        files_by_hash = await asyncio.to_thread(
+            ExampleImagesProcessor.collect_files_needing_metadata_workflow, root
+        )
+        if files_by_hash:
+            scanners = [
+                await ServiceRegistry.get_lora_scanner(),
+                await ServiceRegistry.get_checkpoint_scanner(),
+                await ServiceRegistry.get_embedding_scanner(),
+            ]
+            for model_hash, file_list in files_by_hash.items():
+                # Find model data in scanner caches
+                model_data = None
+                for scanner in scanners:
+                    if scanner.has_hash(model_hash):
+                        cache = await scanner.get_cached_data()
+                        for item in cache.raw_data:
+                            if item.get("sha256") == model_hash:
+                                model_data = item
+                                break
+                    if model_data:
+                        break
+                if not model_data:
+                    continue
+
+                await MetadataManager.hydrate_model_data(model_data)
+                civitai_images = (model_data.get("civitai") or {}).get("images") or []
+
+                # Build index lookup: image_N -> civitai_images[N]
+                meta_by_index: dict[int, dict] = {}
+                for idx, ci in enumerate(civitai_images):
+                    meta = ci.get("meta")
+                    if meta and isinstance(meta, dict):
+                        meta_by_index[idx] = meta
+
+                for file_path, filename in file_list:
+                    scanned += 1
+                    # Match image_N.ext -> index N
+                    stem = os.path.splitext(filename)[0]
+                    if stem.startswith("image_"):
+                        try:
+                            idx = int(stem[6:])
+                        except ValueError:
+                            continue
+                    else:
+                        continue
+                    meta = meta_by_index.get(idx)
+                    if not meta:
+                        continue
+                    try:
+                        if ExampleImagesProcessor._extract_workflow_from_api_meta(meta, file_path):
+                            found += 1
+                            logger.info("Extracted workflow from API meta for %s", file_path)
+                    except Exception:
+                        errors += 1
+                        logger.error("Error extracting API workflow for %s", file_path, exc_info=True)
+
         return web.json_response({
             "success": True,
-            "scanned": result["scanned"],
-            "found": result["found"],
-            "errors": result["errors"],
+            "scanned": scanned,
+            "found": found,
+            "errors": errors,
         })
 
     def to_route_mapping(self) -> Mapping[str, Callable[[web.Request], web.StreamResponse]]:
