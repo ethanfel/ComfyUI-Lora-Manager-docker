@@ -489,12 +489,11 @@ function setupFetchButton() {
 let _isFetching = false;
 
 async function doFetch(btn, force) {
-    if (_isFetching) return;
-
     const defaultIcon = "fa-images";
     const defaultLabel = "Fetch Community Images";
 
     _isFetching = true;
+    btn.disabled = true;
     btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> <span>Fetching...</span>';
 
     // Show cancel button
@@ -551,6 +550,7 @@ async function doFetch(btn, force) {
         }, 5000);
     } finally {
         _isFetching = false;
+        btn.disabled = false;
         if (cancelBtn) cancelBtn.style.display = "none";
     }
 }

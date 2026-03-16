@@ -78,11 +78,21 @@ class CommunityImagesRoutes:
         """POST /api/lm/community-images/fetch — trigger bulk fetch."""
         global _active_service, _fetch_in_progress
 
-        if _fetch_in_progress:
-            return web.json_response(
-                {"success": False, "error": "Fetch already in progress"},
-                status=409,
-            )
+        # If a fetch is already running, cancel it and let this one take over
+        if _fetch_in_progress and _active_service is not None:
+            logger.info("Cancelling previous fetch to start a new one")
+            _active_service.cancel()
+            # Wait briefly for the old fetch loop to notice the cancel
+            import asyncio
+            for _ in range(20):
+                if not _fetch_in_progress:
+                    break
+                await asyncio.sleep(0.25)
+            if _fetch_in_progress:
+                return web.json_response(
+                    {"success": False, "error": "Previous fetch still stopping, try again"},
+                    status=409,
+                )
         _fetch_in_progress = True
 
         try:
