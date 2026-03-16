@@ -379,6 +379,76 @@ class CommunityImagesRoutes:
         return web.json_response({"success": True, "data": workflow_data})
 
     @staticmethod
+    async def handle_refresh_image(request: web.Request) -> web.Response:
+        """POST /api/lm/community-images/refresh/{image_id} — re-download one image."""
+        try:
+            image_id = int(request.match_info["image_id"])
+        except (KeyError, ValueError):
+            return web.json_response(
+                {"success": False, "error": "Invalid image ID"}, status=400
+            )
+
+        db = CommunityImagesDB.get_instance()
+        conn = db._ensure_conn()
+        row = conn.execute(
+            "SELECT * FROM community_images WHERE civitai_image_id = ?",
+            (image_id,),
+        ).fetchone()
+        if not row:
+            return web.json_response(
+                {"success": False, "error": "Image not found"}, status=404
+            )
+
+        row = dict(row)
+        image_url = row.get("image_url")
+        sha256 = row.get("sha256")
+        media_type = row.get("media_type", "image")
+        if not image_url or not sha256:
+            return web.json_response(
+                {"success": False, "error": "Missing URL or hash"}, status=400
+            )
+
+        try:
+            settings = get_settings_manager()
+            api_key = settings.get("civitai_api_key", "")
+            service = CommunityImagesFetchService(db=db, api_key=api_key)
+            try:
+                local_path, has_workflow = await service._download_media(
+                    image_url, sha256, image_id, media_type=media_type,
+                )
+            finally:
+                await service.close()
+
+            if not local_path:
+                return web.json_response(
+                    {"success": False, "error": "Download failed"}, status=500
+                )
+
+            # Update DB row with new local path and workflow status
+            conn.execute(
+                "UPDATE community_images SET local_filename = ?, has_workflow = ? "
+                "WHERE civitai_image_id = ?",
+                (local_path, 1 if has_workflow else 0, image_id),
+            )
+            conn.commit()
+
+            # Return updated image data
+            updated = conn.execute(
+                "SELECT * FROM community_images WHERE civitai_image_id = ?",
+                (image_id,),
+            ).fetchone()
+
+            return web.json_response({
+                "success": True,
+                "image": _clean_image(dict(updated)),
+            })
+        except Exception:
+            logger.exception("Failed to refresh community image %d", image_id)
+            return web.json_response(
+                {"success": False, "error": "Refresh failed"}, status=500
+            )
+
+    @staticmethod
     async def handle_status(request: web.Request) -> web.Response:
         """GET /api/lm/community-images/status — DB count."""
         try:
@@ -403,6 +473,9 @@ class CommunityImagesRoutes:
         app.router.add_post("/api/lm/community-images/by-hashes", cls.handle_by_hashes)
         app.router.add_get(
             "/api/lm/community-images/workflow/{image_id}", cls.handle_workflow
+        )
+        app.router.add_post(
+            "/api/lm/community-images/refresh/{image_id}", cls.handle_refresh_image
         )
         app.router.add_get("/api/lm/community-images/status", cls.handle_status)
 
