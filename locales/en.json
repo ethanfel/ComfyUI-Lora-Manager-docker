@@ -227,6 +227,8 @@
             "noCreditRequired": "No Credit Required",
             "allowSellingGeneratedContent": "Allow Selling",
             "noTags": "No tags",
+            "other": "Other",
+            "hasWorkflow": "With Workflow",
             "clearAll": "Clear All Filters",
             "any": "Any",
             "all": "All",
