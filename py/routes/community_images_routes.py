@@ -471,6 +471,61 @@ class CommunityImagesRoutes:
                 {"success": False, "error": "Internal server error"}, status=500
             )
 
+    @staticmethod
+    async def handle_test_api(request: web.Request) -> web.Response:
+        """GET /api/lm/community-images/test-api — test CivitAI API connectivity."""
+        import aiohttp as _aiohttp
+
+        settings = get_settings_manager()
+        api_key = settings.get("civitai_api_key", "")
+
+        result = {
+            "has_api_key": bool(api_key),
+            "api_key_prefix": api_key[:8] + "..." if len(api_key) > 8 else ("(set)" if api_key else "(empty)"),
+        }
+
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
+        timeout = _aiohttp.ClientTimeout(total=15)
+        try:
+            async with _aiohttp.ClientSession(headers=headers, timeout=timeout) as session:
+                # Test 1: simple images endpoint with small limit
+                url = "https://civitai.com/api/v1/images"
+                params = {"limit": "1", "sort": "Most Reactions"}
+                async with session.get(url, params=params) as resp:
+                    result["images_endpoint"] = {
+                        "status": resp.status,
+                        "ok": resp.status == 200,
+                    }
+                    # Capture rate limit headers
+                    for h in resp.headers:
+                        hl = h.lower()
+                        if "rate" in hl or "limit" in hl or "retry" in hl or "remaining" in hl:
+                            result.setdefault("rate_limit_headers", {})[h] = resp.headers[h]
+
+                    if resp.status == 200:
+                        data = await resp.json()
+                        items = data.get("items", [])
+                        result["images_endpoint"]["returned_items"] = len(items)
+                    elif resp.status == 429:
+                        result["images_endpoint"]["error"] = "RATE LIMITED"
+                        body = await resp.text()
+                        if body:
+                            result["images_endpoint"]["body"] = body[:500]
+                    else:
+                        body = await resp.text()
+                        result["images_endpoint"]["error"] = body[:500]
+
+        except _aiohttp.ClientError as exc:
+            result["connection_error"] = str(exc)
+        except Exception as exc:
+            result["error"] = str(exc)
+
+        result["success"] = True
+        return web.json_response(result)
+
     @classmethod
     def setup_routes(cls, app: web.Application) -> None:
         """Register community images routes."""
@@ -486,6 +541,7 @@ class CommunityImagesRoutes:
             "/api/lm/community-images/refresh-model", cls.handle_refresh_model
         )
         app.router.add_get("/api/lm/community-images/status", cls.handle_status)
+        app.router.add_get("/api/lm/community-images/test-api", cls.handle_test_api)
 
         async def cleanup(app):
             instance = CommunityImagesDB._instance
