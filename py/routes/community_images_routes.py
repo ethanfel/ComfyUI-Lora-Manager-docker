@@ -1,7 +1,6 @@
 """Route registrar for Community Creations endpoints."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
@@ -20,9 +19,8 @@ from ..services.websocket_manager import ws_manager
 logger = logging.getLogger(__name__)
 
 # Module-level fetch state — prevents concurrent fetches and supports cancel
-_fetch_lock = asyncio.Lock()
+_fetch_in_progress = False
 _active_service: CommunityImagesFetchService | None = None
-_fetch_task: asyncio.Task | None = None
 
 
 def _clean_image(img: dict) -> dict:
@@ -62,11 +60,13 @@ class CommunityImagesRoutes:
 
             env = CommunityImagesRoutes._get_template_env()
             template = env.get_template("community_creations.html")
+            from ..utils.version import get_app_version
             rendered = template.render(
                 request=request,
                 settings=settings,
                 t=server_i18n.get_translation,
                 is_initializing=False,
+                version=get_app_version(),
             )
             return web.Response(text=rendered, content_type="text/html")
         except Exception:
@@ -76,13 +76,14 @@ class CommunityImagesRoutes:
     @staticmethod
     async def handle_fetch(request: web.Request) -> web.Response:
         """POST /api/lm/community-images/fetch — trigger bulk fetch."""
-        global _active_service, _fetch_task
+        global _active_service, _fetch_in_progress
 
-        if _fetch_lock.locked():
+        if _fetch_in_progress:
             return web.json_response(
                 {"success": False, "error": "Fetch already in progress"},
                 status=409,
             )
+        _fetch_in_progress = True
 
         try:
             db = CommunityImagesDB.get_instance()
@@ -141,38 +142,40 @@ class CommunityImagesRoutes:
                     "skipped": len(existing),
                 })
 
-            async with _fetch_lock:
-                service = CommunityImagesFetchService(db=db, api_key=api_key)
-                _active_service = service
+            service = CommunityImagesFetchService(db=db, api_key=api_key)
+            _active_service = service
 
-                async def progress_callback(current: int, total: int) -> None:
-                    await ws_manager.broadcast({
-                        "type": "community_images_progress",
-                        "current": current,
-                        "total": total,
-                        "progress": round(current / total * 100) if total else 0,
-                    })
-
-                try:
-                    stored = await service.fetch_all(
-                        models, progress_callback=progress_callback
-                    )
-                finally:
-                    await service.close()
-                    _active_service = None
-
-                return web.json_response({
-                    "success": True,
-                    "stored": stored,
-                    "total": len(models),
-                    "skipped": len(existing),
-                    "cancelled": service.cancelled,
+            async def progress_callback(current: int, total: int) -> None:
+                await ws_manager.broadcast({
+                    "type": "community_images_progress",
+                    "current": current,
+                    "total": total,
+                    "progress": round(current / total * 100) if total else 0,
                 })
-        except Exception as exc:
+
+            try:
+                stored = await service.fetch_all(
+                    models, progress_callback=progress_callback
+                )
+            finally:
+                await service.close()
+                _active_service = None
+
+            return web.json_response({
+                "success": True,
+                "stored": stored,
+                "total": len(models),
+                "skipped": len(existing),
+                "cancelled": service.cancelled,
+            })
+        except Exception:
             logger.exception("Community images fetch failed")
             return web.json_response(
-                {"success": False, "error": str(exc)}, status=500
+                {"success": False, "error": "Community images fetch failed"},
+                status=500,
             )
+        finally:
+            _fetch_in_progress = False
 
     @staticmethod
     async def handle_cancel(request: web.Request) -> web.Response:
@@ -297,7 +300,7 @@ class CommunityImagesRoutes:
         except Exception as exc:
             logger.exception("Failed to get paginated community models")
             return web.json_response(
-                {"success": False, "error": str(exc)}, status=500
+                {"success": False, "error": "Internal server error"}, status=500
             )
 
     @staticmethod
@@ -380,7 +383,7 @@ class CommunityImagesRoutes:
         except Exception as exc:
             logger.exception("Community images status check failed")
             return web.json_response(
-                {"success": False, "error": str(exc)}, status=500
+                {"success": False, "error": "Internal server error"}, status=500
             )
 
     @classmethod

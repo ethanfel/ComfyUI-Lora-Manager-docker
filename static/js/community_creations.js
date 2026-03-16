@@ -507,7 +507,7 @@ function renderResourceTags(resources) {
     const tags = resources.map(r => {
         const icon = r.type === "lora" ? "fa-puzzle-piece" : r.type === "checkpoint" ? "fa-cube" : "fa-box";
         const label = r.name || (r.type || "model");
-        const weight = r.weight != null && r.type === "lora" ? ` (${r.weight})` : "";
+        const weight = r.weight != null && r.type === "lora" ? ` (${escapeHtml(String(r.weight))})` : "";
         const title = escapeHtml(r.type || "");
         const content = `<i class="fas ${icon}"></i> ${escapeHtml(label)}${weight}`;
         if (r.modelId) {

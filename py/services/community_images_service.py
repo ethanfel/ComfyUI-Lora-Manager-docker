@@ -127,6 +127,7 @@ class CommunityImagesFetchService:
         self.db = db
         self._api_key = api_key
         self._session: aiohttp.ClientSession | None = None
+        self._cancelled = False
         # modelVersionId -> {"name": str, "modelId": int}
         self._version_cache: dict[int, dict] = {}
 
