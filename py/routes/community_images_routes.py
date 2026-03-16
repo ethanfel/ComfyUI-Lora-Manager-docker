@@ -381,71 +381,73 @@ class CommunityImagesRoutes:
         return web.json_response({"success": True, "data": workflow_data})
 
     @staticmethod
-    async def handle_refresh_image(request: web.Request) -> web.Response:
-        """POST /api/lm/community-images/refresh/{image_id} — re-download one image."""
+    async def handle_refresh_model(request: web.Request) -> web.Response:
+        """POST /api/lm/community-images/refresh-model — re-fetch for one model."""
         try:
-            image_id = int(request.match_info["image_id"])
-        except (KeyError, ValueError):
+            body = await request.json()
+            sha256 = body.get("sha256")
+        except Exception:
             return web.json_response(
-                {"success": False, "error": "Invalid image ID"}, status=400
+                {"success": False, "error": "Invalid JSON"}, status=400
             )
 
-        db = CommunityImagesDB.get_instance()
-        conn = db._ensure_conn()
-        row = conn.execute(
-            "SELECT * FROM community_images WHERE civitai_image_id = ?",
-            (image_id,),
-        ).fetchone()
-        if not row:
+        if not sha256:
             return web.json_response(
-                {"success": False, "error": "Image not found"}, status=404
+                {"success": False, "error": "Missing sha256"}, status=400
             )
 
-        row = dict(row)
-        image_url = row.get("image_url")
-        sha256 = row.get("sha256")
-        media_type = row.get("media_type", "image")
-        if not image_url or not sha256:
+        # Look up model's civitai info from scanner
+        civitai_model_id = None
+        civitai_version_id = None
+        author_username = ""
+        try:
+            scanner = await ServiceRegistry.get_lora_scanner()
+            cache = await scanner.get_cached_data()
+            for item in cache.raw_data:
+                if not item:
+                    continue
+                if item.get("sha256") == sha256:
+                    civitai = item.get("civitai") or {}
+                    civitai_model_id = civitai.get("modelId")
+                    civitai_version_id = civitai.get("id")
+                    author_username = (civitai.get("creator") or {}).get("username", "")
+                    break
+        except Exception as exc:
+            logger.info("Failed to get lora scanner data: %s", exc)
+
+        if not civitai_model_id:
             return web.json_response(
-                {"success": False, "error": "Missing URL or hash"}, status=400
+                {"success": False, "error": "No CivitAI data for this model"},
+                status=404,
             )
 
         try:
+            db = CommunityImagesDB.get_instance()
+            # Delete existing images for this model so we get a clean re-fetch
+            db.delete_by_hash(sha256)
+
             settings = get_settings_manager()
             api_key = settings.get("civitai_api_key", "")
             service = CommunityImagesFetchService(db=db, api_key=api_key)
             try:
-                local_path, has_workflow = await service._download_media(
-                    image_url, sha256, image_id, media_type=media_type,
+                count = await service.fetch_images_for_model(
+                    sha256, civitai_model_id, author_username,
+                    civitai_version_id=civitai_version_id,
                 )
             finally:
                 await service.close()
 
-            if not local_path:
-                return web.json_response(
-                    {"success": False, "error": "Download failed"}, status=500
-                )
-
-            # Update DB row with new local path and workflow status
-            conn.execute(
-                "UPDATE community_images SET local_filename = ?, has_workflow = ? "
-                "WHERE civitai_image_id = ?",
-                (local_path, 1 if has_workflow else 0, image_id),
-            )
-            conn.commit()
-
-            # Return updated image data
-            updated = conn.execute(
-                "SELECT * FROM community_images WHERE civitai_image_id = ?",
-                (image_id,),
-            ).fetchone()
+            # Return the refreshed images
+            images = db.get_by_hashes([sha256])
+            clean_images = [_clean_image(img) for img in images.get(sha256, [])]
 
             return web.json_response({
                 "success": True,
-                "image": _clean_image(dict(updated)),
+                "stored": count,
+                "images": clean_images,
             })
         except Exception:
-            logger.exception("Failed to refresh community image %d", image_id)
+            logger.exception("Failed to refresh community images for %s", sha256)
             return web.json_response(
                 {"success": False, "error": "Refresh failed"}, status=500
             )
@@ -477,7 +479,7 @@ class CommunityImagesRoutes:
             "/api/lm/community-images/workflow/{image_id}", cls.handle_workflow
         )
         app.router.add_post(
-            "/api/lm/community-images/refresh/{image_id}", cls.handle_refresh_image
+            "/api/lm/community-images/refresh-model", cls.handle_refresh_model
         )
         app.router.add_get("/api/lm/community-images/status", cls.handle_status)
 

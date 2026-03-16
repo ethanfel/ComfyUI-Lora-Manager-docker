@@ -117,8 +117,56 @@ function renderGrid(models) {
         header.innerHTML = `<h3>${escapeHtml(model.model_name)}</h3>
             ${baseTag}
             <a class="lora-link" href="/loras?search=${encodeURIComponent(model.model_name)}" title="View LoRA details"><i class="fas fa-external-link-alt"></i> View LoRA</a>
-            <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>`;
+            <span class="lora-link">${model.image_count} image${model.image_count !== 1 ? "s" : ""}</span>
+            <button class="community-refresh-btn" data-sha256="${escapeHtml(model.sha256)}" title="Re-fetch community images for this LoRA">
+                <i class="fas fa-sync-alt"></i>
+            </button>`;
         section.appendChild(header);
+
+        // Refresh button handler
+        const refreshBtn = header.querySelector(".community-refresh-btn");
+        refreshBtn.addEventListener("click", async (e) => {
+            e.stopPropagation();
+            refreshBtn.disabled = true;
+            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            try {
+                const resp = await fetch("/api/lm/community-images/refresh-model", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ sha256: model.sha256 }),
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    // Re-render the cards in this group with updated data
+                    const cardsContainer = section.querySelector(".community-cards");
+                    if (cardsContainer && data.images) {
+                        cardsContainer.innerHTML = "";
+                        const sorted = [...data.images].sort((a, b) => {
+                            const ra = (a.like_count || 0) + (a.heart_count || 0);
+                            const rb = (b.like_count || 0) + (b.heart_count || 0);
+                            return rb - ra;
+                        });
+                        for (const img of sorted) {
+                            cardsContainer.appendChild(createCard(img, model.sha256, model.model_name));
+                        }
+                    }
+                    refreshBtn.innerHTML = '<i class="fas fa-check"></i>';
+                    setTimeout(() => {
+                        refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                        refreshBtn.disabled = false;
+                    }, 2000);
+                } else {
+                    throw new Error(data.error || "Refresh failed");
+                }
+            } catch (err) {
+                console.error("[Community] Refresh model failed:", err);
+                refreshBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                setTimeout(() => {
+                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i>';
+                    refreshBtn.disabled = false;
+                }, 3000);
+            }
+        });
 
         // Sort images within group by reactions
         const sorted = [...model.images].sort((a, b) => {
@@ -320,10 +368,6 @@ function showDetail(img, sha256, modelName) {
                 </div>
                 <div class="community-detail-actions" style="margin-top:12px;">
                     ${img.civitai_image_id ? `
-                    <button class="workflow-btn refresh-image-btn" data-image-id="${img.civitai_image_id}" title="Re-download and re-convert this image">
-                        <i class="fas fa-sync-alt"></i> Refresh
-                    </button>` : ""}
-                    ${img.civitai_image_id ? `
                     <a class="workflow-btn civitai-link" href="https://civitai.com/images/${img.civitai_image_id}" target="_blank" rel="noopener" title="View on CivitAI">
                         <i class="fas fa-external-link-alt"></i> View on CivitAI
                     </a>` : ""}
@@ -375,48 +419,6 @@ function showDetail(img, sha256, modelName) {
             } catch (err) {
                 console.error("[Community] Failed to fetch workflow:", err);
                 alert("Failed to download workflow.");
-            }
-        });
-    }
-
-    // Refresh image handler
-    const refreshBtn = overlay.querySelector(".refresh-image-btn");
-    if (refreshBtn) {
-        refreshBtn.addEventListener("click", async (e) => {
-            e.stopPropagation();
-            const imageId = refreshBtn.dataset.imageId;
-            refreshBtn.disabled = true;
-            refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
-            try {
-                const resp = await fetch(`/api/lm/community-images/refresh/${imageId}`, { method: "POST" });
-                const data = await resp.json();
-                if (data.success && data.image) {
-                    // Update the media element in the detail modal
-                    const mediaEl = overlay.querySelector(".community-detail-image");
-                    if (mediaEl) {
-                        const newUrl = data.image.local_filename
-                            ? `/example_images_static/${data.image.local_filename}`
-                            : data.image.image_url || "";
-                        const isVideo = data.image.media_type === "video";
-                        mediaEl.src = isVideo ? newUrl + "#t=0.001" : newUrl;
-                        // Cache-bust for images
-                        if (!isVideo) mediaEl.src += (newUrl.includes("?") ? "&" : "?") + "cb=" + Date.now();
-                    }
-                    refreshBtn.innerHTML = '<i class="fas fa-check"></i> Refreshed';
-                    setTimeout(() => {
-                        refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
-                        refreshBtn.disabled = false;
-                    }, 2000);
-                } else {
-                    throw new Error(data.error || "Refresh failed");
-                }
-            } catch (err) {
-                console.error("[Community] Refresh failed:", err);
-                refreshBtn.innerHTML = '<i class="fas fa-exclamation-triangle"></i> Failed';
-                setTimeout(() => {
-                    refreshBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
-                    refreshBtn.disabled = false;
-                }, 3000);
             }
         });
     }
