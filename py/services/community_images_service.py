@@ -27,38 +27,63 @@ _MAX_IMAGE_DIMENSION = 1280  # resize longest side
 
 
 def filter_community_images(
-    items: list[dict], author_username: str
+    items: list[dict], author_username: str, model_name: str = "",
 ) -> list[dict]:
     """Filter CivitAI image items, excluding author and low-quality prompts.
 
     - Skip images by author (case-insensitive username match)
     - Skip images without meta.meta.prompt
-    - Skip images with prompt < 20 chars
-    - Return at most 10 images
+    - Skip images with prompt < _MIN_PROMPT_LENGTH chars
+    - Return at most _MAX_IMAGES_PER_MODEL images
     """
     author_lower = (author_username or "").lower()
     result: list[dict] = []
+    skipped_author = 0
+    skipped_no_meta = 0
+    skipped_no_prompt = 0
+    skipped_short = 0
 
     for item in items:
         # Skip author's own images
         username = (item.get("username") or "").lower()
         if username and author_lower and username == author_lower:
+            skipped_author += 1
             continue
 
         # Skip images without prompt (double-nested meta)
         meta = item.get("meta")
         if not meta or not isinstance(meta, dict):
+            skipped_no_meta += 1
             continue
         inner_meta = meta.get("meta")
         if not inner_meta or not isinstance(inner_meta, dict):
+            skipped_no_meta += 1
             continue
         prompt = inner_meta.get("prompt") or ""
+        if not prompt:
+            skipped_no_prompt += 1
+            continue
         if len(prompt) < _MIN_PROMPT_LENGTH:
+            skipped_short += 1
             continue
 
         result.append(item)
         if len(result) >= _MAX_IMAGES_PER_MODEL:
             break
+
+    tag = f"[{model_name}] " if model_name else ""
+    if result:
+        logger.info(
+            "%sKept %d/%d images (skipped: %d author, %d no meta, %d no prompt, %d short)",
+            tag, len(result), len(items),
+            skipped_author, skipped_no_meta, skipped_no_prompt, skipped_short,
+        )
+    elif items:
+        logger.info(
+            "%s0/%d images passed filter (skipped: %d author, %d no meta, %d no prompt, %d short)",
+            tag, len(items),
+            skipped_author, skipped_no_meta, skipped_no_prompt, skipped_short,
+        )
 
     return result
 
@@ -388,28 +413,35 @@ class CommunityImagesFetchService:
         civitai_model_id: int,
         author_username: str,
         civitai_version_id: int | None = None,
+        model_name: str = "",
     ) -> int:
         """Fetch, filter, download, and store community images for one model.
 
         Returns the number of images stored.
         """
+        tag = f"[{model_name}] " if model_name else ""
+
         response = await self._fetch_images_api(civitai_model_id, civitai_version_id)
         if not response:
+            logger.info("%sAPI returned no data (model=%d, version=%s)", tag, civitai_model_id, civitai_version_id)
             return 0
 
         items = response.get("items", [])
-        filtered = filter_community_images(items, author_username)
+        if not items:
+            logger.info("%sAPI returned 0 items (model=%d, version=%s)", tag, civitai_model_id, civitai_version_id)
+
+        filtered = filter_community_images(items, author_username, model_name)
 
         # Fall back to model-level query if version-specific returned nothing
         if not filtered and civitai_version_id:
-            logger.debug(
-                "No images for version %d, falling back to model %d",
-                civitai_version_id, civitai_model_id,
+            logger.info(
+                "%sFalling back to model-level query (version %d had no results)",
+                tag, civitai_version_id,
             )
             response = await self._fetch_images_api(civitai_model_id)
             if response:
                 items = response.get("items", [])
-                filtered = filter_community_images(items, author_username)
+                filtered = filter_community_images(items, author_username, model_name)
 
         if not filtered:
             return 0
@@ -486,8 +518,10 @@ class CommunityImagesFetchService:
                 continue
 
             version_id = model.get("civitai_version_id")
+            name = model.get("model_name", sha256[:8])
             count = await self.fetch_images_for_model(
-                sha256, model_id, author, civitai_version_id=version_id,
+                sha256, model_id, author,
+                civitai_version_id=version_id, model_name=name,
             )
             total_stored += count
 

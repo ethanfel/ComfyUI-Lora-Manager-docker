@@ -119,6 +119,7 @@ class CommunityImagesRoutes:
                             "civitai_model_id": model_id,
                             "civitai_version_id": version_id,
                             "author_username": creator or "",
+                            "model_name": item.get("model_name") or item.get("file_name") or sha256[:8],
                         })
             except Exception as exc:
                 logger.info("Failed to get lora scanner data: %s", exc)
@@ -411,6 +412,7 @@ class CommunityImagesRoutes:
         civitai_model_id = None
         civitai_version_id = None
         author_username = ""
+        model_name = ""
         try:
             scanner = await ServiceRegistry.get_lora_scanner()
             cache = await scanner.get_cached_data()
@@ -422,6 +424,7 @@ class CommunityImagesRoutes:
                     civitai_model_id = civitai.get("modelId")
                     civitai_version_id = civitai.get("id")
                     author_username = (civitai.get("creator") or {}).get("username", "")
+                    model_name = item.get("model_name") or item.get("file_name") or ""
                     break
         except Exception as exc:
             logger.info("Failed to get lora scanner data: %s", exc)
@@ -442,6 +445,7 @@ class CommunityImagesRoutes:
                 count = await service.fetch_images_for_model(
                     sha256, civitai_model_id, author_username,
                     civitai_version_id=civitai_version_id,
+                    model_name=model_name,
                 )
             finally:
                 await service.close()
