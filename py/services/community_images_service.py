@@ -207,7 +207,7 @@ class CommunityImagesFetchService:
             )
 
     async def _fetch_images_api(
-        self, model_id: int, retries: int = 2
+        self, model_id: int, version_id: int | None = None, retries: int = 2
     ) -> dict | None:
         """GET /api/v1/images with retries and 429 backoff."""
         url = f"{_CIVITAI_API}/images"
@@ -216,6 +216,8 @@ class CommunityImagesFetchService:
             "sort": "Most Reactions",
             "limit": "20",
         }
+        if version_id:
+            params["modelVersionId"] = str(version_id)
         session = await self._get_session()
         for attempt in range(retries + 1):
             try:
@@ -384,12 +386,13 @@ class CommunityImagesFetchService:
         sha256: str,
         civitai_model_id: int,
         author_username: str,
+        civitai_version_id: int | None = None,
     ) -> int:
         """Fetch, filter, download, and store community images for one model.
 
         Returns the number of images stored.
         """
-        response = await self._fetch_images_api(civitai_model_id)
+        response = await self._fetch_images_api(civitai_model_id, civitai_version_id)
         if not response:
             return 0
 
@@ -469,7 +472,10 @@ class CommunityImagesFetchService:
                     await progress_callback(i + 1, total)
                 continue
 
-            count = await self.fetch_images_for_model(sha256, model_id, author)
+            version_id = model.get("civitai_version_id")
+            count = await self.fetch_images_for_model(
+                sha256, model_id, author, civitai_version_id=version_id,
+            )
             total_stored += count
 
             if progress_callback:

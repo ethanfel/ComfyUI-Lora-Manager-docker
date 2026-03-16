@@ -100,12 +100,14 @@ class CommunityImagesRoutes:
                         continue
                     civitai = item.get("civitai") or {}
                     model_id = civitai.get("modelId")
+                    version_id = civitai.get("id")
                     sha256 = item.get("sha256")
                     creator = (civitai.get("creator") or {}).get("username")
                     if model_id and sha256:
                         models.append({
                             "sha256": sha256,
                             "civitai_model_id": model_id,
+                            "civitai_version_id": version_id,
                             "author_username": creator or "",
                         })
             except Exception as exc:
