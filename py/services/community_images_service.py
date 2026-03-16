@@ -250,14 +250,36 @@ class CommunityImagesFetchService:
                 return None
         return None
 
+    @staticmethod
+    def _extract_workflow_from_meta(meta: dict | None) -> dict:
+        """Extract ComfyUI workflow data from CivitAI API metadata.
+
+        Checks for 'comfy' key (JSON string with workflow/prompt) in the
+        top-level meta dict. Returns a dict suitable for saving as
+        workflow JSON, or empty dict if none found.
+        """
+        if not meta or not isinstance(meta, dict):
+            return {}
+        comfy_raw = meta.get("comfy")
+        if not comfy_raw:
+            return {}
+        try:
+            parsed = json.loads(comfy_raw) if isinstance(comfy_raw, str) else comfy_raw
+            if isinstance(parsed, dict):
+                return parsed
+        except (json.JSONDecodeError, TypeError):
+            pass
+        return {}
+
     async def _download_media(
-        self, image_url: str, sha256: str, image_id: int, media_type: str = "image"
+        self, image_url: str, sha256: str, image_id: int,
+        media_type: str = "image", item_meta: dict | None = None,
     ) -> tuple[str | None, bool]:
         """Download image or video, storing locally.
 
         Images are converted to WebP with resize. Videos are saved as-is (mp4).
-        If a ComfyUI workflow is found in PNG metadata, saves it as
-        {image_id}.workflow.json alongside the media.
+        Workflow extraction: checks PNG metadata (images) and CivitAI API
+        metadata (both images and videos) for ComfyUI workflow data.
 
         Returns (relative_path, has_workflow) or (None, False) on failure.
         """
@@ -289,7 +311,16 @@ class CommunityImagesFetchService:
                 filepath = os.path.join(community_dir, f"{image_id}.mp4")
                 with open(filepath, "wb") as f:
                     f.write(data)
-                return f"{rel_path}/community/{image_id}.mp4", False
+                # Check API metadata for workflow
+                workflow_data = self._extract_workflow_from_meta(item_meta)
+                if workflow_data:
+                    workflow_path = os.path.join(
+                        community_dir, f"{image_id}.workflow.json"
+                    )
+                    with open(workflow_path, "w", encoding="utf-8") as f:
+                        json.dump(workflow_data, f)
+                    has_workflow = True
+                return f"{rel_path}/community/{image_id}.mp4", has_workflow
 
             # Image path: convert to WebP
             filepath = os.path.join(community_dir, f"{image_id}.webp")
@@ -307,6 +338,10 @@ class CommunityImagesFetchService:
                                 workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
                             except (json.JSONDecodeError, TypeError):
                                 workflow_data[key] = raw
+
+                # Fallback to API metadata if PNG has no workflow
+                if not workflow_data:
+                    workflow_data = self._extract_workflow_from_meta(item_meta)
 
                 if workflow_data:
                     workflow_path = os.path.join(
@@ -366,7 +401,8 @@ class CommunityImagesFetchService:
                 continue
 
             local_path, has_workflow = await self._download_media(
-                image_url, sha256, image_id, media_type=item_type
+                image_url, sha256, image_id,
+                media_type=item_type, item_meta=item.get("meta"),
             )
 
             row = _extract_image_data(
