@@ -318,6 +318,7 @@ class CommunityImagesRoutes:
                 {"success": False, "error": "Invalid or too many hashes (max 5000)"},
                 status=400,
             )
+        hashes = [h for h in hashes if isinstance(h, str) and h]
         if not hashes:
             return web.json_response({"success": True, "images": {}})
 
@@ -366,8 +367,14 @@ class CommunityImagesRoutes:
                 {"success": False, "error": "No workflow found"}, status=404
             )
 
-        with open(workflow_path, "r", encoding="utf-8") as f:
-            workflow_data = json.load(f)
+        try:
+            with open(workflow_path, "r", encoding="utf-8") as f:
+                workflow_data = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            logger.warning("Failed to read workflow file %s: %s", workflow_path, exc)
+            return web.json_response(
+                {"success": False, "error": "Workflow file is corrupted"}, status=500
+            )
 
         return web.json_response({"success": True, "data": workflow_data})
 

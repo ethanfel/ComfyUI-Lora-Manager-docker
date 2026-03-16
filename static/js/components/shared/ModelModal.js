@@ -1084,8 +1084,8 @@ async function loadCommunityTab(sha256) {
             const imgUrl = img.local_filename
                 ? `/example_images_static/${img.local_filename}`
                 : img.image_url || "";
-            const prompt = escapeHtml(img.prompt || "");
-            const promptShort = prompt.length > 120 ? prompt.slice(0, 120) + "..." : prompt;
+            const rawPrompt = img.prompt || "";
+            const promptShort = escapeHtml(rawPrompt.length > 120 ? rawPrompt.slice(0, 120) + "..." : rawPrompt);
 
             html += `
                 <div class="community-tab-card" data-image='${escapeAttribute(JSON.stringify(img))}'>
@@ -1096,12 +1096,12 @@ async function loadCommunityTab(sha256) {
                         <div class="community-tab-prompt">${promptShort}</div>
                         <div class="community-tab-meta">
                             ${img.sampler ? `<span class="community-meta-tag">${escapeHtml(img.sampler)}</span>` : ""}
-                            ${img.steps ? `<span class="community-meta-tag">${img.steps} steps</span>` : ""}
-                            ${img.cfg_scale ? `<span class="community-meta-tag">CFG ${img.cfg_scale}</span>` : ""}
+                            ${img.steps ? `<span class="community-meta-tag">${escapeHtml(String(img.steps))} steps</span>` : ""}
+                            ${img.cfg_scale ? `<span class="community-meta-tag">CFG ${escapeHtml(String(img.cfg_scale))}</span>` : ""}
                         </div>
                         <div class="community-tab-reactions">
-                            ${img.like_count ? `<span><i class="fas fa-thumbs-up"></i> ${img.like_count}</span>` : ""}
-                            ${img.heart_count ? `<span><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
+                            ${img.like_count ? `<span><i class="fas fa-thumbs-up"></i> ${escapeHtml(String(img.like_count))}</span>` : ""}
+                            ${img.heart_count ? `<span><i class="fas fa-heart"></i> ${escapeHtml(String(img.heart_count))}</span>` : ""}
                             <span class="community-tab-user">by ${escapeHtml(img.username || "unknown")}</span>
                         </div>
                     </div>
@@ -1155,13 +1155,13 @@ function showCommunityDetail(img) {
                 ` : ""}
                 <h4>Parameters</h4>
                 <div class="community-detail-params">
-                    ${img.steps ? `<div class="community-detail-param"><strong>Steps:</strong> ${img.steps}</div>` : ""}
+                    ${img.steps ? `<div class="community-detail-param"><strong>Steps:</strong> ${escapeHtml(String(img.steps))}</div>` : ""}
                     ${img.sampler ? `<div class="community-detail-param"><strong>Sampler:</strong> ${escapeHtml(img.sampler)}</div>` : ""}
-                    ${img.cfg_scale ? `<div class="community-detail-param"><strong>CFG Scale:</strong> ${img.cfg_scale}</div>` : ""}
-                    ${img.seed != null ? `<div class="community-detail-param"><strong>Seed:</strong> ${img.seed}</div>` : ""}
-                    ${img.denoise ? `<div class="community-detail-param"><strong>Denoise:</strong> ${img.denoise}</div>` : ""}
+                    ${img.cfg_scale ? `<div class="community-detail-param"><strong>CFG Scale:</strong> ${escapeHtml(String(img.cfg_scale))}</div>` : ""}
+                    ${img.seed != null ? `<div class="community-detail-param"><strong>Seed:</strong> ${escapeHtml(String(img.seed))}</div>` : ""}
+                    ${img.denoise ? `<div class="community-detail-param"><strong>Denoise:</strong> ${escapeHtml(String(img.denoise))}</div>` : ""}
                     ${img.base_model ? `<div class="community-detail-param"><strong>Base Model:</strong> ${escapeHtml(img.base_model)}</div>` : ""}
-                    ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${img.width}x${img.height}</div>` : ""}
+                    ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${escapeHtml(String(img.width))}x${escapeHtml(String(img.height))}</div>` : ""}
                 </div>
             </div>
         </div>

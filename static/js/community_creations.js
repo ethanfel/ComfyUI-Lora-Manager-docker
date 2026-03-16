@@ -225,16 +225,16 @@ function createCard(img, sha256, modelName) {
             <div class="community-card-prompt">${escapeHtml(img.prompt || "")}</div>
             <div class="community-card-meta">
                 ${img.sampler ? `<span class="community-meta-tag">${escapeHtml(img.sampler)}</span>` : ""}
-                ${img.steps ? `<span class="community-meta-tag">${img.steps} steps</span>` : ""}
-                ${img.cfg_scale ? `<span class="community-meta-tag">CFG ${img.cfg_scale}</span>` : ""}
+                ${img.steps ? `<span class="community-meta-tag">${escapeHtml(String(img.steps))} steps</span>` : ""}
+                ${img.cfg_scale ? `<span class="community-meta-tag">CFG ${escapeHtml(String(img.cfg_scale))}</span>` : ""}
                 ${img.base_model ? `<span class="community-meta-tag">${escapeHtml(img.base_model)}</span>` : ""}
             </div>
             ${renderResourceTags(img.resources)}
             <div class="community-card-footer">
                 <div class="community-card-reactions">
-                    ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${img.like_count}</span>` : ""}
-                    ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
-                    ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${img.comment_count}</span>` : ""}
+                    ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${escapeHtml(String(img.like_count))}</span>` : ""}
+                    ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${escapeHtml(String(img.heart_count))}</span>` : ""}
+                    ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${escapeHtml(String(img.comment_count))}</span>` : ""}
                 </div>
                 <span class="community-card-user">${escapeHtml(img.username || "")}</span>
             </div>
@@ -282,20 +282,20 @@ function showDetail(img, sha256, modelName) {
                 ` : ""}
                 <h4>Parameters</h4>
                 <div class="community-detail-params">
-                    ${img.steps ? `<div class="community-detail-param"><strong>Steps:</strong> ${img.steps}</div>` : ""}
+                    ${img.steps ? `<div class="community-detail-param"><strong>Steps:</strong> ${escapeHtml(String(img.steps))}</div>` : ""}
                     ${img.sampler ? `<div class="community-detail-param"><strong>Sampler:</strong> ${escapeHtml(img.sampler)}</div>` : ""}
-                    ${img.cfg_scale ? `<div class="community-detail-param"><strong>CFG Scale:</strong> ${img.cfg_scale}</div>` : ""}
-                    ${img.seed != null ? `<div class="community-detail-param"><strong>Seed:</strong> ${img.seed}</div>` : ""}
-                    ${img.denoise ? `<div class="community-detail-param"><strong>Denoise:</strong> ${img.denoise}</div>` : ""}
+                    ${img.cfg_scale ? `<div class="community-detail-param"><strong>CFG Scale:</strong> ${escapeHtml(String(img.cfg_scale))}</div>` : ""}
+                    ${img.seed != null ? `<div class="community-detail-param"><strong>Seed:</strong> ${escapeHtml(String(img.seed))}</div>` : ""}
+                    ${img.denoise ? `<div class="community-detail-param"><strong>Denoise:</strong> ${escapeHtml(String(img.denoise))}</div>` : ""}
                     ${img.base_model ? `<div class="community-detail-param"><strong>Base Model:</strong> ${escapeHtml(img.base_model)}</div>` : ""}
-                    ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${img.width}x${img.height}</div>` : ""}
+                    ${img.width && img.height ? `<div class="community-detail-param"><strong>Size:</strong> ${escapeHtml(String(img.width))}x${escapeHtml(String(img.height))}</div>` : ""}
                 </div>
                 ${renderResourceTags(img.resources)}
                 <div class="community-card-reactions" style="margin-top:12px;">
-                    ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${img.like_count}</span>` : ""}
-                    ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${img.heart_count}</span>` : ""}
-                    ${img.laugh_count ? `<span class="community-reaction"><i class="fas fa-laugh"></i> ${img.laugh_count}</span>` : ""}
-                    ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${img.comment_count}</span>` : ""}
+                    ${img.like_count ? `<span class="community-reaction"><i class="fas fa-thumbs-up"></i> ${escapeHtml(String(img.like_count))}</span>` : ""}
+                    ${img.heart_count ? `<span class="community-reaction"><i class="fas fa-heart"></i> ${escapeHtml(String(img.heart_count))}</span>` : ""}
+                    ${img.laugh_count ? `<span class="community-reaction"><i class="fas fa-laugh"></i> ${escapeHtml(String(img.laugh_count))}</span>` : ""}
+                    ${img.comment_count ? `<span class="community-reaction"><i class="fas fa-comment"></i> ${escapeHtml(String(img.comment_count))}</span>` : ""}
                 </div>
                 <div class="community-card-user" style="margin-top:8px;">
                     by ${escapeHtml(img.username || "unknown")}

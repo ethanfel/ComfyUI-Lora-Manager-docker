@@ -287,12 +287,16 @@ class CommunityImagesFetchService:
             img = Image.open(io.BytesIO(data))
 
             # Extract ComfyUI workflow from PNG tEXt chunks
+            # PNG text chunks store JSON as strings — parse them to avoid double-encoding
             workflow_data = {}
             if hasattr(img, "info") and isinstance(img.info, dict):
-                if "workflow" in img.info:
-                    workflow_data["workflow"] = img.info["workflow"]
-                if "prompt" in img.info:
-                    workflow_data["prompt"] = img.info["prompt"]
+                for key in ("workflow", "prompt"):
+                    if key in img.info:
+                        raw = img.info[key]
+                        try:
+                            workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
+                        except (json.JSONDecodeError, TypeError):
+                            workflow_data[key] = raw
 
             if workflow_data:
                 workflow_path = os.path.join(
