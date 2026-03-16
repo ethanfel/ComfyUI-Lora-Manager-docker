@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 _CIVITAI_API = "https://civitai.com/api/v1"
 _RATE_LIMIT_DELAY = 1.5  # seconds between requests
-_MIN_PROMPT_LENGTH = 20
+_MIN_PROMPT_LENGTH = 5
 _MAX_IMAGES_PER_MODEL = 10
 _WEBP_QUALITY = 85
 _MAX_IMAGE_DIMENSION = 1280  # resize longest side
