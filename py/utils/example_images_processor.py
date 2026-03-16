@@ -89,6 +89,33 @@ class ExampleImagesProcessor:
             return False
 
     @staticmethod
+    def _extract_workflow_from_api_meta(image_meta, save_path):
+        """Extract ComfyUI workflow from CivitAI API image metadata.
+
+        Checks for 'comfy' key in the image's meta dict. Used as fallback
+        when file-based extraction isn't possible (e.g. videos).
+        Returns True if a workflow was found and saved.
+        """
+        if not image_meta or not isinstance(image_meta, dict):
+            return False
+        comfy_raw = image_meta.get("comfy")
+        if not comfy_raw:
+            return False
+        try:
+            parsed = json.loads(comfy_raw) if isinstance(comfy_raw, str) else comfy_raw
+            if not isinstance(parsed, dict):
+                return False
+            workflow_path = os.path.splitext(save_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(parsed, f)
+            return True
+        except (json.JSONDecodeError, TypeError):
+            return False
+        except Exception:
+            logger.debug("Failed to extract workflow from API meta for %s", save_path, exc_info=True)
+            return False
+
+    @staticmethod
     def _extract_workflow_from_file(file_path):
         """Extract ComfyUI workflow from an existing PNG file on disk.
 
@@ -276,9 +303,12 @@ class ExampleImagesProcessor:
                     with open(save_path, 'wb') as f:
                         f.write(content)
 
-                    # Extract workflow from PNG metadata
+                    # Extract workflow from PNG metadata, fallback to API meta
                     if is_image and media_ext == '.png':
-                        ExampleImagesProcessor._extract_workflow(content, save_path)
+                        if not ExampleImagesProcessor._extract_workflow(content, save_path):
+                            ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+                    else:
+                        ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
 
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
@@ -294,7 +324,7 @@ class ExampleImagesProcessor:
                 error_msg = f"Error downloading file {image_url}: {str(e)}"
                 logger.error(error_msg)
                 model_success = False  # Mark the model as failed
-        
+
         return model_success, False  # (success, is_metadata_stale)
     
     @staticmethod
@@ -363,9 +393,12 @@ class ExampleImagesProcessor:
                     with open(save_path, 'wb') as f:
                         f.write(content)
 
-                    # Extract workflow from PNG metadata
+                    # Extract workflow from PNG metadata, fallback to API meta
                     if is_image and media_ext == '.png':
-                        ExampleImagesProcessor._extract_workflow(content, save_path)
+                        if not ExampleImagesProcessor._extract_workflow(content, save_path):
+                            ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+                    else:
+                        ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
 
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
@@ -384,7 +417,7 @@ class ExampleImagesProcessor:
                 logger.error(error_msg)
                 model_success = False  # Mark the model as failed
                 failed_images.append(image_url)  # Track failed URL
-        
+
         return model_success, False, failed_images  # (success, is_metadata_stale, failed_images)
     
     @staticmethod
