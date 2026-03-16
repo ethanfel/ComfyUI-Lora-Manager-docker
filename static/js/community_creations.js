@@ -210,15 +210,18 @@ function createCard(img, sha256, modelName) {
         showDetail(img, sha256, modelName);
     });
 
-    const imgUrl = img.local_filename
+    const mediaUrl = img.local_filename
         ? `/example_images_static/${img.local_filename}`
         : img.image_url || "";
+    const isVideo = img.media_type === "video";
 
     card.innerHTML = `
         <div class="community-card-image-wrap">
-            <img class="community-card-image" src="${escapeHtml(imgUrl)}"
-                 alt="Community creation" loading="lazy"
-                 onerror="this.style.display='none'">
+            ${isVideo
+                ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}" muted loop playsinline preload="metadata" onerror="this.style.display='none'"></video>
+                   <span class="community-video-badge" title="Video"><i class="fas fa-play"></i></span>`
+                : `<img class="community-card-image" src="${escapeHtml(mediaUrl)}" alt="Community creation" loading="lazy" onerror="this.style.display='none'">`
+            }
             ${img.has_workflow ? '<span class="community-workflow-badge" title="ComfyUI workflow available"><i class="fas fa-project-diagram"></i> Workflow</span>' : ""}
         </div>
         <div class="community-card-body">
@@ -240,6 +243,16 @@ function createCard(img, sha256, modelName) {
             </div>
         </div>
     `;
+
+    // Hover-to-play for video cards
+    if (isVideo) {
+        const video = card.querySelector("video");
+        if (video) {
+            card.addEventListener("mouseenter", () => video.play().catch(() => {}));
+            card.addEventListener("mouseleave", () => { video.pause(); video.currentTime = 0; });
+        }
+    }
+
     return card;
 }
 
@@ -248,9 +261,10 @@ function showDetail(img, sha256, modelName) {
     const existing = document.querySelector(".community-detail-overlay");
     if (existing) existing.remove();
 
-    const imgUrl = img.local_filename
+    const mediaUrl = img.local_filename
         ? `/example_images_static/${img.local_filename}`
         : img.image_url || "";
+    const isVideo = img.media_type === "video";
 
     const overlay = document.createElement("div");
     overlay.className = "community-detail-overlay";
@@ -264,7 +278,10 @@ function showDetail(img, sha256, modelName) {
 
     overlay.innerHTML = `
         <div class="community-detail">
-            <img class="community-detail-image" src="${escapeHtml(imgUrl)}" alt="Community creation">
+            ${isVideo
+                ? `<video class="community-detail-image" src="${escapeHtml(mediaUrl)}" controls loop playsinline></video>`
+                : `<img class="community-detail-image" src="${escapeHtml(mediaUrl)}" alt="Community creation">`
+            }
             <div class="community-detail-info">
                 <div class="community-detail-lora-link">
                     <a href="/loras?search=${encodeURIComponent(modelName || '')}" title="View LoRA details">

@@ -115,6 +115,7 @@ def _extract_image_data(
         "heart_count": stats.get("heartCount", 0),
         "laugh_count": stats.get("laughCount", 0),
         "comment_count": stats.get("commentCount", 0),
+        "media_type": item.get("type", "image"),
         "resources": resources_json,
         "created_at": item.get("createdAt"),
     }
@@ -249,14 +250,14 @@ class CommunityImagesFetchService:
                 return None
         return None
 
-    async def _download_image(
-        self, image_url: str, sha256: str, image_id: int
+    async def _download_media(
+        self, image_url: str, sha256: str, image_id: int, media_type: str = "image"
     ) -> tuple[str | None, bool]:
-        """Download image, convert to WebP, extract workflow if present.
+        """Download image or video, storing locally.
 
-        Saves image to {model_folder}/community/{image_id}.webp.
+        Images are converted to WebP with resize. Videos are saved as-is (mp4).
         If a ComfyUI workflow is found in PNG metadata, saves it as
-        {image_id}.workflow.json alongside the image.
+        {image_id}.workflow.json alongside the media.
 
         Returns (relative_path, has_workflow) or (None, False) on failure.
         """
@@ -269,7 +270,6 @@ class CommunityImagesFetchService:
         community_dir = os.path.join(model_folder, "community")
         os.makedirs(community_dir, exist_ok=True)
 
-        filepath = os.path.join(community_dir, f"{image_id}.webp")
         has_workflow = False
 
         try:
@@ -277,12 +277,22 @@ class CommunityImagesFetchService:
             async with session.get(image_url) as resp:
                 if resp.status != 200:
                     logger.debug(
-                        "Failed to download image %d: HTTP %d",
+                        "Failed to download media %d: HTTP %d",
                         image_id,
                         resp.status,
                     )
                     return None, False
                 data = await resp.read()
+
+            if media_type == "video":
+                # Save video as mp4
+                filepath = os.path.join(community_dir, f"{image_id}.mp4")
+                with open(filepath, "wb") as f:
+                    f.write(data)
+                return f"{rel_path}/community/{image_id}.mp4", False
+
+            # Image path: convert to WebP
+            filepath = os.path.join(community_dir, f"{image_id}.webp")
 
             img = Image.open(io.BytesIO(data))
             try:
@@ -320,7 +330,7 @@ class CommunityImagesFetchService:
             if os.path.exists(old_jpg):
                 os.remove(old_jpg)
         except Exception as exc:
-            logger.warning("Failed to download image %d: %s", image_id, exc)
+            logger.warning("Failed to download media %d: %s", image_id, exc)
             return None, False
 
         return f"{rel_path}/community/{image_id}.webp", has_workflow
@@ -351,11 +361,12 @@ class CommunityImagesFetchService:
         for item in filtered:
             image_id = item.get("id")
             image_url = item.get("url")
+            item_type = item.get("type", "image")
             if not image_id or not image_url:
                 continue
 
-            local_path, has_workflow = await self._download_image(
-                image_url, sha256, image_id
+            local_path, has_workflow = await self._download_media(
+                image_url, sha256, image_id, media_type=item_type
             )
 
             row = _extract_image_data(

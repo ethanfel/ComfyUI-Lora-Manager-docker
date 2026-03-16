@@ -1081,17 +1081,19 @@ async function loadCommunityTab(sha256) {
 
         let html = '<div class="community-tab-grid">';
         for (const img of images) {
-            const imgUrl = img.local_filename
+            const mediaUrl = img.local_filename
                 ? `/example_images_static/${img.local_filename}`
                 : img.image_url || "";
+            const isVideo = img.media_type === "video";
             const rawPrompt = img.prompt || "";
             const promptShort = escapeHtml(rawPrompt.length > 120 ? rawPrompt.slice(0, 120) + "..." : rawPrompt);
 
             html += `
                 <div class="community-tab-card" data-image='${escapeAttribute(JSON.stringify(img))}'>
-                    <img class="community-tab-image" src="${escapeAttribute(imgUrl)}"
-                         alt="Community creation" loading="lazy"
-                         onerror="this.style.display='none'">
+                    ${isVideo
+                        ? `<video class="community-tab-image" src="${escapeAttribute(mediaUrl)}" muted loop playsinline preload="metadata" onerror="this.style.display='none'"></video>`
+                        : `<img class="community-tab-image" src="${escapeAttribute(mediaUrl)}" alt="Community creation" loading="lazy" onerror="this.style.display='none'">`
+                    }
                     <div class="community-tab-card-body">
                         <div class="community-tab-prompt">${promptShort}</div>
                         <div class="community-tab-meta">
@@ -1112,12 +1114,17 @@ async function loadCommunityTab(sha256) {
         container.innerHTML = html;
         container.dataset.loaded = '1';
 
-        // Click to expand with full prompt
+        // Click to expand with full prompt, hover-to-play for videos
         container.querySelectorAll('.community-tab-card').forEach(card => {
             card.addEventListener('click', () => {
                 const imgData = JSON.parse(card.dataset.image);
                 showCommunityDetail(imgData);
             });
+            const video = card.querySelector('video');
+            if (video) {
+                card.addEventListener('mouseenter', () => video.play().catch(() => {}));
+                card.addEventListener('mouseleave', () => { video.pause(); video.currentTime = 0; });
+            }
         });
     } catch (err) {
         console.error("[Community] Failed to load tab:", err);
@@ -1126,9 +1133,10 @@ async function loadCommunityTab(sha256) {
 }
 
 function showCommunityDetail(img) {
-    const imgUrl = img.local_filename
+    const mediaUrl = img.local_filename
         ? `/example_images_static/${img.local_filename}`
         : img.image_url || "";
+    const isVideo = img.media_type === "video";
 
     const overlay = document.createElement("div");
     overlay.className = "community-detail-overlay";
@@ -1142,7 +1150,10 @@ function showCommunityDetail(img) {
 
     overlay.innerHTML = `
         <div class="community-detail">
-            <img class="community-detail-image" src="${escapeAttribute(imgUrl)}" alt="Community creation">
+            ${isVideo
+                ? `<video class="community-detail-image" src="${escapeAttribute(mediaUrl)}" controls loop playsinline></video>`
+                : `<img class="community-detail-image" src="${escapeAttribute(mediaUrl)}" alt="Community creation">`
+            }
             <div class="community-detail-info">
                 <h4>Prompt</h4>
                 <div class="community-detail-prompt">
