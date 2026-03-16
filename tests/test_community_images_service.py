@@ -109,15 +109,16 @@ def test_filter_excludes_missing_prompt():
 
 
 def test_filter_excludes_short_prompt():
-    """Prompts shorter than 20 characters should be excluded."""
+    """Prompts shorter than 5 characters should be excluded."""
     items = [
-        _make_image_item(image_id=1, prompt="short"),  # 5 chars
-        _make_image_item(image_id=2, prompt="a" * 19),  # 19 chars
+        _make_image_item(image_id=1, prompt="abcd"),  # 4 chars - excluded
+        _make_image_item(image_id=2, prompt="abcde"),  # 5 chars - should pass
         _make_image_item(image_id=3, prompt="a" * 20),  # 20 chars - should pass
     ]
     result = filter_community_images(items, "nobody")
-    assert len(result) == 1
-    assert result[0]["id"] == 3
+    assert len(result) == 2
+    assert result[0]["id"] == 2
+    assert result[1]["id"] == 3
 
 
 def test_filter_limits_to_10():
@@ -185,7 +186,7 @@ async def test_fetch_images_for_model(community_db, tmp_path):
     api_items = [
         _make_image_item(image_id=1, username="model_author"),  # excluded - author
         _make_image_item(image_id=2, username="community_user"),  # included
-        _make_image_item(image_id=3, username="another_user", prompt="short"),  # excluded - short prompt
+        _make_image_item(image_id=3, username="another_user", prompt="tiny"),  # excluded - short prompt (4 chars)
     ]
     api_response = {"items": api_items}
 
@@ -194,7 +195,7 @@ async def test_fetch_images_for_model(community_db, tmp_path):
     with patch.object(
         service, "_fetch_images_api", new_callable=AsyncMock, return_value=api_response
     ), patch.object(
-        service, "_download_image", new_callable=AsyncMock, return_value=("abc123/community/2.webp", False)
+        service, "_download_media", new_callable=AsyncMock, return_value=("abc123/community/2.webp", False)
     ):
         count = await service.fetch_images_for_model(
             sha256="abc123",
@@ -237,7 +238,7 @@ async def test_fetch_all(community_db):
     service = CommunityImagesFetchService(db=community_db)
     progress_calls = []
 
-    async def track_progress(current, total):
+    async def track_progress(current, total, total_stored):
         progress_calls.append((current, total))
 
     with patch.object(

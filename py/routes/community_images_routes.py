@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import time
 
 import jinja2
 from aiohttp import web
@@ -374,9 +375,14 @@ class CommunityImagesRoutes:
                 {"success": False, "error": "Model folder not found"}, status=404
             )
 
-        workflow_path = os.path.join(
-            model_folder, "community", f"{image_id}.workflow.json"
+        workflow_path = os.path.realpath(
+            os.path.join(model_folder, "community", f"{image_id}.workflow.json")
         )
+        # Ensure resolved path stays inside the model folder
+        if not workflow_path.startswith(os.path.realpath(model_folder) + os.sep):
+            return web.json_response(
+                {"success": False, "error": "Invalid path"}, status=400
+            )
         if not os.path.exists(workflow_path):
             return web.json_response(
                 {"success": False, "error": "No workflow found"}, status=404
@@ -443,6 +449,7 @@ class CommunityImagesRoutes:
             service = CommunityImagesFetchService(db=db, api_key=api_key)
             try:
                 # Fetch first — only delete old data after we have new results
+                before_fetch = time.time()
                 count = await service.fetch_images_for_model(
                     sha256, civitai_model_id, author_username,
                     civitai_version_id=civitai_version_id,
@@ -456,6 +463,11 @@ class CommunityImagesRoutes:
                     "success": False,
                     "error": "CivitAI returned no images for this version",
                 })
+
+            # Remove stale images that were not part of the fresh fetch
+            stale = db.delete_stale(sha256, before_fetch)
+            if stale:
+                logger.info("Removed %d stale community images for %s", stale, sha256)
 
             # Return the refreshed images
             images = db.get_by_hashes([sha256])
@@ -497,7 +509,7 @@ class CommunityImagesRoutes:
 
         result = {
             "has_api_key": bool(api_key),
-            "api_key_prefix": api_key[:8] + "..." if len(api_key) > 8 else ("(set)" if api_key else "(empty)"),
+            "api_key_prefix": "(set)" if api_key else "(empty)",
         }
 
         headers = {}
