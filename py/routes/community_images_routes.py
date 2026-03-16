@@ -423,19 +423,23 @@ class CommunityImagesRoutes:
 
         try:
             db = CommunityImagesDB.get_instance()
-            # Delete existing images for this model so we get a clean re-fetch
-            db.delete_by_hash(sha256)
-
             settings = get_settings_manager()
             api_key = settings.get("civitai_api_key", "")
             service = CommunityImagesFetchService(db=db, api_key=api_key)
             try:
+                # Fetch first — only delete old data after we have new results
                 count = await service.fetch_images_for_model(
                     sha256, civitai_model_id, author_username,
                     civitai_version_id=civitai_version_id,
                 )
             finally:
                 await service.close()
+
+            if count == 0:
+                return web.json_response({
+                    "success": False,
+                    "error": "CivitAI returned no images for this version",
+                })
 
             # Return the refreshed images
             images = db.get_by_hashes([sha256])
