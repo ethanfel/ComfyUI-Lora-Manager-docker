@@ -83,6 +83,7 @@ class BaseModelService(ABC):
         credit_required: Optional[bool] = None,
         allow_selling_generated_content: Optional[bool] = None,
         tag_logic: str = "any",
+        has_workflow: Optional[bool] = None,
         **kwargs,
     ) -> Dict:
         """Get paginated and filtered model data"""
@@ -133,6 +134,11 @@ class BaseModelService(ABC):
             if allow_selling_generated_content is not None:
                 filtered_data = await self._apply_allow_selling_filter(
                     filtered_data, allow_selling_generated_content
+                )
+
+            if has_workflow is not None:
+                filtered_data = self._apply_has_workflow_filter(
+                    filtered_data, has_workflow
                 )
         filter_duration = time.perf_counter() - t1
         post_filter_count = len(filtered_data)
@@ -339,6 +345,33 @@ class BaseModelService(ABC):
                 if not has_image_permission:  # Selling generated content is not allowed
                     filtered_data.append(item)
 
+        return filtered_data
+
+    def _apply_has_workflow_filter(
+        self, data: List[Dict], has_workflow: bool
+    ) -> List[Dict]:
+        """Filter models by whether they have workflow JSON files.
+
+        Checks the model's example images folder for any .workflow.json files.
+        """
+        from ..utils.example_images_paths import get_model_folder
+
+        filtered_data = []
+        for item in data:
+            sha256 = item.get("sha256")
+            if not sha256:
+                if not has_workflow:
+                    filtered_data.append(item)
+                continue
+            model_folder = get_model_folder(sha256)
+            found = False
+            if model_folder and os.path.isdir(model_folder):
+                for f in os.listdir(model_folder):
+                    if f.endswith(".workflow.json"):
+                        found = True
+                        break
+            if found == has_workflow:
+                filtered_data.append(item)
         return filtered_data
 
     async def _annotate_update_flags(
