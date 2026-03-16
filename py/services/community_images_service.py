@@ -398,6 +398,18 @@ class CommunityImagesFetchService:
 
         items = response.get("items", [])
         filtered = filter_community_images(items, author_username)
+
+        # Fall back to model-level query if version-specific returned nothing
+        if not filtered and civitai_version_id:
+            logger.debug(
+                "No images for version %d, falling back to model %d",
+                civitai_version_id, civitai_model_id,
+            )
+            response = await self._fetch_images_api(civitai_model_id)
+            if response:
+                items = response.get("items", [])
+                filtered = filter_community_images(items, author_username)
+
         if not filtered:
             return 0
 
