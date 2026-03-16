@@ -508,7 +508,8 @@ async function doFetch(btn, force) {
             try {
                 const msg = JSON.parse(e.data);
                 if (msg.type === "community_images_progress") {
-                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}</span>`;
+                    const storedInfo = msg.stored ? ` (${msg.stored} img)` : "";
+                    btn.innerHTML = `<i class="fas fa-spinner fa-spin"></i> <span>${msg.current}/${msg.total}${storedInfo}</span>`;
                 } else if (msg.type === "community_images_warning") {
                     showWarning(msg.message);
                 }

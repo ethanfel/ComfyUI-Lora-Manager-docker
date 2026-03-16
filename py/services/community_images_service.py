@@ -460,7 +460,7 @@ class CommunityImagesFetchService:
         Args:
             models: list of dicts with 'sha256', 'civitai_model_id',
                      and 'author_username' keys.
-            progress_callback: optional async callable(current, total).
+            progress_callback: optional async callable(current, total, stored).
 
         Returns:
             Total number of images stored.
@@ -482,7 +482,7 @@ class CommunityImagesFetchService:
 
             if not sha256 or not model_id:
                 if progress_callback:
-                    await progress_callback(i + 1, total)
+                    await progress_callback(i + 1, total, total_stored)
                 continue
 
             version_id = model.get("civitai_version_id")
@@ -492,7 +492,7 @@ class CommunityImagesFetchService:
             total_stored += count
 
             if progress_callback:
-                await progress_callback(i + 1, total)
+                await progress_callback(i + 1, total, total_stored)
 
             # Rate limiting between requests
             if i < total - 1:

@@ -157,11 +157,12 @@ class CommunityImagesRoutes:
             service = CommunityImagesFetchService(db=db, api_key=api_key)
             _active_service = service
 
-            async def progress_callback(current: int, total: int) -> None:
+            async def progress_callback(current: int, total: int, stored: int) -> None:
                 await ws_manager.broadcast({
                     "type": "community_images_progress",
                     "current": current,
                     "total": total,
+                    "stored": stored,
                     "progress": round(current / total * 100) if total else 0,
                 })
 
