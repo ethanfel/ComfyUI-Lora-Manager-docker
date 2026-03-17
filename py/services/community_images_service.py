@@ -421,7 +421,12 @@ class CommunityImagesFetchService:
                     (_MAX_IMAGE_DIMENSION, _MAX_IMAGE_DIMENSION),
                     Image.LANCZOS,
                 )
-                img.save(filepath, "webp", quality=_WEBP_QUALITY)
+                # Include minimal EXIF so the WebP uses VP8X container,
+                # which Firefox can content-sniff when served as octet-stream
+                import piexif
+                exif_dict = {"0th": {piexif.ImageIFD.Software: b"LoRA Manager"}}
+                exif_bytes = piexif.dump(exif_dict)
+                img.save(filepath, "webp", quality=_WEBP_QUALITY, exif=exif_bytes)
             finally:
                 img.close()
 

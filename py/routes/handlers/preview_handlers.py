@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import mimetypes
 import urllib.parse
 from pathlib import Path
 
@@ -11,6 +12,10 @@ from aiohttp import web
 from ...config import config as global_config
 
 logger = logging.getLogger(__name__)
+
+# Ensure common media types are registered (Docker/minimal envs may miss them)
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("video/mp4", ".mp4")
 
 
 class PreviewHandler:
@@ -48,8 +53,13 @@ class PreviewHandler:
             logger.debug("Preview file not found at %s", str(resolved))
             raise web.HTTPNotFound(text="Preview file not found")
 
-        # aiohttp's FileResponse handles range requests and content headers for us.
-        return web.FileResponse(path=resolved, chunk_size=256 * 1024)
+        # Explicitly set content type — aiohttp's FileResponse uses its own
+        # MimeTypes instance which may not know .webp in minimal environments.
+        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        return web.FileResponse(
+            path=resolved, chunk_size=256 * 1024,
+            headers={"Content-Type": content_type},
+        )
 
 
 __all__ = ["PreviewHandler"]
