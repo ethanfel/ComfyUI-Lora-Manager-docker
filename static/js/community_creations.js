@@ -282,9 +282,7 @@ function createCard(img, sha256, modelName) {
         showDetail(img, sha256, modelName);
     });
 
-    const mediaUrl = img.local_filename
-        ? `/example_images_static/${img.local_filename}`
-        : img.image_url || "";
+    const mediaUrl = img.preview_url || img.image_url || "";
     const isVideo = img.media_type === "video";
 
     card.innerHTML = `
@@ -335,9 +333,7 @@ function showDetail(img, sha256, modelName) {
     const existing = document.querySelector(".community-detail-overlay");
     if (existing) existing.remove();
 
-    const mediaUrl = img.local_filename
-        ? `/example_images_static/${img.local_filename}`
-        : img.image_url || "";
+    const mediaUrl = img.preview_url || img.image_url || "";
     const isVideo = img.media_type === "video";
 
     const overlay = document.createElement("div");

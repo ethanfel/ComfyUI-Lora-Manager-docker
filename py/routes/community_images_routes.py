@@ -25,7 +25,11 @@ _active_service: CommunityImagesFetchService | None = None
 
 
 def _clean_image(img: dict) -> dict:
-    """Clean an image dict for JSON response — drop fetched_at, parse resources."""
+    """Clean an image dict for JSON response — drop fetched_at, parse resources.
+
+    Adds ``preview_url`` using the same /api/lm/previews endpoint as the main
+    lora tab, so the browser gets the correct Content-Type headers.
+    """
     out = {k: v for k, v in img.items() if k != "fetched_at"}
     # Parse resources JSON string into list
     if isinstance(out.get("resources"), str):
@@ -33,6 +37,16 @@ def _clean_image(img: dict) -> dict:
             out["resources"] = json.loads(out["resources"])
         except (json.JSONDecodeError, TypeError):
             out["resources"] = []
+    # Build preview_url through the previews endpoint (same as main lora tab)
+    local = out.get("local_filename")
+    if local:
+        from ..utils.example_images_paths import get_example_images_root
+        import urllib.parse
+        root = get_example_images_root()
+        if root:
+            full_path = os.path.join(root, local)
+            encoded = urllib.parse.quote(full_path, safe="")
+            out["preview_url"] = f"/api/lm/previews?path={encoded}"
     return out
 
 
