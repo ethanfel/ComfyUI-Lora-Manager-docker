@@ -184,13 +184,28 @@ function renderGrid(models) {
             return rb - ra;
         });
 
-        // Cards
+        // Cards — show first 4, hide rest behind "Show more"
+        const INITIAL_SHOW = 4;
         const cardsDiv = document.createElement("div");
         cardsDiv.className = "community-cards";
-        for (const img of sorted) {
-            cardsDiv.appendChild(createCard(img, model.sha256, model.model_name));
+        for (let j = 0; j < sorted.length; j++) {
+            const card = createCard(sorted[j], model.sha256, model.model_name);
+            if (j >= INITIAL_SHOW) card.style.display = "none";
+            cardsDiv.appendChild(card);
         }
         section.appendChild(cardsDiv);
+
+        if (sorted.length > INITIAL_SHOW) {
+            const showMore = document.createElement("button");
+            showMore.className = "community-show-more";
+            showMore.textContent = `Show ${sorted.length - INITIAL_SHOW} more`;
+            showMore.addEventListener("click", () => {
+                const hidden = cardsDiv.querySelectorAll('.community-card[style*="display: none"]');
+                hidden.forEach(c => c.style.display = "");
+                showMore.remove();
+            });
+            section.appendChild(showMore);
+        }
         grid.appendChild(section);
     }
 }

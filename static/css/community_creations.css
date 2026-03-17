@@ -194,6 +194,24 @@
     font-weight: 500;
 }
 
+.community-show-more {
+    display: block;
+    margin: 8px auto 0;
+    padding: 4px 16px;
+    background: none;
+    border: 1px solid var(--border-color, rgba(255,255,255,0.15));
+    color: var(--text-secondary, rgba(255,255,255,0.6));
+    border-radius: 4px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.community-show-more:hover {
+    color: var(--accent-color, #7c3aed);
+    border-color: var(--accent-color, #7c3aed);
+}
+
 .community-cards {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
