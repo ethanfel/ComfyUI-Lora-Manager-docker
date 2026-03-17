@@ -634,6 +634,15 @@ class Config:
             preview_roots.update(self._expand_preview_root(target))
             preview_roots.update(self._expand_preview_root(link))
 
+        # Include example images path (used by community images)
+        from .services.settings_manager import get_settings_manager
+        try:
+            example_images_path = get_settings_manager().get("example_images_path")
+            if example_images_path:
+                preview_roots.update(self._expand_preview_root(Path(example_images_path)))
+        except Exception:
+            pass
+
         self._preview_root_paths = {
             path for path in preview_roots if path.is_absolute()
         }

@@ -136,19 +136,23 @@ class ExampleImagesFileManager:
             
             # Get list of files in the folder
             files = []
-            for file in os.listdir(model_folder):
+            all_filenames = set(os.listdir(model_folder))
+            for file in all_filenames:
                 file_path = os.path.join(model_folder, file)
                 if os.path.isfile(file_path):
                     # Check if file is a supported media file
                     file_ext = os.path.splitext(file)[1].lower()
-                    if (file_ext in SUPPORTED_MEDIA_EXTENSIONS['images'] or 
+                    if (file_ext in SUPPORTED_MEDIA_EXTENSIONS['images'] or
                         file_ext in SUPPORTED_MEDIA_EXTENSIONS['videos']):
                         relative_path = get_model_relative_path(model_hash)
+                        base_name = os.path.splitext(file)[0]
+                        workflow_file = f"{base_name}.workflow.json"
                         files.append({
                             'name': file,
                             'path': f'/example_images_static/{relative_path}/{file}',
                             'extension': file_ext,
-                            'is_video': file_ext in SUPPORTED_MEDIA_EXTENSIONS['videos']
+                            'is_video': file_ext in SUPPORTED_MEDIA_EXTENSIONS['videos'],
+                            'has_workflow': workflow_file in all_filenames,
                         })
             
             return web.json_response({

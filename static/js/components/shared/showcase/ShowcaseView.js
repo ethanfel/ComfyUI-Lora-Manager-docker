@@ -222,22 +222,31 @@ function renderMediaItem(img, index, exampleFiles) {
     // Determine if this is a custom image (has id property)
     const isCustomImage = Boolean(typeof img.id === 'string' && img.id);
     
+    // Check for workflow availability
+    const hasWorkflow = localFile && localFile.has_workflow;
+
     // Create the media control buttons HTML
     const mediaControlsHtml = `
         <div class="media-controls">
+            ${hasWorkflow ? `
+            <button class="media-control-btn workflow-download-btn"
+                    title="Download ComfyUI workflow"
+                    data-filename="${localFile.name}">
+                <i class="fas fa-project-diagram"></i>
+            </button>` : ''}
             <button class="media-control-btn set-preview-btn" title="Set as preview">
                 <i class="fas fa-image"></i>
             </button>
-            <button class="media-control-btn set-nsfw-btn" 
+            <button class="media-control-btn set-nsfw-btn"
                     title="Set content rating"
                     data-media-index="${index}"
                     data-media-source="${isCustomImage ? 'custom' : 'civitai'}"
                     data-media-id="${img.id || ''}">
                 <i class="fas fa-exclamation-triangle"></i>
             </button>
-            <button class="media-control-btn example-delete-btn ${!isCustomImage ? 'disabled' : ''}" 
-                    title="${isCustomImage ? 'Delete this example' : 'Only custom images can be deleted'}" 
-                    data-short-id="${img.id || ''}" 
+            <button class="media-control-btn example-delete-btn ${!isCustomImage ? 'disabled' : ''}"
+                    title="${isCustomImage ? 'Delete this example' : 'Only custom images can be deleted'}"
+                    data-short-id="${img.id || ''}"
                     ${!isCustomImage ? 'disabled' : ''}>
                 <i class="fas fa-trash-alt"></i>
                 <i class="fas fa-check confirm-icon"></i>

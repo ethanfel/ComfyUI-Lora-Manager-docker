@@ -1,0 +1,20 @@
+services:
+  lora-manager:
+    build: .
+    ports:
+      - "8188:8188"
+    volumes:
+      # Persist settings and SQLite caches between restarts
+      - ./settings.json:/app/settings.json
+      - lora-manager-cache:/app/cache
+
+      # Mount your model directories (adjust paths to match your setup)
+      - /path/to/your/loras:/models/loras
+      # - /path/to/your/checkpoints:/models/checkpoints
+      # - /path/to/your/embeddings:/models/embeddings
+    environment:
+      - LORA_MANAGER_STANDALONE=1
+    restart: unless-stopped
+
+volumes:
+  lora-manager-cache:

@@ -979,6 +979,10 @@ export class BaseModelApiClient {
             if (pageState.filters.tagLogic) {
                 params.append('tag_logic', pageState.filters.tagLogic);
             }
+
+            if (pageState.filters.hasWorkflow) {
+                params.append('has_workflow', 'true');
+            }
         }
 
         this._addModelSpecificParams(params, pageState);

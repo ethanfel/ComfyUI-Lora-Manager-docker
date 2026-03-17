@@ -26,6 +26,8 @@ from .routes.stats_routes import StatsRoutes
 from .routes.update_routes import UpdateRoutes
 from .routes.misc_routes import MiscRoutes
 from .routes.preview_routes import PreviewRoutes
+from .routes.civitai_stats_routes import CivitaiStatsRoutes
+from .routes.community_images_routes import CommunityImagesRoutes
 from .routes.example_images_routes import ExampleImagesRoutes
 from .services.service_registry import ServiceRegistry
 from .services.settings_manager import get_settings_manager
@@ -133,6 +135,12 @@ class LoraManager:
         asyncio_logger = logging.getLogger("asyncio")
         asyncio_logger.addFilter(ConnectionResetFilter())
 
+        # Ensure WebP/mp4 mime types are registered in aiohttp's own MimeTypes instance
+        # (the global mimetypes module is separate and doesn't affect aiohttp)
+        from aiohttp.web_fileresponse import CONTENT_TYPES
+        CONTENT_TYPES.add_type("image/webp", ".webp")
+        CONTENT_TYPES.add_type("video/mp4", ".mp4")
+
         # Add static route for example images if the path exists in settings
         example_images_path = settings.get("example_images_path")
         logger.info(f"Example images path: {example_images_path}")
@@ -166,6 +174,14 @@ class LoraManager:
         MiscRoutes.setup_routes(app)
         ExampleImagesRoutes.setup_routes(app, ws_manager=ws_manager)
         PreviewRoutes.setup_routes(app)
+        try:
+            CivitaiStatsRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register CivitAI stats routes")
+        try:
+            CommunityImagesRoutes.setup_routes(app)
+        except Exception:
+            logger.exception("Failed to register community images routes")
 
         # Setup WebSocket routes that are shared across all model types
         app.router.add_get("/ws/fetch-progress", ws_manager.handle_connection)

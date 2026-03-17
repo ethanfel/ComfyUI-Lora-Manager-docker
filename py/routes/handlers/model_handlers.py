@@ -309,6 +309,12 @@ class ModelListingHandler:
         else:
             allow_selling_generated_content = None  # None means no filter applied
 
+        has_workflow = request.query.get("has_workflow")
+        if has_workflow is not None:
+            has_workflow = has_workflow.lower() not in ("false", "0", "")
+        else:
+            has_workflow = None
+
         return {
             "page": page,
             "page_size": page_size,
@@ -328,6 +334,7 @@ class ModelListingHandler:
             "credit_required": credit_required,
             "allow_selling_generated_content": allow_selling_generated_content,
             "model_types": model_types,
+            "has_workflow": has_workflow,
             **self._parse_specific_params(request),
         }
 

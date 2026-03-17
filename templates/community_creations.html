@@ -1,0 +1,70 @@
+{# templates/community_creations.html #}
+{% extends "base.html" %}
+
+{% block title %}Community Creations{% endblock %}
+{% block page_id %}community{% endblock %}
+
+{% block content %}
+<div class="controls">
+    <div class="actions">
+        <div class="action-buttons">
+            <div class="control-group community-fetch-group">
+                <button id="fetchCommunityBtn" data-action="fetch-community"
+                        title="Fetch community images from CivitAI">
+                    <i class="fas fa-images"></i> <span>Fetch Community Images</span>
+                </button>
+                <button id="fetchDropdownToggle" class="fetch-dropdown-toggle"
+                        title="More fetch options">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+                <div id="fetchDropdownMenu" class="fetch-dropdown-menu" style="display:none;">
+                    <button id="refetchCommunityBtn" class="fetch-dropdown-item">
+                        <i class="fas fa-sync-alt"></i> Re-fetch All
+                    </button>
+                </div>
+            </div>
+            <button id="cancelFetchBtn" class="btn-cancel" style="display:none;"
+                    title="Stop fetching">
+                <i class="fas fa-stop"></i> Stop
+            </button>
+            <div class="control-group">
+                <select id="communitySortSelect" title="Sort community images">
+                    <optgroup label="Sort by">
+                        <option value="reactions:desc">Most Liked</option>
+                        <option value="reactions:asc">Least Liked</option>
+                        <option value="recent:desc">Most Recent</option>
+                        <option value="fetched:desc">Latest Fetched</option>
+                        <option value="lora:asc">LoRA Name (A-Z)</option>
+                        <option value="lora:desc">LoRA Name (Z-A)</option>
+                    </optgroup>
+                </select>
+            </div>
+            <div class="control-group">
+                <select id="communityPageSizeSelect" title="Models per page">
+                    <option value="10">10 per page</option>
+                    <option value="20">20 per page</option>
+                    <option value="30">30 per page</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="communityBaseModelTabs" class="community-base-model-tabs">
+    <!-- Tabs rendered by JS -->
+</div>
+
+<div id="communityGrid" class="community-grid">
+    <!-- Cards rendered by JS -->
+</div>
+
+<div id="communityEmpty" class="community-empty" style="display:none;">
+    <i class="fas fa-images"></i>
+    <h3>No community images yet</h3>
+    <p>Click "Fetch Community Images" to download top community creations for your LoRAs.</p>
+</div>
+{% endblock %}
+
+{% block main_script %}
+<script type="module" src="/loras_static/js/community_creations.js?v={{ version }}"></script>
+{% endblock %}
