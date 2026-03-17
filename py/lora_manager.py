@@ -135,9 +135,11 @@ class LoraManager:
         asyncio_logger = logging.getLogger("asyncio")
         asyncio_logger.addFilter(ConnectionResetFilter())
 
-        # Ensure WebP mime type is registered (missing in some Docker/minimal environments)
-        import mimetypes
-        mimetypes.add_type("image/webp", ".webp")
+        # Ensure WebP/mp4 mime types are registered in aiohttp's own MimeTypes instance
+        # (the global mimetypes module is separate and doesn't affect aiohttp)
+        from aiohttp.web_fileresponse import CONTENT_TYPES
+        CONTENT_TYPES.add_type("image/webp", ".webp")
+        CONTENT_TYPES.add_type("video/mp4", ".mp4")
 
         # Add static route for example images if the path exists in settings
         example_images_path = settings.get("example_images_path")
