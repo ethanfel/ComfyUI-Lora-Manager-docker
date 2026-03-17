@@ -235,14 +235,16 @@
 
 .community-card-image-wrap {
     position: relative;
+    aspect-ratio: 4/3;
+    overflow: hidden;
+    background: var(--bg-secondary, #111);
 }
 
 .community-card-image {
     width: 100%;
-    aspect-ratio: 4/3;
+    height: 100%;
     object-fit: cover;
     display: block;
-    background: var(--bg-secondary, #111);
 }
 
 .community-workflow-badge {

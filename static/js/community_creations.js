@@ -290,9 +290,11 @@ function createCard(img, sha256, modelName) {
     card.innerHTML = `
         <div class="community-card-image-wrap">
             ${isVideo
-                ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}#t=0.001" muted loop playsinline preload="metadata" onerror="this.style.display='none'"></video>
+                ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}#t=1" muted playsinline preload="metadata"
+                    onerror="this.outerHTML='<div class=\\'community-card-placeholder\\'>Video unavailable</div>'"></video>
                    <span class="community-video-badge" title="Video"><i class="fas fa-play"></i></span>`
-                : `<img class="community-card-image" src="${escapeHtml(mediaUrl)}" alt="Community creation" loading="lazy" onerror="this.style.display='none'">`
+                : `<img class="community-card-image" src="${escapeHtml(mediaUrl)}" alt="Community creation" loading="lazy"
+                    onerror="this.outerHTML='<div class=\\'community-card-placeholder\\'>Image unavailable</div>'">`
             }
             ${img.has_workflow ? '<span class="community-workflow-badge" title="ComfyUI workflow available"><i class="fas fa-project-diagram"></i> Workflow</span>' : ""}
         </div>
