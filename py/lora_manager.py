@@ -135,6 +135,10 @@ class LoraManager:
         asyncio_logger = logging.getLogger("asyncio")
         asyncio_logger.addFilter(ConnectionResetFilter())
 
+        # Ensure WebP mime type is registered (missing in some Docker/minimal environments)
+        import mimetypes
+        mimetypes.add_type("image/webp", ".webp")
+
         # Add static route for example images if the path exists in settings
         example_images_path = settings.get("example_images_path")
         logger.info(f"Example images path: {example_images_path}")
