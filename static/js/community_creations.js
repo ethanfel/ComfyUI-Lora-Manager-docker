@@ -211,37 +211,17 @@ function renderGrid(models) {
             return rb - ra;
         });
 
-        // Cards — show first 4, hide rest behind "Show more"
-        const INITIAL_SHOW = 4;
+        // Cards — show all (lazy loading handles performance)
         const cardsDiv = document.createElement("div");
         cardsDiv.className = "community-cards";
-        for (let j = 0; j < sorted.length; j++) {
-            const card = createCard(sorted[j], model.sha256, model.model_name);
-            if (j >= INITIAL_SHOW) card.style.display = "none";
-            cardsDiv.appendChild(card);
+        for (const img of sorted) {
+            cardsDiv.appendChild(createCard(img, model.sha256, model.model_name));
         }
         section.appendChild(cardsDiv);
-
-        if (sorted.length > INITIAL_SHOW) {
-            const showMore = document.createElement("button");
-            showMore.className = "community-show-more";
-            showMore.textContent = `Show ${sorted.length - INITIAL_SHOW} more`;
-            showMore.addEventListener("click", () => {
-                const hidden = cardsDiv.querySelectorAll('.community-card[style*="display: none"]');
-                hidden.forEach(c => {
-                    c.style.display = "";
-                    // Start observing newly-revealed lazy images
-                    const lazyImg = c.querySelector("img[data-src]");
-                    if (lazyImg) observeLazy(lazyImg);
-                });
-                showMore.remove();
-            });
-            section.appendChild(showMore);
-        }
         grid.appendChild(section);
 
-        // Observe visible lazy images (hidden ones will be observed on "Show more")
-        section.querySelectorAll('.community-card:not([style*="display: none"]) img[data-src]').forEach(observeLazy);
+        // Observe all lazy images (IntersectionObserver only loads visible ones)
+        section.querySelectorAll("img[data-src]").forEach(observeLazy);
     }
 }
 
