@@ -47,6 +47,12 @@ def _clean_image(img: dict) -> dict:
             full_path = os.path.join(root, local)
             encoded = urllib.parse.quote(full_path, safe="")
             out["preview_url"] = f"/api/lm/previews?path={encoded}"
+            # Thumbnail URL for grid cards (smaller, faster loading)
+            if local.endswith(".webp"):
+                thumb_path = full_path.replace(".webp", "_thumb.webp")
+                if os.path.exists(thumb_path):
+                    thumb_encoded = urllib.parse.quote(thumb_path, safe="")
+                    out["thumbnail_url"] = f"/api/lm/previews?path={thumb_encoded}"
     return out
 
 

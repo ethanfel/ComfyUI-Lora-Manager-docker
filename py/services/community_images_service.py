@@ -24,6 +24,8 @@ _MIN_PROMPT_LENGTH = 5
 _MAX_IMAGES_PER_MODEL = 10
 _WEBP_QUALITY = 85
 _MAX_IMAGE_DIMENSION = 1280  # resize longest side
+_THUMB_DIMENSION = 400  # thumbnail longest side
+_THUMB_QUALITY = 70
 
 
 def _quality_filter(items: list[dict], model_name: str = "") -> tuple[list[dict], dict]:
@@ -427,6 +429,13 @@ class CommunityImagesFetchService:
                 exif_dict = {"0th": {piexif.ImageIFD.Software: b"LoRA Manager"}}
                 exif_bytes = piexif.dump(exif_dict)
                 img.save(filepath, "webp", quality=_WEBP_QUALITY, exif=exif_bytes)
+
+                # Generate thumbnail for fast grid loading
+                thumb_path = os.path.join(community_dir, f"{image_id}_thumb.webp")
+                thumb = img.copy()
+                thumb.thumbnail((_THUMB_DIMENSION, _THUMB_DIMENSION), Image.LANCZOS)
+                thumb.save(thumb_path, "webp", quality=_THUMB_QUALITY, exif=exif_bytes)
+                thumb.close()
             finally:
                 img.close()
 

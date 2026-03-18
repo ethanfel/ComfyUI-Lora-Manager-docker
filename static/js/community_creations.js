@@ -11,8 +11,33 @@ let _pageSize = 10;
 let _baseModelFilter = "";  // "" = all
 let _baseModelCounts = {};  // { "Flux.1 D": 12, "Pony": 8, ... }
 
+// -- Lazy loading via IntersectionObserver --------------------------------
+let _lazyObserver = null;
+
+function initLazyObserver() {
+    if (_lazyObserver) return;
+    _lazyObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const el = entry.target;
+            const src = el.dataset.src;
+            if (src) {
+                el.onload = () => { el.style.opacity = "1"; };
+                el.src = src;
+                delete el.dataset.src;
+            }
+            _lazyObserver.unobserve(el);
+        }
+    }, { rootMargin: "200px" });  // start loading 200px before visible
+}
+
+function observeLazy(el) {
+    if (_lazyObserver) _lazyObserver.observe(el);
+}
+
 // -- Init -----------------------------------------------------------------
 async function init() {
+    initLazyObserver();
     setupFetchButton();
     setupSortSelect();
     setupPageSizeSelect();
@@ -149,6 +174,8 @@ function renderGrid(models) {
                         for (const img of sorted) {
                             cardsContainer.appendChild(createCard(img, model.sha256, model.model_name));
                         }
+                        // Observe lazy images in refreshed cards
+                        cardsContainer.querySelectorAll("img[data-src]").forEach(observeLazy);
                     }
                     refreshBtn.innerHTML = '<i class="fas fa-check"></i>';
                     setTimeout(() => {
@@ -201,12 +228,20 @@ function renderGrid(models) {
             showMore.textContent = `Show ${sorted.length - INITIAL_SHOW} more`;
             showMore.addEventListener("click", () => {
                 const hidden = cardsDiv.querySelectorAll('.community-card[style*="display: none"]');
-                hidden.forEach(c => c.style.display = "");
+                hidden.forEach(c => {
+                    c.style.display = "";
+                    // Start observing newly-revealed lazy images
+                    const lazyImg = c.querySelector("img[data-src]");
+                    if (lazyImg) observeLazy(lazyImg);
+                });
                 showMore.remove();
             });
             section.appendChild(showMore);
         }
         grid.appendChild(section);
+
+        // Observe visible lazy images (hidden ones will be observed on "Show more")
+        section.querySelectorAll('.community-card:not([style*="display: none"]) img[data-src]').forEach(observeLazy);
     }
 }
 
@@ -282,6 +317,8 @@ function createCard(img, sha256, modelName) {
         showDetail(img, sha256, modelName);
     });
 
+    // Use thumbnail for grid cards (smaller, faster), full image for detail modal
+    const thumbUrl = img.thumbnail_url || img.preview_url || img.image_url || "";
     const mediaUrl = img.preview_url || img.image_url || "";
     const isVideo = img.media_type === "video";
 
@@ -291,7 +328,7 @@ function createCard(img, sha256, modelName) {
                 ? `<video class="community-card-image" src="${escapeHtml(mediaUrl)}#t=1" muted playsinline preload="metadata"
                     onerror="this.outerHTML='<div class=\\'community-card-placeholder\\'>Video unavailable</div>'"></video>
                    <span class="community-video-badge" title="Video"><i class="fas fa-play"></i></span>`
-                : `<img class="community-card-image" src="${escapeHtml(mediaUrl)}" alt="Community creation" loading="lazy"
+                : `<img class="community-card-image" data-src="${escapeHtml(thumbUrl)}" alt="Community creation"
                     onerror="this.outerHTML='<div class=\\'community-card-placeholder\\'>Image unavailable</div>'">`
             }
             ${img.has_workflow ? '<span class="community-workflow-badge" title="ComfyUI workflow available"><i class="fas fa-project-diagram"></i> Workflow</span>' : ""}

@@ -58,7 +58,10 @@ class PreviewHandler:
         content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
         return web.FileResponse(
             path=resolved, chunk_size=256 * 1024,
-            headers={"Content-Type": content_type},
+            headers={
+                "Content-Type": content_type,
+                "Cache-Control": "public, max-age=86400, immutable",
+            },
         )
 
 
