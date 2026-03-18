@@ -10,6 +10,7 @@ let _totalPages = 1;
 let _pageSize = 10;
 let _baseModelFilter = "";  // "" = all
 let _baseModelCounts = {};  // { "Flux.1 D": 12, "Pony": 8, ... }
+let _searchQuery = "";
 
 // -- Lazy loading via IntersectionObserver --------------------------------
 let _lazyObserver = null;
@@ -39,6 +40,7 @@ function observeLazy(el) {
 async function init() {
     initLazyObserver();
     setupFetchButton();
+    setupSearch();
     setupSortSelect();
     setupPageSizeSelect();
     await loadPage(1);
@@ -54,6 +56,9 @@ async function loadPage(page) {
         let url = `/api/lm/community-images/by-models?page=${page}&page_size=${_pageSize}&sort=${encodeURIComponent(_sortKey)}`;
         if (_baseModelFilter) {
             url += `&base_model=${encodeURIComponent(_baseModelFilter)}`;
+        }
+        if (_searchQuery) {
+            url += `&search=${encodeURIComponent(_searchQuery)}`;
         }
 
         const resp = await fetch(url);
@@ -584,6 +589,20 @@ async function doFetch(btn, force) {
         btn.disabled = false;
         if (cancelBtn) cancelBtn.style.display = "none";
     }
+}
+
+// -- Search ---------------------------------------------------------------
+function setupSearch() {
+    const input = document.getElementById("communitySearch");
+    if (!input) return;
+    let debounce = null;
+    input.addEventListener("input", () => {
+        clearTimeout(debounce);
+        debounce = setTimeout(() => {
+            _searchQuery = input.value.trim();
+            loadPage(1);
+        }, 300);
+    });
 }
 
 // -- Sort select ----------------------------------------------------------

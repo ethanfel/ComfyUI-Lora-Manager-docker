@@ -259,6 +259,7 @@ class CommunityImagesRoutes:
         page_size = min(max(page_size, 1), 50)
         page = max(page, 1)
         base_model_filter = request.query.get("base_model", "")
+        search_query = request.query.get("search", "").strip().lower()
 
         try:
             lora_hashes, name_map, base_model_map = (
@@ -270,6 +271,13 @@ class CommunityImagesRoutes:
                 lora_hashes = [
                     h for h in lora_hashes
                     if base_model_map.get(h, "") == base_model_filter
+                ]
+
+            # Filter by search query (match against model name)
+            if search_query:
+                lora_hashes = [
+                    h for h in lora_hashes
+                    if search_query in name_map.get(h, "").lower()
                 ]
 
             db = CommunityImagesDB.get_instance()
