@@ -291,6 +291,11 @@ export class PageControls {
         if (updateFilterBtn) {
             updateFilterBtn.addEventListener('click', () => this.toggleUpdateAvailableOnly());
         }
+
+        const workflowFilterBtn = document.getElementById('workflowFilterBtn');
+        if (workflowFilterBtn) {
+            workflowFilterBtn.addEventListener('click', () => this.toggleWorkflowOnly());
+        }
     }
     
     /**
@@ -546,6 +551,26 @@ export class PageControls {
         await this.resetAndReload(true);
     }
     
+    /**
+     * Toggle workflow-only filter and reload models
+     */
+    async toggleWorkflowOnly() {
+        const workflowFilterBtn = document.getElementById('workflowFilterBtn');
+        if (!window.filterManager) return;
+        const newState = !window.filterManager.filters.hasWorkflow;
+        window.filterManager.filters.hasWorkflow = newState;
+        if (workflowFilterBtn) {
+            workflowFilterBtn.classList.toggle('active', newState);
+        }
+        // Keep filter panel tag in sync
+        const workflowTag = document.querySelector('.workflow-tag');
+        if (workflowTag) {
+            workflowTag.classList.toggle('active', newState);
+        }
+        window.filterManager.updateActiveFiltersCount();
+        await window.filterManager.applyFilters(false);
+    }
+
     /**
      * Find duplicate models
      */

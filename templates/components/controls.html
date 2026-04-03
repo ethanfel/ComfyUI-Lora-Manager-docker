@@ -62,6 +62,11 @@
                     <i class="fas fa-star"></i> <span>{{ t('loras.controls.favorites.action') }}</span>
                 </button>
             </div>
+            <div class="control-group">
+                <button id="workflowFilterBtn" data-action="toggle-workflow" class="workflow-filter" title="Show only LoRAs with a ComfyUI workflow">
+                    <i class="fas fa-project-diagram"></i> <span>Has Workflow</span>
+                </button>
+            </div>
             <div class="control-group dropdown-group update-filter-group">
                 <button id="updateFilterBtn" data-action="toggle-updates" class="dropdown-main update-filter" title="{{ t('loras.controls.updates.title') }}">
                     <i class="fas fa-exclamation-circle"></i> <span>{{ t('loras.controls.updates.action') }}</span>

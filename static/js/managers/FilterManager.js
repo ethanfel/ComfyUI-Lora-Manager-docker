@@ -304,6 +304,9 @@ export class FilterManager {
         workflowTag.addEventListener('click', async () => {
             this.filters.hasWorkflow = !this.filters.hasWorkflow;
             workflowTag.classList.toggle('active', this.filters.hasWorkflow);
+            // Keep toolbar button in sync
+            const toolbarBtn = document.getElementById('workflowFilterBtn');
+            if (toolbarBtn) toolbarBtn.classList.toggle('active', this.filters.hasWorkflow);
             this.updateActiveFiltersCount();
             await this.applyFilters(false);
         });
@@ -311,6 +314,8 @@ export class FilterManager {
         // Restore state
         if (this.filters.hasWorkflow) {
             workflowTag.classList.add('active');
+            const toolbarBtn = document.getElementById('workflowFilterBtn');
+            if (toolbarBtn) toolbarBtn.classList.add('active');
         }
     }
 
