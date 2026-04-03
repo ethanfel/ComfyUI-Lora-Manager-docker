@@ -312,13 +312,16 @@ class CommunityImagesFetchService:
     def _extract_workflow_from_meta(meta: dict | None) -> dict:
         """Extract ComfyUI workflow data from CivitAI API metadata.
 
-        Checks for 'comfy' key (JSON string with workflow/prompt) in the
-        top-level meta dict. Returns a dict suitable for saving as
-        workflow JSON, or empty dict if none found.
+        CivitAI may place the 'comfy' key at meta level or nested inside
+        meta.meta. Checks both locations.
+        Returns a dict suitable for saving as workflow JSON, or empty dict.
         """
         if not meta or not isinstance(meta, dict):
             return {}
-        comfy_raw = meta.get("comfy")
+        # Check both meta.comfy and meta.meta.comfy (CivitAI nests it differently
+        # depending on the API version / image type)
+        inner_meta = meta.get("meta") or {}
+        comfy_raw = meta.get("comfy") or (inner_meta.get("comfy") if isinstance(inner_meta, dict) else None)
         if not comfy_raw:
             return {}
         try:

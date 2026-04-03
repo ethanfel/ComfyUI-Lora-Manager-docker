@@ -157,6 +157,51 @@ class CommunityImagesDB:
                     "ALTER TABLE community_images ADD COLUMN media_type TEXT DEFAULT 'image'"
                 )
             conn.commit()
+        # Backfill has_workflow for rows that have a .workflow.json on disk
+        self._backfill_has_workflow()
+
+    def _backfill_has_workflow(self) -> None:
+        """Set has_workflow=1 for any row whose .workflow.json exists on disk.
+
+        Runs once on startup so existing images get the flag without re-downloading.
+        """
+        import os
+        try:
+            from ..utils.example_images_paths import get_model_folder
+        except Exception:
+            return
+        conn = self._conn
+        if conn is None:
+            return
+        with self._db_lock:
+            rows = conn.execute(
+                "SELECT civitai_image_id, sha256, local_filename FROM community_images "
+                "WHERE has_workflow = 0 AND local_filename IS NOT NULL"
+            ).fetchall()
+        updated = 0
+        updates: list[int] = []
+        for row in rows:
+            image_id = row["civitai_image_id"]
+            sha256 = row["sha256"]
+            local_filename = row["local_filename"]
+            if not local_filename:
+                continue
+            # local_filename is relative path like "{hash}/community/{id}.webp"
+            # Derive the workflow path from model folder
+            model_folder = get_model_folder(sha256)
+            if not model_folder:
+                continue
+            workflow_path = os.path.join(model_folder, "community", f"{image_id}.workflow.json")
+            if os.path.exists(workflow_path):
+                updates.append(image_id)
+        if updates:
+            with self._db_lock:
+                conn.executemany(
+                    "UPDATE community_images SET has_workflow = 1 WHERE civitai_image_id = ?",
+                    [(iid,) for iid in updates],
+                )
+                conn.commit()
+            logger.info("Backfilled has_workflow=1 for %d community images", len(updates))
 
     def _ensure_conn(self) -> sqlite3.Connection:
         if self._conn is None:
