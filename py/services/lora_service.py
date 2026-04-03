@@ -29,6 +29,9 @@ class LoraService(BaseModelService):
         # Normalize to lowercase for consistent API responses
         sub_type = resolve_sub_type(lora_data).lower()
 
+        # Check if any example image has a sidecar workflow file
+        has_workflow = self._check_has_workflow(lora_data.get("sha256", ""))
+
         return {
             "model_name": lora_data["model_name"],
             "file_name": lora_data["file_name"],
@@ -53,10 +56,28 @@ class LoraService(BaseModelService):
                 lora_data.get("skip_metadata_refresh", False)
             ),
             "sub_type": sub_type,
+            "has_workflow": has_workflow,
             "civitai": self.filter_civitai_data(
                 lora_data.get("civitai", {}), minimal=True
             ),
         }
+
+    @staticmethod
+    def _check_has_workflow(sha256: str) -> bool:
+        """Return True if the model folder contains any *.workflow.json sidecar."""
+        if not sha256:
+            return False
+        try:
+            from ..utils.example_images_paths import get_model_folder
+            model_folder = get_model_folder(sha256)
+            if model_folder and os.path.isdir(model_folder):
+                return any(
+                    f.endswith(".workflow.json") and not f.startswith("community/")
+                    for f in os.listdir(model_folder)
+                )
+        except Exception:
+            pass
+        return False
 
     async def _apply_specific_filters(self, data: List[Dict], **kwargs) -> List[Dict]:
         """Apply LoRA-specific filters"""

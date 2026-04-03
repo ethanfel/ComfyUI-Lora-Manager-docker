@@ -640,8 +640,9 @@ export function createModelCard(model, modelType) {
                         ${hasUsageCount ? `<span class="version-name" title="${translate('modelCard.usage.timesUsed', {}, 'Times used')}">${model.usage_count}×</span>` : ''}
                     </div>
                 </div>
-                <div class="card-actions">
-                    <i class="${footerActionIcon}" 
+                <div class="card-actions card-actions--column">
+                    ${model.has_workflow ? `<i class="fas fa-project-diagram card-workflow-badge" title="Has ComfyUI workflow"></i>` : ''}
+                    <i class="${footerActionIcon}"
                        title="${footerActionTitle}">
                     </i>
                 </div>

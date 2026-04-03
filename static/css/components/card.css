@@ -364,6 +364,25 @@
     background-color: rgba(255, 255, 255, 0.1);
 }
 
+/* Column layout for footer actions (workflow badge above primary action) */
+.card-actions--column {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+}
+
+/* Workflow badge icon on main lora cards */
+.card-workflow-badge {
+    color: #a78bfa !important;
+    font-size: 0.85em !important;
+    cursor: default !important;
+}
+
+.card-workflow-badge:hover {
+    transform: none !important;
+    background-color: transparent !important;
+}
+
 /* Style for active favorites */
 .favorite-active {
     color: #ffc107 !important; /* Gold color for favorites */
