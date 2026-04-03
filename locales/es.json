@@ -14,7 +14,8 @@
             "backToTop": "Volver arriba",
             "settings": "Configuración",
             "help": "Ayuda",
-            "add": "Añadir"
+            "add": "Añadir",
+            "close": "Cerrar"
         },
         "status": {
             "loading": "Cargando...",
@@ -290,7 +291,15 @@
             "blurNsfwContent": "Difuminar contenido NSFW",
             "blurNsfwContentHelp": "Difuminar imágenes de vista previa de contenido para adultos (NSFW)",
             "showOnlySfw": "Mostrar solo resultados SFW",
-            "showOnlySfwHelp": "Filtrar todo el contenido NSFW al navegar y buscar"
+            "showOnlySfwHelp": "Filtrar todo el contenido NSFW al navegar y buscar",
+            "matureBlurThreshold": "Umbral de difuminado para contenido adulto",
+            "matureBlurThresholdHelp": "Establecer a partir de qué nivel de clasificación comienza el filtrado por difuminado cuando el difuminado NSFW está habilitado.",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 y superior",
+                "r": "R y superior (predeterminado)",
+                "x": "X y superior",
+                "xxx": "Solo XXX"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "Reproducir videos automáticamente al pasar el ratón",
@@ -312,6 +321,24 @@
             "validation": {
                 "noPaths": "Ingrese al menos una ruta separada por comas.",
                 "saveFailed": "No se pudieron guardar las rutas a omitir: {message}"
+            }
+        },
+        "downloadSkipBaseModels": {
+            "label": "Omitir descargas para modelos base",
+            "help": "Se aplica a todos los flujos de descarga. Aquí solo se pueden seleccionar modelos base compatibles.",
+            "searchPlaceholder": "Filtrar modelos base...",
+            "empty": "Ningún modelo base coincide con la búsqueda actual.",
+            "summary": {
+                "none": "Ninguno seleccionado",
+                "count": "{count} seleccionados"
+            },
+            "actions": {
+                "edit": "Editar",
+                "collapse": "Contraer",
+                "clear": "Limpiar"
+            },
+            "validation": {
+                "saveFailed": "No se pudieron guardar los modelos base excluidos: {message}"
             }
         },
         "layoutSettings": {
@@ -366,8 +393,8 @@
         },
         "extraFolderPaths": {
             "title": "Rutas de carpetas adicionales",
-            "help": "Agregue carpetas de modelos adicionales fuera de las rutas estándar de ComfyUI. Estas rutas se almacenan por separado y se escanean junto con las carpetas predeterminadas.",
-            "description": "Configure carpetas adicionales para escanear modelos. Estas rutas son específicas de LoRA Manager y se fusionarán con las rutas predeterminadas de ComfyUI.",
+            "description": "Rutas raíz de modelos adicionales exclusivas para LoRA Manager. Cargue modelos desde ubicaciones fuera de las carpetas estándar de ComfyUI, ideal para bibliotecas grandes que de otro modo ralentizarían ComfyUI.",
+            "restartRequired": "Requires restart to take effect",
             "modelTypes": {
                 "lora": "Rutas de LoRA",
                 "checkpoint": "Rutas de Checkpoint",
@@ -375,7 +402,7 @@
                 "embedding": "Rutas de Embedding"
             },
             "pathPlaceholder": "/ruta/a/modelos/extra",
-            "saveSuccess": "Rutas de carpetas adicionales actualizadas.",
+            "saveSuccess": "Rutas de carpetas adicionales actualizadas. Se requiere reinicio para aplicar los cambios.",
             "saveError": "Error al actualizar las rutas de carpetas adicionales: {message}",
             "validation": {
                 "duplicatePath": "Esta ruta ya está configurada"
@@ -574,6 +601,7 @@
             "skipMetadataRefresh": "Omitir actualización de metadatos para seleccionados",
             "resumeMetadataRefresh": "Reanudar actualización de metadatos para seleccionados",
             "deleteAll": "Eliminar todos los modelos",
+            "downloadMissingLoras": "Descargar LoRAs faltantes",
             "clear": "Limpiar selección",
             "skipMetadataRefreshCount": "Omitir（{count} modelos）",
             "resumeMetadataRefreshCount": "Reanudar（{count} modelos）",
@@ -644,6 +672,8 @@
                 "root": "Raíz",
                 "browseFolders": "Explorar carpetas:",
                 "downloadAndSaveRecipe": "Descargar y guardar receta",
+                "importRecipeOnly": "Importar solo la receta",
+                "importAndDownload": "Importar y descargar",
                 "downloadMissingLoras": "Descargar LoRAs faltantes",
                 "saveRecipe": "Guardar receta",
                 "loraCountInfo": "({existing}/{total} en la biblioteca)",
@@ -729,6 +759,64 @@
                 "failed": "Error al reparar la receta: {message}",
                 "missingId": "No se puede reparar la receta: falta el ID de la receta"
             }
+        },
+        "batchImport": {
+            "title": "Batch Import Recipes",
+            "action": "Batch Import",
+            "urlList": "URL List",
+            "directory": "Directory",
+            "urlDescription": "Enter image URLs or local file paths (one per line). Each will be imported as a recipe.",
+            "directoryDescription": "Enter a directory path to import all images from that folder.",
+            "urlsLabel": "Image URLs or Local Paths",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "Enter one URL or path per line",
+            "directoryPath": "Directory Path",
+            "directoryPlaceholder": "/path/to/images/folder",
+            "browse": "Browse",
+            "recursive": "Include subdirectories",
+            "tagsOptional": "Tags (optional, applied to all recipes)",
+            "tagsPlaceholder": "Enter tags separated by commas",
+            "tagsHint": "Tags will be added to all imported recipes",
+            "skipNoMetadata": "Skip images without metadata",
+            "skipNoMetadataHelp": "Images without LoRA metadata will be skipped automatically.",
+            "start": "Start Import",
+            "startImport": "Start Import",
+            "importing": "Importing...",
+            "progress": "Progress",
+            "total": "Total",
+            "success": "Success",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "current": "Current",
+            "currentItem": "Current",
+            "preparing": "Preparing...",
+            "cancel": "Cancel",
+            "cancelImport": "Cancel",
+            "cancelled": "Import cancelled",
+            "completed": "Import completed",
+            "completedWithErrors": "Completed with errors",
+            "completedSuccess": "Successfully imported {count} recipe(s)",
+            "successCount": "Successful",
+            "failedCount": "Failed",
+            "skippedCount": "Skipped",
+            "totalProcessed": "Total processed",
+            "viewDetails": "View Details",
+            "newImport": "New Import",
+            "manualPathEntry": "Please enter the directory path manually. File browser is not available in this browser.",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "batchImportManualEntryRequired": "File browser not available. Please enter the directory path manually.",
+            "backToParent": "Back to parent directory",
+            "folders": "Folders",
+            "folderCount": "{count} folders",
+            "imageFiles": "Image Files",
+            "images": "images",
+            "imageCount": "{count} images",
+            "selectFolder": "Select This Folder",
+            "errors": {
+                "enterUrls": "Please enter at least one URL or path",
+                "enterDirectory": "Please enter a directory path",
+                "startFailed": "Failed to start import: {message}"
+            }
         }
     },
     "checkpoints": {
@@ -738,7 +826,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "Mover a la carpeta {otherType}"
+            "moveToOtherTypeFolder": "Mover a la carpeta {otherType}",
+            "sendToWorkflow": "[TODO: Translate] Send to Workflow"
         }
     },
     "embeddings": {
@@ -751,8 +840,8 @@
         "unpinSidebar": "Desfijar barra lateral",
         "switchToListView": "Cambiar a vista de lista",
         "switchToTreeView": "Cambiar a vista de árbol",
-        "recursiveOn": "Buscar en subcarpetas",
-        "recursiveOff": "Buscar solo en la carpeta actual",
+        "recursiveOn": "Incluir subcarpetas",
+        "recursiveOff": "Solo carpeta actual",
         "recursiveUnavailable": "La búsqueda recursiva solo está disponible en la vista en árbol",
         "collapseAllDisabled": "No disponible en vista de lista",
         "dragDrop": {
@@ -922,6 +1011,14 @@
             "save": "Actualizar modelo base",
             "cancel": "Cancelar"
         },
+        "bulkDownloadMissingLoras": {
+            "title": "Descargar LoRAs faltantes",
+            "message": "Se encontraron {uniqueCount} LoRAs faltantes únicos (de {totalCount} en total entre las recetas seleccionadas).",
+            "previewTitle": "LoRAs para descargar:",
+            "moreItems": "...y {count} más",
+            "note": "Los archivos se descargarán usando las plantillas de ruta predeterminadas. Esto puede tomar un tiempo dependiendo del número de LoRAs.",
+            "downloadButton": "Descargar {count} LoRA(s)"
+        },
         "exampleAccess": {
             "title": "Imágenes de ejemplo locales",
             "message": "No se encontraron imágenes de ejemplo locales para este modelo. Opciones de visualización:",
@@ -973,13 +1070,18 @@
                 "viewOnCivitai": "Ver en Civitai",
                 "viewOnCivitaiText": "Ver en Civitai",
                 "viewCreatorProfile": "Ver perfil del creador",
-                "openFileLocation": "Abrir ubicación del archivo"
+                "openFileLocation": "Abrir ubicación del archivo",
+                "sendToWorkflow": "Enviar a ComfyUI",
+                "sendToWorkflowText": "Enviar a ComfyUI"
             },
             "openFileLocation": {
                 "success": "Ubicación del archivo abierta exitosamente",
                 "failed": "Error al abrir la ubicación del archivo",
                 "copied": "Ruta copiada al portapapeles: {{path}}",
                 "clipboardFallback": "Ruta: {{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "No se puede enviar a ComfyUI: no hay ruta de archivo disponible"
             },
             "metadata": {
                 "version": "Versión",
@@ -1238,7 +1340,9 @@
             "recipeReplaced": "Receta reemplazada en el flujo de trabajo",
             "recipeFailedToSend": "Error al enviar receta al flujo de trabajo",
             "noMatchingNodes": "No hay nodos compatibles disponibles en el flujo de trabajo actual",
-            "noTargetNodeSelected": "No se ha seleccionado ningún nodo de destino"
+            "noTargetNodeSelected": "No se ha seleccionado ningún nodo de destino",
+            "modelUpdated": "Modelo actualizado en el flujo de trabajo",
+            "modelFailed": "Error al actualizar nodo de modelo"
         },
         "nodeSelector": {
             "recipe": "Receta",
@@ -1389,6 +1493,7 @@
             "pleaseSelectVersion": "Por favor selecciona una versión",
             "versionExists": "Esta versión ya existe en tu biblioteca",
             "downloadCompleted": "Descarga completada exitosamente",
+            "downloadSkippedByBaseModel": "Descarga omitida porque el modelo base {baseModel} está excluido",
             "autoOrganizeSuccess": "Auto-organización completada exitosamente para {count} {type}",
             "autoOrganizePartialSuccess": "Auto-organización completada con {success} movidos, {failures} fallidos de un total de {total} modelos",
             "autoOrganizeFailed": "Auto-organización fallida: {error}",
@@ -1408,7 +1513,11 @@
             "nameUpdated": "Nombre de receta actualizado exitosamente",
             "tagsUpdated": "Etiquetas de receta actualizadas exitosamente",
             "sourceUrlUpdated": "URL de origen actualizada exitosamente",
+            "promptUpdated": "Prompt actualizado exitosamente",
+            "negativePromptUpdated": "Prompt negativo actualizado exitosamente",
+            "promptEditorHint": "Presiona Enter para guardar, Shift+Enter para nueva línea",
             "noRecipeId": "No hay ID de receta disponible",
+            "sendToWorkflowFailed": "Error al enviar la receta al flujo de trabajo: {message}",
             "copyFailed": "Error copiando sintaxis de receta: {message}",
             "noMissingLoras": "No hay LoRAs faltantes para descargar",
             "missingLorasInfoFailed": "Error al obtener información de LoRAs faltantes",
@@ -1436,9 +1545,20 @@
             "processingError": "Error de procesamiento: {message}",
             "folderBrowserError": "Error cargando explorador de carpetas: {message}",
             "recipeSaveFailed": "Error al guardar receta: {error}",
+            "recipeSaved": "Recipe saved successfully",
             "importFailed": "Importación falló: {message}",
             "folderTreeFailed": "Error al cargar árbol de carpetas",
-            "folderTreeError": "Error cargando árbol de carpetas"
+            "folderTreeError": "Error cargando árbol de carpetas",
+            "batchImportFailed": "Failed to start batch import: {message}",
+            "batchImportCancelling": "Cancelling batch import...",
+            "batchImportCancelFailed": "Failed to cancel batch import: {message}",
+            "batchImportNoUrls": "Please enter at least one URL or file path",
+            "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportBrowseFailed": "Failed to browse directory: {message}",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "noRecipesSelected": "No se han seleccionado recetas",
+            "noMissingLorasInSelection": "No se encontraron LoRAs faltantes en las recetas seleccionadas",
+            "noLoraRootConfigured": "No se ha configurado el directorio raíz de LoRA. Por favor, establezca un directorio raíz de LoRA predeterminado en la configuración."
         },
         "models": {
             "noModelsSelected": "No hay modelos seleccionados",

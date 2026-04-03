@@ -4,6 +4,7 @@ import type { ComponentWidget, CyclerConfig, LoraPoolConfig } from './types'
 export interface CyclerLoraItem {
   file_name: string
   model_name: string
+  file_path: string
 }
 
 export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
@@ -18,6 +19,8 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
   const modelStrength = ref(1.0)
   const clipStrength = ref(1.0)
   const useCustomClipRange = ref(false)
+  const usePresetStrength = ref(false)
+  const presetStrengthScale = ref(1.0)
   const sortBy = ref<'filename' | 'model_name'>('filename')
   const currentLoraName = ref('')
   const currentLoraFilename = ref('')
@@ -34,6 +37,7 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
   const repeatUsed = ref(0)         // How many times current index has been used (internal tracking)
   const displayRepeatUsed = ref(0)  // For UI display, deferred updates like currentIndex
   const isPaused = ref(false)       // Whether iteration is paused
+  const includeNoLora = ref(false)  // Whether to include empty LoRA option in cycle
 
   // Execution progress tracking (visual feedback)
   const isWorkflowExecuting = ref(false)    // Workflow is currently running
@@ -50,6 +54,8 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
         model_strength: modelStrength.value,
         clip_strength: clipStrength.value,
         use_same_clip_strength: !useCustomClipRange.value,
+        use_preset_strength: usePresetStrength.value,
+        preset_strength_scale: presetStrengthScale.value,
         sort_by: sortBy.value,
         current_lora_name: currentLoraName.value,
         current_lora_filename: currentLoraFilename.value,
@@ -58,6 +64,7 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
         repeat_count: repeatCount.value,
         repeat_used: repeatUsed.value,
         is_paused: isPaused.value,
+        include_no_lora: includeNoLora.value,
       }
     }
     return {
@@ -67,6 +74,8 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
       model_strength: modelStrength.value,
       clip_strength: clipStrength.value,
       use_same_clip_strength: !useCustomClipRange.value,
+      use_preset_strength: usePresetStrength.value,
+      preset_strength_scale: presetStrengthScale.value,
       sort_by: sortBy.value,
       current_lora_name: currentLoraName.value,
       current_lora_filename: currentLoraFilename.value,
@@ -75,6 +84,7 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
       repeat_count: repeatCount.value,
       repeat_used: repeatUsed.value,
       is_paused: isPaused.value,
+      include_no_lora: includeNoLora.value,
     }
   }
 
@@ -90,15 +100,18 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
       modelStrength.value = config.model_strength ?? 1.0
       clipStrength.value = config.clip_strength ?? 1.0
       useCustomClipRange.value = !(config.use_same_clip_strength ?? true)
+      usePresetStrength.value = config.use_preset_strength ?? false
+      presetStrengthScale.value = config.preset_strength_scale ?? 1.0
       sortBy.value = config.sort_by || 'filename'
       currentLoraName.value = config.current_lora_name || ''
       currentLoraFilename.value = config.current_lora_filename || ''
-      // Advanced index control features
-      repeatCount.value = config.repeat_count ?? 1
-      repeatUsed.value = config.repeat_used ?? 0
-      isPaused.value = config.is_paused ?? false
-      // Note: execution_index and next_index are not restored from config
-      // as they are transient values used only during batch execution
+    // Advanced index control features
+    repeatCount.value = config.repeat_count ?? 1
+    repeatUsed.value = config.repeat_used ?? 0
+    isPaused.value = config.is_paused ?? false
+    includeNoLora.value = config.include_no_lora ?? false
+    // Note: execution_index and next_index are not restored from config
+    // as they are transient values used only during batch execution
     } finally {
       isRestoring = false
     }
@@ -111,7 +124,9 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
     // Calculate the next index (wrap to 1 if at end)
     const current = executionIndex.value ?? currentIndex.value
     let next = current + 1
-    if (totalCount.value > 0 && next > totalCount.value) {
+    // Total count includes no lora option if enabled
+    const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value
+    if (effectiveTotalCount > 0 && next > effectiveTotalCount) {
       next = 1
     }
     nextIndex.value = next
@@ -122,7 +137,9 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
     if (nextIndex.value === null) {
       // First execution uses current_index, so next is current + 1
       let next = currentIndex.value + 1
-      if (totalCount.value > 0 && next > totalCount.value) {
+      // Total count includes no lora option if enabled
+      const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value
+      if (effectiveTotalCount > 0 && next > effectiveTotalCount) {
         next = 1
       }
       nextIndex.value = next
@@ -230,7 +247,9 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
 
   // Set index manually
   const setIndex = (index: number) => {
-    if (index >= 1 && index <= totalCount.value) {
+    // Total count includes no lora option if enabled
+    const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value
+    if (index >= 1 && index <= effectiveTotalCount) {
       currentIndex.value = index
     }
   }
@@ -266,12 +285,15 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
     modelStrength,
     clipStrength,
     useCustomClipRange,
+    usePresetStrength,
+    presetStrengthScale,
     sortBy,
     currentLoraName,
     currentLoraFilename,
     repeatCount,
     repeatUsed,
     isPaused,
+    includeNoLora,
   ], () => {
     widget.value = buildConfig()
   }, { deep: true })
@@ -284,6 +306,8 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
     modelStrength,
     clipStrength,
     useCustomClipRange,
+    usePresetStrength,
+    presetStrengthScale,
     sortBy,
     currentLoraName,
     currentLoraFilename,
@@ -294,6 +318,7 @@ export function useLoraCyclerState(widget: ComponentWidget<CyclerConfig>) {
     repeatUsed,
     displayRepeatUsed,
     isPaused,
+    includeNoLora,
     isWorkflowExecuting,
     executingRepeatStep,
 

@@ -134,6 +134,19 @@ export class ModalManager {
             });
         }
 
+        // Add batchImportModal registration
+        const batchImportModal = document.getElementById('batchImportModal');
+        if (batchImportModal) {
+            this.registerModal('batchImportModal', {
+                element: batchImportModal,
+                onClose: () => {
+                    this.getModal('batchImportModal').element.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
+            });
+        }
+
         // Add recipeModal registration
         const recipeModal = document.getElementById('recipeModal');
         if (recipeModal) {
@@ -272,6 +285,19 @@ export class ModalManager {
                 element: bulkBaseModelModal,
                 onClose: () => {
                     this.getModal('bulkBaseModelModal').element.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
+            });
+        }
+
+        // Register bulkDownloadMissingLorasModal
+        const bulkDownloadMissingLorasModal = document.getElementById('bulkDownloadMissingLorasModal');
+        if (bulkDownloadMissingLorasModal) {
+            this.registerModal('bulkDownloadMissingLorasModal', {
+                element: bulkDownloadMissingLorasModal,
+                onClose: () => {
+                    this.getModal('bulkDownloadMissingLorasModal').element.style.display = 'none';
                     document.body.classList.remove('modal-open');
                 },
                 closeOnOutsideClick: true

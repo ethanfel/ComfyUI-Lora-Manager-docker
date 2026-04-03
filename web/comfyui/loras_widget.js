@@ -11,9 +11,10 @@ import {
   EMPTY_CONTAINER_HEIGHT 
 } from "./loras_widget_utils.js";
 import { initDrag, createContextMenu, initHeaderDrag, initReorderDrag, handleKeyboardNavigation } from "./loras_widget_events.js";
-import { forwardMiddleMouseToCanvas } from "./utils.js";
+import { forwardMiddleMouseToCanvas, forwardWheelToCanvas } from "./utils.js";
 import { PreviewTooltip } from "./preview_tooltip.js";
 import { ensureLmStyles } from "./lm_styles_loader.js";
+import { getStrengthStepPreference } from "./settings.js";
 
 export function addLorasWidget(node, name, opts, callback) {
   ensureLmStyles();
@@ -23,6 +24,7 @@ export function addLorasWidget(node, name, opts, callback) {
   container.className = "lm-loras-container";
 
   forwardMiddleMouseToCanvas(container);
+  forwardWheelToCanvas(container);
 
   // Set initial height using CSS variables approach
   const defaultHeight = 200;
@@ -416,7 +418,7 @@ export function addLorasWidget(node, name, opts, callback) {
         const loraIndex = lorasData.findIndex(l => l.name === name);
         
         if (loraIndex >= 0) {
-          lorasData[loraIndex].strength = (parseFloat(lorasData[loraIndex].strength) - 0.05).toFixed(2);
+          lorasData[loraIndex].strength = (parseFloat(lorasData[loraIndex].strength) - getStrengthStepPreference()).toFixed(2);
           // Sync clipStrength if collapsed
           syncClipStrengthIfCollapsed(lorasData[loraIndex]);
           
@@ -488,7 +490,7 @@ export function addLorasWidget(node, name, opts, callback) {
         const loraIndex = lorasData.findIndex(l => l.name === name);
         
         if (loraIndex >= 0) {
-          lorasData[loraIndex].strength = (parseFloat(lorasData[loraIndex].strength) + 0.05).toFixed(2);
+          lorasData[loraIndex].strength = (parseFloat(lorasData[loraIndex].strength) + getStrengthStepPreference()).toFixed(2);
           // Sync clipStrength if collapsed
           syncClipStrengthIfCollapsed(lorasData[loraIndex]);
           
@@ -541,7 +543,7 @@ export function addLorasWidget(node, name, opts, callback) {
           const loraIndex = lorasData.findIndex(l => l.name === name);
           
           if (loraIndex >= 0) {
-            lorasData[loraIndex].clipStrength = (parseFloat(lorasData[loraIndex].clipStrength) - 0.05).toFixed(2);
+            lorasData[loraIndex].clipStrength = (parseFloat(lorasData[loraIndex].clipStrength) - getStrengthStepPreference()).toFixed(2);
             
             const newValue = formatLoraValue(lorasData);
             updateWidgetValue(newValue);
@@ -611,7 +613,7 @@ export function addLorasWidget(node, name, opts, callback) {
           const loraIndex = lorasData.findIndex(l => l.name === name);
           
           if (loraIndex >= 0) {
-            lorasData[loraIndex].clipStrength = (parseFloat(lorasData[loraIndex].clipStrength) + 0.05).toFixed(2);
+            lorasData[loraIndex].clipStrength = (parseFloat(lorasData[loraIndex].clipStrength) + getStrengthStepPreference()).toFixed(2);
             
             const newValue = formatLoraValue(lorasData);
             updateWidgetValue(newValue);

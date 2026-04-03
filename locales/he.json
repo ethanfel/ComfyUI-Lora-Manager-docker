@@ -14,7 +14,8 @@
             "backToTop": "חזרה למעלה",
             "settings": "הגדרות",
             "help": "עזרה",
-            "add": "הוספה"
+            "add": "הוספה",
+            "close": "סגור"
         },
         "status": {
             "loading": "טוען...",
@@ -290,7 +291,15 @@
             "blurNsfwContent": "טשטש תוכן NSFW",
             "blurNsfwContentHelp": "טשטש תמונות תצוגה מקדימה של תוכן למבוגרים (NSFW)",
             "showOnlySfw": "הצג רק תוצאות SFW",
-            "showOnlySfwHelp": "סנן את כל התוכן ה-NSFW בעת גלישה וחיפוש"
+            "showOnlySfwHelp": "סנן את כל התוכן ה-NSFW בעת גלישה וחיפוש",
+            "matureBlurThreshold": "סף טשטוש תוכן מבוגרים",
+            "matureBlurThresholdHelp": "הגדר מאיזו רמת דירוג מתחיל סינון הטשטוש כאשר טשטוש NSFW מופעל.",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 ומעלה",
+                "r": "R ומעלה (ברירת מחדל)",
+                "x": "X ומעלה",
+                "xxx": "XXX בלבד"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "נגן וידאו אוטומטית בריחוף",
@@ -312,6 +321,24 @@
             "validation": {
                 "noPaths": "הזן לפחות נתיב אחד מופרד בפסיקים.",
                 "saveFailed": "לא ניתן לשמור נתיבי דילוג: {message}"
+            }
+        },
+        "downloadSkipBaseModels": {
+            "label": "דלג על הורדות עבור מודלי בסיס",
+            "help": "חל על כל תהליכי ההורדה. ניתן לבחור כאן רק מודלי בסיס נתמכים.",
+            "searchPlaceholder": "סנן מודלי בסיס...",
+            "empty": "אין מודלי בסיס התואמים לחיפוש הנוכחי.",
+            "summary": {
+                "none": "לא נבחר דבר",
+                "count": "{count} נבחרו"
+            },
+            "actions": {
+                "edit": "עריכה",
+                "collapse": "כווץ",
+                "clear": "נקה"
+            },
+            "validation": {
+                "saveFailed": "לא ניתן לשמור את מודלי הבסיס המוחרגים: {message}"
             }
         },
         "layoutSettings": {
@@ -366,8 +393,8 @@
         },
         "extraFolderPaths": {
             "title": "נתיבי תיקיות נוספים",
-            "help": "הוסף תיקיות מודלים נוספות מחוץ לנתיבים הסטנדרטיים של ComfyUI. נתיבים אלה נשמרים בנפרד ונסרקים לצד תיקיות ברירת המחדל.",
-            "description": "הגדר תיקיות נוספות לסריקת מודלים. נתיבים אלה ספציפיים ל-LoRA Manager וימוזגו עם נתיבי ברירת המחדל של ComfyUI.",
+            "description": "נתיבי שורש מודלים נוספים בלעדיים ל-LoRA Manager. טען מודלים ממיקומים מחוץ לתיקיות הסטנדרטיות של ComfyUI - אידיאלי לספריות גדולות שאחרת יאטו את ComfyUI.",
+            "restartRequired": "Requires restart to take effect",
             "modelTypes": {
                 "lora": "נתיבי LoRA",
                 "checkpoint": "נתיבי Checkpoint",
@@ -375,7 +402,7 @@
                 "embedding": "נתיבי Embedding"
             },
             "pathPlaceholder": "/נתיב/למודלים/נוספים",
-            "saveSuccess": "נתיבי תיקיות נוספים עודכנו.",
+            "saveSuccess": "נתיבי תיקיות נוספים עודכנו. נדרשת הפעלה מחדש כדי להחיל את השינויים.",
             "saveError": "נכשל בעדכון נתיבי תיקיות נוספים: {message}",
             "validation": {
                 "duplicatePath": "נתיב זה כבר מוגדר"
@@ -574,6 +601,7 @@
             "skipMetadataRefresh": "דילוג על רענון מטא-נתונים לנבחרים",
             "resumeMetadataRefresh": "המשך רענון מטא-נתונים לנבחרים",
             "deleteAll": "מחק את כל המודלים",
+            "downloadMissingLoras": "הורדת LoRAs חסרים",
             "clear": "נקה בחירה",
             "skipMetadataRefreshCount": "דילוג（{count} מודלים）",
             "resumeMetadataRefreshCount": "המשך（{count} מודלים）",
@@ -644,6 +672,8 @@
                 "root": "שורש",
                 "browseFolders": "דפדף בתיקיות:",
                 "downloadAndSaveRecipe": "הורד ושמור מתכון",
+                "importRecipeOnly": "יבא רק מתכון",
+                "importAndDownload": "יבא והורד",
                 "downloadMissingLoras": "הורד LoRAs חסרים",
                 "saveRecipe": "שמור מתכון",
                 "loraCountInfo": "({existing}/{total} בספרייה)",
@@ -729,6 +759,64 @@
                 "failed": "תיקון המתכון נכשל: {message}",
                 "missingId": "לא ניתן לתקן את המתכון: חסר מזהה מתכון"
             }
+        },
+        "batchImport": {
+            "title": "Batch Import Recipes",
+            "action": "Batch Import",
+            "urlList": "URL List",
+            "directory": "Directory",
+            "urlDescription": "Enter image URLs or local file paths (one per line). Each will be imported as a recipe.",
+            "directoryDescription": "Enter a directory path to import all images from that folder.",
+            "urlsLabel": "Image URLs or Local Paths",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "Enter one URL or path per line",
+            "directoryPath": "Directory Path",
+            "directoryPlaceholder": "/path/to/images/folder",
+            "browse": "Browse",
+            "recursive": "Include subdirectories",
+            "tagsOptional": "Tags (optional, applied to all recipes)",
+            "tagsPlaceholder": "Enter tags separated by commas",
+            "tagsHint": "Tags will be added to all imported recipes",
+            "skipNoMetadata": "Skip images without metadata",
+            "skipNoMetadataHelp": "Images without LoRA metadata will be skipped automatically.",
+            "start": "Start Import",
+            "startImport": "Start Import",
+            "importing": "Importing...",
+            "progress": "Progress",
+            "total": "Total",
+            "success": "Success",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "current": "Current",
+            "currentItem": "Current",
+            "preparing": "Preparing...",
+            "cancel": "Cancel",
+            "cancelImport": "Cancel",
+            "cancelled": "Import cancelled",
+            "completed": "Import completed",
+            "completedWithErrors": "Completed with errors",
+            "completedSuccess": "Successfully imported {count} recipe(s)",
+            "successCount": "Successful",
+            "failedCount": "Failed",
+            "skippedCount": "Skipped",
+            "totalProcessed": "Total processed",
+            "viewDetails": "View Details",
+            "newImport": "New Import",
+            "manualPathEntry": "Please enter the directory path manually. File browser is not available in this browser.",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "batchImportManualEntryRequired": "File browser not available. Please enter the directory path manually.",
+            "backToParent": "Back to parent directory",
+            "folders": "Folders",
+            "folderCount": "{count} folders",
+            "imageFiles": "Image Files",
+            "images": "images",
+            "imageCount": "{count} images",
+            "selectFolder": "Select This Folder",
+            "errors": {
+                "enterUrls": "Please enter at least one URL or path",
+                "enterDirectory": "Please enter a directory path",
+                "startFailed": "Failed to start import: {message}"
+            }
         }
     },
     "checkpoints": {
@@ -738,7 +826,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "העבר לתיקיית {otherType}"
+            "moveToOtherTypeFolder": "העבר לתיקיית {otherType}",
+            "sendToWorkflow": "[TODO: Translate] Send to Workflow"
         }
     },
     "embeddings": {
@@ -751,8 +840,8 @@
         "unpinSidebar": "שחרר סרגל צד",
         "switchToListView": "עבור לתצוגת רשימה",
         "switchToTreeView": "תצוגת עץ",
-        "recursiveOn": "חיפוש בתיקיות משנה",
-        "recursiveOff": "חיפוש רק בתיקייה הנוכחית",
+        "recursiveOn": "כלול תיקיות משנה",
+        "recursiveOff": "רק התיקייה הנוכחית",
         "recursiveUnavailable": "חיפוש רקורסיבי זמין רק בתצוגת עץ",
         "collapseAllDisabled": "לא זמין בתצוגת רשימה",
         "dragDrop": {
@@ -922,6 +1011,14 @@
             "save": "עדכן מודל בסיס",
             "cancel": "ביטול"
         },
+        "bulkDownloadMissingLoras": {
+            "title": "הורדת LoRAs חסרים",
+            "message": "נמצאו {uniqueCount} LoRAs חסרים ייחודיים (מתוך {totalCount} בסך הכל במתכונים שנבחרו).",
+            "previewTitle": "LoRAs להורדה:",
+            "moreItems": "...ועוד {count}",
+            "note": "הקבצים יורדו באמצעות תבניות נתיב ברירת מחדל. זה עשוי לקחת זמן בהתאם למספר ה-LoRAs.",
+            "downloadButton": "הורד {count} LoRA(s)"
+        },
         "exampleAccess": {
             "title": "תמונות דוגמה מקומיות",
             "message": "לא נמצאו תמונות דוגמה מקומיות למודל זה. אפשרויות צפייה:",
@@ -973,13 +1070,18 @@
                 "viewOnCivitai": "הצג ב-Civitai",
                 "viewOnCivitaiText": "הצג ב-Civitai",
                 "viewCreatorProfile": "הצג פרופיל יוצר",
-                "openFileLocation": "פתח מיקום קובץ"
+                "openFileLocation": "פתח מיקום קובץ",
+                "sendToWorkflow": "שלח ל-ComfyUI",
+                "sendToWorkflowText": "שלח ל-ComfyUI"
             },
             "openFileLocation": {
                 "success": "מיקום הקובץ נפתח בהצלחה",
                 "failed": "פתיחת מיקום הקובץ נכשלה",
                 "copied": "הנתיב הועתק ללוח העריכה: {{path}}",
                 "clipboardFallback": "נתיב: {{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "לא ניתן לשלוח ל-ComfyUI: אין נתיב קובץ זמין"
             },
             "metadata": {
                 "version": "גרסה",
@@ -1238,7 +1340,9 @@
             "recipeReplaced": "מתכון הוחלף ב-workflow",
             "recipeFailedToSend": "שליחת מתכון ל-workflow נכשלה",
             "noMatchingNodes": "אין צמתים תואמים זמינים ב-workflow הנוכחי",
-            "noTargetNodeSelected": "לא נבחר צומת יעד"
+            "noTargetNodeSelected": "לא נבחר צומת יעד",
+            "modelUpdated": "מודל עודכן ב-workflow",
+            "modelFailed": "עדכון צומת המודל נכשל"
         },
         "nodeSelector": {
             "recipe": "מתכון",
@@ -1389,6 +1493,7 @@
             "pleaseSelectVersion": "אנא בחר גרסה",
             "versionExists": "גרסה זו כבר קיימת בספרייה שלך",
             "downloadCompleted": "ההורדה הושלמה בהצלחה",
+            "downloadSkippedByBaseModel": "ההורדה דולגה כי מודל הבסיס {baseModel} מוחרג",
             "autoOrganizeSuccess": "הארגון האוטומטי הושלם בהצלחה עבור {count} {type}",
             "autoOrganizePartialSuccess": "הארגון האוטומטי הושלם עם {success} שהועברו, {failures} שנכשלו מתוך {total} מודלים",
             "autoOrganizeFailed": "הארגון האוטומטי נכשל: {error}",
@@ -1408,7 +1513,11 @@
             "nameUpdated": "שם המתכון עודכן בהצלחה",
             "tagsUpdated": "תגיות המתכון עודכנו בהצלחה",
             "sourceUrlUpdated": "כתובת ה-URL המקורית עודכנה בהצלחה",
+            "promptUpdated": "הפרומפט עודכן בהצלחה",
+            "negativePromptUpdated": "הפרומפט השלילי עודכן בהצלחה",
+            "promptEditorHint": "לחץ Enter לשמירה, Shift+Enter לשורה חדשה",
             "noRecipeId": "אין מזהה מתכון זמין",
+            "sendToWorkflowFailed": "נכשל שליחת המתכון ל-workflow: {message}",
             "copyFailed": "שגיאה בהעתקת תחביר המתכון: {message}",
             "noMissingLoras": "אין LoRAs חסרים להורדה",
             "missingLorasInfoFailed": "קבלת מידע עבור LoRAs חסרים נכשלה",
@@ -1436,9 +1545,20 @@
             "processingError": "שגיאת עיבוד: {message}",
             "folderBrowserError": "שגיאה בטעינת דפדפן התיקיות: {message}",
             "recipeSaveFailed": "שמירת המתכון נכשלה: {error}",
+            "recipeSaved": "Recipe saved successfully",
             "importFailed": "הייבוא נכשל: {message}",
             "folderTreeFailed": "טעינת עץ התיקיות נכשלה",
-            "folderTreeError": "שגיאה בטעינת עץ התיקיות"
+            "folderTreeError": "שגיאה בטעינת עץ התיקיות",
+            "batchImportFailed": "Failed to start batch import: {message}",
+            "batchImportCancelling": "Cancelling batch import...",
+            "batchImportCancelFailed": "Failed to cancel batch import: {message}",
+            "batchImportNoUrls": "Please enter at least one URL or file path",
+            "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportBrowseFailed": "Failed to browse directory: {message}",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "noRecipesSelected": "לא נבחרו מתכונים",
+            "noMissingLorasInSelection": "לא נמצאו LoRAs חסרים במתכונים שנבחרו",
+            "noLoraRootConfigured": "תיקיית השורש של LoRA לא מוגדרת. אנא הגדר תיקיית שורש LoRA ברירת מחדל בהגדרות."
         },
         "models": {
             "noModelsSelected": "לא נבחרו מודלים",

@@ -14,7 +14,8 @@
             "backToTop": "返回顶部",
             "settings": "设置",
             "help": "帮助",
-            "add": "添加"
+            "add": "添加",
+            "close": "关闭"
         },
         "status": {
             "loading": "加载中...",
@@ -290,7 +291,15 @@
             "blurNsfwContent": "模糊 NSFW 内容",
             "blurNsfwContentHelp": "模糊成熟（NSFW）内容预览图片",
             "showOnlySfw": "仅显示 SFW 结果",
-            "showOnlySfwHelp": "浏览和搜索时过滤所有 NSFW 内容"
+            "showOnlySfwHelp": "浏览和搜索时过滤所有 NSFW 内容",
+            "matureBlurThreshold": "成人内容模糊阈值",
+            "matureBlurThresholdHelp": "设置当启用 NSFW 模糊时，从哪个评级级别开始模糊过滤。",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 及以上",
+                "r": "R 及以上（默认）",
+                "x": "X 及以上",
+                "xxx": "仅 XXX"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "悬停时自动播放视频",
@@ -312,6 +321,24 @@
             "validation": {
                 "noPaths": "请输入至少一个路径，以逗号分隔。",
                 "saveFailed": "无法保存跳过路径：{message}"
+            }
+        },
+        "downloadSkipBaseModels": {
+            "label": "跳过这些基础模型的下载",
+            "help": "适用于所有下载流程。这里只能选择受支持的基础模型。",
+            "searchPlaceholder": "筛选基础模型...",
+            "empty": "没有与当前搜索匹配的基础模型。",
+            "summary": {
+                "none": "未选择",
+                "count": "已选择 {count} 项"
+            },
+            "actions": {
+                "edit": "编辑",
+                "collapse": "收起",
+                "clear": "清空"
+            },
+            "validation": {
+                "saveFailed": "无法保存已排除的基础模型：{message}"
             }
         },
         "layoutSettings": {
@@ -366,8 +393,8 @@
         },
         "extraFolderPaths": {
             "title": "额外文件夹路径",
-            "help": "在 ComfyUI 的标准路径之外添加额外的模型文件夹。这些路径单独存储，并与默认文件夹一起扫描。",
-            "description": "配置额外的文件夹以扫描模型。这些路径是 LoRA Manager 特有的，将与 ComfyUI 的默认路径合并。",
+            "description": "LoRA Manager 专属的额外模型根目录。从 ComfyUI 标准文件夹之外的位置加载模型，特别适合管理大型模型库，避免影响 ComfyUI 性能。",
+            "restartRequired": "需要重启才能生效",
             "modelTypes": {
                 "lora": "LoRA 路径",
                 "checkpoint": "Checkpoint 路径",
@@ -375,7 +402,7 @@
                 "embedding": "Embedding 路径"
             },
             "pathPlaceholder": "/额外/模型/路径",
-            "saveSuccess": "额外文件夹路径已更新。",
+            "saveSuccess": "额外文件夹路径已更新，需要重启才能生效。",
             "saveError": "更新额外文件夹路径失败：{message}",
             "validation": {
                 "duplicatePath": "此路径已配置"
@@ -574,6 +601,7 @@
             "skipMetadataRefresh": "跳过所选模型的元数据刷新",
             "resumeMetadataRefresh": "恢复所选模型的元数据刷新",
             "deleteAll": "删除选中模型",
+            "downloadMissingLoras": "下载缺失的 LoRAs",
             "clear": "清除选择",
             "skipMetadataRefreshCount": "跳过（{count} 个模型）",
             "resumeMetadataRefreshCount": "恢复（{count} 个模型）",
@@ -644,6 +672,8 @@
                 "root": "根目录",
                 "browseFolders": "浏览文件夹：",
                 "downloadAndSaveRecipe": "下载并保存配方",
+                "importRecipeOnly": "仅导入配方",
+                "importAndDownload": "导入并下载",
                 "downloadMissingLoras": "下载缺失的 LoRA",
                 "saveRecipe": "保存配方",
                 "loraCountInfo": "({existing}/{total} in library)",
@@ -729,6 +759,64 @@
                 "failed": "修复配方失败：{message}",
                 "missingId": "无法修复配方：缺少配方 ID"
             }
+        },
+        "batchImport": {
+            "title": "批量导入配方",
+            "action": "批量导入",
+            "urlList": "URL 列表",
+            "directory": "目录",
+            "urlDescription": "输入图像 URL 或本地文件路径（每行一个）。每个都将作为配方导入。",
+            "directoryDescription": "输入目录路径以导入该文件夹中的所有图片。",
+            "urlsLabel": "图片 URL 或本地路径",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "每行输入一个 URL 或路径",
+            "directoryPath": "目录路径",
+            "directoryPlaceholder": "/图片/文件夹/路径",
+            "browse": "浏览",
+            "recursive": "包含子目录",
+            "tagsOptional": "标签（可选，应用于所有配方）",
+            "tagsPlaceholder": "输入以逗号分隔的标签",
+            "tagsHint": "标签将被添加到所有导入的配方中",
+            "skipNoMetadata": "跳过无元数据的图片",
+            "skipNoMetadataHelp": "没有 LoRA 元数据的图片将自动跳过。",
+            "start": "开始导入",
+            "startImport": "开始导入",
+            "importing": "正在导入配方...",
+            "progress": "进度",
+            "total": "总计",
+            "success": "成功",
+            "failed": "失败",
+            "skipped": "跳过",
+            "current": "当前",
+            "currentItem": "当前",
+            "preparing": "准备中...",
+            "cancel": "取消",
+            "cancelImport": "取消",
+            "cancelled": "批量导入已取消",
+            "completed": "导入完成",
+            "completedWithErrors": "导入完成但有错误",
+            "completedSuccess": "成功导入 {count} 个配方",
+            "successCount": "成功",
+            "failedCount": "失败",
+            "skippedCount": "跳过",
+            "totalProcessed": "总计处理",
+            "viewDetails": "查看详情",
+            "newImport": "新建导入",
+            "manualPathEntry": "请手动输入目录路径。此浏览器中文件浏览器不可用。",
+            "batchImportDirectorySelected": "已选择目录：{path}",
+            "batchImportManualEntryRequired": "文件浏览器不可用。请手动输入目录路径。",
+            "backToParent": "返回上级目录",
+            "folders": "文件夹",
+            "folderCount": "{count} 个文件夹",
+            "imageFiles": "图像文件",
+            "images": "图像",
+            "imageCount": "{count} 个图像",
+            "selectFolder": "选择此文件夹",
+            "errors": {
+                "enterUrls": "请至少输入一个 URL 或路径",
+                "enterDirectory": "请输入目录路径",
+                "startFailed": "启动导入失败：{message}"
+            }
         }
     },
     "checkpoints": {
@@ -738,7 +826,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "移动到 {otherType} 文件夹"
+            "moveToOtherTypeFolder": "移动到 {otherType} 文件夹",
+            "sendToWorkflow": "[TODO: Translate] Send to Workflow"
         }
     },
     "embeddings": {
@@ -751,8 +840,8 @@
         "unpinSidebar": "取消固定侧边栏",
         "switchToListView": "切换到列表视图",
         "switchToTreeView": "切换到树状视图",
-        "recursiveOn": "搜索子文件夹",
-        "recursiveOff": "仅搜索当前文件夹",
+        "recursiveOn": "包含子文件夹",
+        "recursiveOff": "仅当前文件夹",
         "recursiveUnavailable": "仅在树形视图中可使用递归搜索",
         "collapseAllDisabled": "列表视图下不可用",
         "dragDrop": {
@@ -764,7 +853,7 @@
             "emptyFolderName": "请输入文件夹名称",
             "invalidFolderName": "文件夹名称包含无效字符",
             "noDragState": "未找到待处理的拖放操作"
-            },
+        },
         "empty": {
             "noFolders": "未找到文件夹",
             "dragHint": "拖拽项目到此处以创建文件夹"
@@ -922,6 +1011,14 @@
             "save": "更新基础模型",
             "cancel": "取消"
         },
+        "bulkDownloadMissingLoras": {
+            "title": "下载缺失的 LoRAs",
+            "message": "发现 {uniqueCount} 个独特的缺失 LoRAs（从选定配方中的 {totalCount} 个总数）。",
+            "previewTitle": "要下载的 LoRAs：",
+            "moreItems": "...还有 {count} 个",
+            "note": "文件将使用默认路径模板下载。根据 LoRAs 的数量，这可能需要一些时间。",
+            "downloadButton": "下载 {count} 个 LoRA(s)"
+        },
         "exampleAccess": {
             "title": "本地示例图片",
             "message": "未找到此模型的本地示例图片。可选操作：",
@@ -973,13 +1070,18 @@
                 "viewOnCivitai": "在 Civitai 查看",
                 "viewOnCivitaiText": "在 Civitai 查看",
                 "viewCreatorProfile": "查看创作者主页",
-                "openFileLocation": "打开文件位置"
+                "openFileLocation": "打开文件位置",
+                "sendToWorkflow": "发送到 ComfyUI",
+                "sendToWorkflowText": "发送到 ComfyUI"
             },
             "openFileLocation": {
                 "success": "文件位置已成功打开",
                 "failed": "打开文件位置失败",
                 "copied": "路径已复制到剪贴板：{{path}}",
                 "clipboardFallback": "路径：{{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "无法发送到 ComfyUI：没有可用的文件路径"
             },
             "metadata": {
                 "version": "版本",
@@ -1238,7 +1340,9 @@
             "recipeReplaced": "配方已替换到工作流",
             "recipeFailedToSend": "发送配方到工作流失败",
             "noMatchingNodes": "当前工作流中没有兼容的节点",
-            "noTargetNodeSelected": "未选择目标节点"
+            "noTargetNodeSelected": "未选择目标节点",
+            "modelUpdated": "模型已更新到工作流",
+            "modelFailed": "更新模型节点失败"
         },
         "nodeSelector": {
             "recipe": "配方",
@@ -1389,6 +1493,7 @@
             "pleaseSelectVersion": "请选择版本",
             "versionExists": "该版本已存在于你的库中",
             "downloadCompleted": "下载成功完成",
+            "downloadSkippedByBaseModel": "由于基础模型 {baseModel} 已被排除，已跳过下载",
             "autoOrganizeSuccess": "自动整理已成功完成，共 {count} 个 {type}",
             "autoOrganizePartialSuccess": "自动整理完成：已移动 {success} 个，{failures} 个失败，共 {total} 个模型",
             "autoOrganizeFailed": "自动整理失败：{error}",
@@ -1408,7 +1513,11 @@
             "nameUpdated": "配方名称更新成功",
             "tagsUpdated": "配方标签更新成功",
             "sourceUrlUpdated": "来源 URL 更新成功",
+            "promptUpdated": "提示词更新成功",
+            "negativePromptUpdated": "负面提示词更新成功",
+            "promptEditorHint": "按 Enter 保存，Shift+Enter 换行",
             "noRecipeId": "无配方 ID",
+            "sendToWorkflowFailed": "发送配方到工作流失败：{message}",
             "copyFailed": "复制配方语法出错：{message}",
             "noMissingLoras": "没有缺失的 LoRA 可下载",
             "missingLorasInfoFailed": "获取缺失 LoRA 信息失败",
@@ -1436,9 +1545,20 @@
             "processingError": "处理出错：{message}",
             "folderBrowserError": "加载文件夹浏览器出错：{message}",
             "recipeSaveFailed": "保存配方失败：{error}",
+            "recipeSaved": "配方保存成功",
             "importFailed": "导入失败：{message}",
             "folderTreeFailed": "加载文件夹树失败",
-            "folderTreeError": "加载文件夹树出错"
+            "folderTreeError": "加载文件夹树出错",
+            "batchImportFailed": "启动批量导入失败：{message}",
+            "batchImportCancelling": "正在取消批量导入...",
+            "batchImportCancelFailed": "取消批量导入失败：{message}",
+            "batchImportNoUrls": "请输入至少一个 URL 或文件路径",
+            "batchImportNoDirectory": "请输入目录路径",
+            "batchImportBrowseFailed": "浏览目录失败：{message}",
+            "batchImportDirectorySelected": "已选择目录：{path}",
+            "noRecipesSelected": "未选择任何配方",
+            "noMissingLorasInSelection": "在选定的配方中未找到缺失的 LoRAs",
+            "noLoraRootConfigured": "未配置 LoRA 根目录。请在设置中设置默认的 LoRA 根目录。"
         },
         "models": {
             "noModelsSelected": "未选中模型",

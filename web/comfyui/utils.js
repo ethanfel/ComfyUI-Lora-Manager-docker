@@ -10,8 +10,25 @@ export const LORA_PROVIDER_NODE_TYPES = [
   "Lora Cycler (LoraManager)",
 ];
 
+export const LORA_STACK_AGGREGATOR_NODE_TYPES = [
+  "Lora Stack Combiner (LoraManager)",
+];
+
+export const LORA_CHAIN_NODE_TYPES = [
+  ...LORA_PROVIDER_NODE_TYPES,
+  ...LORA_STACK_AGGREGATOR_NODE_TYPES,
+];
+
 export function isLoraProviderNode(comfyClass) {
   return LORA_PROVIDER_NODE_TYPES.includes(comfyClass);
+}
+
+export function isLoraStackAggregatorNode(comfyClass) {
+    return LORA_STACK_AGGREGATOR_NODE_TYPES.includes(comfyClass);
+}
+
+export function isLoraChainNode(comfyClass) {
+    return LORA_CHAIN_NODE_TYPES.includes(comfyClass);
 }
 
 function isMapLike(collection) {
@@ -112,6 +129,27 @@ export function getNodeKey(node) {
         return null;
     }
     return `${getNodeGraphId(node)}:${node.id}`;
+}
+
+export function getWidgetByName(node, widgetName) {
+    if (!node || !Array.isArray(node.widgets)) {
+        return null;
+    }
+
+    return node.widgets.find((widget) => widget?.name === widgetName) || null;
+}
+
+export function getWidgetSerializedValue(node, widgetName) {
+    if (!node || !Array.isArray(node.widgets) || !Array.isArray(node.widgets_values)) {
+        return undefined;
+    }
+
+    const widgetIndex = node.widgets.findIndex((widget) => widget?.name === widgetName);
+    if (widgetIndex === -1) {
+        return undefined;
+    }
+
+    return node.widgets_values[widgetIndex];
 }
 
 export function getLinkFromGraph(graph, linkId) {
@@ -224,16 +262,20 @@ export function hideWidgetForGood(node, widget, suffix = "") {
 // Update pattern to match both formats: <lora:name:model_strength> or <lora:name:model_strength:clip_strength>
 export const LORA_PATTERN = /<lora:([^:]+):([-\d\.]+)(?::([-\d\.]+))?>/g;
 
-// Get connected Lora Stacker nodes that feed into the current node
-export function getConnectedInputStackers(node) {
-    const connectedStackers = [];
+function isLoraStackInput(input) {
+    return input?.type === "LORA_STACK";
+}
+
+// Get connected LORA_STACK chain nodes that feed into the current node
+export function getConnectedInputLoraChainNodes(node) {
+    const connectedNodes = [];
 
     if (!node?.inputs) {
-        return connectedStackers;
+        return connectedNodes;
     }
 
     for (const input of node.inputs) {
-        if (input.name !== "lora_stack" || !input.link) {
+        if (!isLoraStackInput(input) || !input.link) {
             continue;
         }
 
@@ -243,12 +285,12 @@ export function getConnectedInputStackers(node) {
         }
 
         const sourceNode = node.graph?.getNodeById?.(link.origin_id);
-        if (sourceNode && isLoraProviderNode(sourceNode.comfyClass)) {
-            connectedStackers.push(sourceNode);
+        if (sourceNode && isLoraChainNode(sourceNode.comfyClass)) {
+            connectedNodes.push(sourceNode);
         }
     }
 
-    return connectedStackers;
+    return connectedNodes;
 }
 
 // Get connected TriggerWord Toggle nodes that receive output from the current node
@@ -293,6 +335,11 @@ export function getActiveLorasFromNode(node) {
         return activeLoraNames;
     }
 
+    // Aggregator nodes do not own LoRA state directly; they only forward upstream stacks.
+    if (isLoraStackAggregatorNode(node.comfyClass)) {
+        return activeLoraNames;
+    }
+
     // Handle Lora Stacker and Lora Randomizer (lorasWidget)
     let lorasWidget = node.lorasWidget;
     if (!lorasWidget && node.widgets) {
@@ -327,14 +374,18 @@ export function collectActiveLorasFromChain(node, visited = new Set()) {
     // Mode 2 is Never, Mode 4 is Bypass
     const isNodeActive = node.mode === undefined || node.mode === 0 || node.mode === 3;
     
+    if (!isNodeActive) {
+        return new Set();
+    }
+
     // Get active loras from current node only if node is active
-    const allActiveLoraNames = isNodeActive ? getActiveLorasFromNode(node) : new Set();
+    const allActiveLoraNames = getActiveLorasFromNode(node);
     
-    // Get connected input stackers and collect their active loras
-    const inputStackers = getConnectedInputStackers(node);
-    for (const stacker of inputStackers) {
-        const stackerLoras = collectActiveLorasFromChain(stacker, visited);
-        stackerLoras.forEach(name => allActiveLoraNames.add(name));
+    // Get connected input LORA_STACK chain nodes and collect their active loras
+    const inputChainNodes = getConnectedInputLoraChainNodes(node);
+    for (const chainNode of inputChainNodes) {
+        const upstreamLoras = collectActiveLorasFromChain(chainNode, visited);
+        upstreamLoras.forEach(name => allActiveLoraNames.add(name));
     }
     
     return allActiveLoraNames;
@@ -670,6 +721,69 @@ export function forwardMiddleMouseToCanvas(container) {
     });
 }
 
+/**
+ * Forward wheel events from a container to the ComfyUI canvas for zooming,
+ * unless the container has scrollable content.
+ * This allows canvas zoom to work when hovering over DOM widgets.
+ * @param {HTMLElement} container - The root DOM element of the widget
+ * @param {Object} options - Configuration options
+ * @param {boolean} options.captureWheel - If true, always capture wheel events (default: false)
+ */
+export function forwardWheelToCanvas(container, options = {}) {
+    if (!container) return;
+
+    const { captureWheel = false } = options;
+
+    container.addEventListener('wheel', (event) => {
+        // If explicitly capturing wheel (for internal scrolling), stop here
+        if (captureWheel) {
+            event.stopPropagation();
+            return;
+        }
+
+        // Access ComfyUI app from global window
+        const comfyApp = window.app;
+        if (!comfyApp || !comfyApp.canvas || typeof comfyApp.canvas.processMouseWheel !== 'function') {
+            return;
+        }
+
+        const deltaX = event.deltaX;
+        const deltaY = event.deltaY;
+        const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+
+        // 1. Handle pinch-to-zoom (ctrlKey is true for pinch-to-zoom on most browsers)
+        if (event.ctrlKey) {
+            event.preventDefault();
+            event.stopPropagation();
+            comfyApp.canvas.processMouseWheel(event);
+            return;
+        }
+
+        // 2. Horizontal scroll: pass to canvas (widgets usually don't scroll horizontally)
+        if (isHorizontal) {
+            event.preventDefault();
+            event.stopPropagation();
+            comfyApp.canvas.processMouseWheel(event);
+            return;
+        }
+
+        // 3. Vertical scrolling: check if container is scrollable
+        const canScrollY = container.scrollHeight > container.clientHeight;
+
+        if (canScrollY) {
+            // Container is scrollable, let it handle the wheel event but stop propagation
+            // to prevent the canvas from zooming while the user is trying to scroll
+            event.stopPropagation();
+        } else {
+            // Container is NOT scrollable, forward the wheel event to the canvas
+            // so it can trigger zoom in/out
+            event.preventDefault();
+            event.stopPropagation();
+            comfyApp.canvas.processMouseWheel(event);
+        }
+    }, { passive: false });
+}
+
 // Get connected Lora Pool node from pool_config input
 export function getConnectedPoolConfigNode(node) {
     if (!node?.inputs) {
@@ -735,8 +849,8 @@ export function updateDownstreamLoaders(startNode, visited = new Set()) {
                 collectActiveLorasFromChain(targetNode);
               updateConnectedTriggerWords(targetNode, allActiveLoraNames);
             }
-            // If target is another LoRA provider node, recursively check its outputs
-            else if (targetNode && isLoraProviderNode(targetNode.comfyClass)) {
+            // If target is another LORA_STACK chain node, recursively check its outputs
+            else if (targetNode && isLoraChainNode(targetNode.comfyClass)) {
               updateDownstreamLoaders(targetNode, visited);
             }
           }

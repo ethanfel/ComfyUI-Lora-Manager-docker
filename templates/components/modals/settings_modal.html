@@ -281,6 +281,26 @@
                                     </div>
                                 </div>
                             </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="matureBlurLevel">
+                                        {{ t('settings.contentFiltering.matureBlurThreshold') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.contentFiltering.matureBlurThresholdHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control select-control">
+                                        <select id="matureBlurLevel"
+                                                onchange="settingsManager.saveSelectSetting('matureBlurLevel', 'mature_blur_level')">
+                                            <option value="PG13">{{ t('settings.contentFiltering.matureBlurThresholdOptions.pg13') }}</option>
+                                            <option value="R">{{ t('settings.contentFiltering.matureBlurThresholdOptions.r') }}</option>
+                                            <option value="X">{{ t('settings.contentFiltering.matureBlurThresholdOptions.x') }}</option>
+                                            <option value="XXX">{{ t('settings.contentFiltering.matureBlurThresholdOptions.xxx') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Video Settings -->
@@ -464,9 +484,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultLoraRoot" onchange="settingsManager.saveSelectSetting('defaultLoraRoot', 'default_lora_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultLoraRoot" onchange="settingsManager.saveSelectSetting('defaultLoraRoot', 'default_lora_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -480,9 +498,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultCheckpointRoot" onchange="settingsManager.saveSelectSetting('defaultCheckpointRoot', 'default_checkpoint_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultCheckpointRoot" onchange="settingsManager.saveSelectSetting('defaultCheckpointRoot', 'default_checkpoint_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -496,9 +512,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultUnetRoot" onchange="settingsManager.saveSelectSetting('defaultUnetRoot', 'default_unet_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultUnetRoot" onchange="settingsManager.saveSelectSetting('defaultUnetRoot', 'default_unet_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -512,9 +526,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultEmbeddingRoot" onchange="settingsManager.saveSelectSetting('defaultEmbeddingRoot', 'default_embedding_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultEmbeddingRoot" onchange="settingsManager.saveSelectSetting('defaultEmbeddingRoot', 'default_embedding_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -525,7 +537,7 @@
                             <div class="settings-subsection-header">
                                 <h4>
                                     {{ t('settings.extraFolderPaths.title') }}
-                                    <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.extraFolderPaths.help') }}"></i>
+                                    <i class="fas fa-sync-alt restart-required-icon" title="{{ t('settings.extraFolderPaths.restartRequired') }}"></i>
                                 </h4>
                             </div>
                             <div class="setting-item">
@@ -721,6 +733,46 @@
                                     <div id="baseModelMappingsContainer">
                                     </div>
                                 </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="downloadSkipBaseModelsToggle">
+                                            {{ t('settings.downloadSkipBaseModels.label') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.downloadSkipBaseModels.help') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <button
+                                            type="button"
+                                            id="downloadSkipBaseModelsToggle"
+                                            class="secondary-btn base-model-skip-toggle"
+                                            aria-expanded="false"
+                                        >
+                                            <span id="downloadSkipBaseModelsSummary">{{ t('settings.downloadSkipBaseModels.summary.none') }}</span>
+                                            <span class="base-model-skip-toggle-label">{{ t('settings.downloadSkipBaseModels.actions.edit') }}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="downloadSkipBaseModelsPanel" class="base-model-skip-panel" hidden>
+                                    <div class="base-model-skip-toolbar">
+                                        <input
+                                            type="text"
+                                            id="downloadSkipBaseModelsSearch"
+                                            class="base-model-skip-search"
+                                            placeholder="{{ t('settings.downloadSkipBaseModels.searchPlaceholder') }}"
+                                        />
+                                        <button type="button" class="text-btn base-model-skip-clear" id="downloadSkipBaseModelsClear">
+                                            {{ t('settings.downloadSkipBaseModels.actions.clear') }}
+                                        </button>
+                                    </div>
+                                    <div id="downloadSkipBaseModelsContainer" class="base-model-skip-list"></div>
+                                    <div id="downloadSkipBaseModelsEmpty" class="base-model-skip-empty" hidden>
+                                        {{ t('settings.downloadSkipBaseModels.empty') }}
+                                    </div>
+                                </div>
+                                <div class="settings-input-error-message" id="downloadSkipBaseModelsError"></div>
                             </div>
 
                             <!-- Priority Tags -->

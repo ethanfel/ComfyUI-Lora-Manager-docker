@@ -9,21 +9,23 @@ import type { LoraPoolConfig, RandomizerConfig, CyclerConfig } from './composabl
 import {
   setupModeChangeHandler,
   createModeChangeCallback,
-  LORA_PROVIDER_NODE_TYPES
+  LORA_CHAIN_NODE_TYPES
 } from './mode-change-handler'
 
 const LORA_POOL_WIDGET_MIN_WIDTH = 500
-const LORA_POOL_WIDGET_MIN_HEIGHT = 400
+const LORA_POOL_WIDGET_MIN_HEIGHT = 520
 const LORA_RANDOMIZER_WIDGET_MIN_WIDTH = 500
 const LORA_RANDOMIZER_WIDGET_MIN_HEIGHT = 448
 const LORA_RANDOMIZER_WIDGET_MAX_HEIGHT = LORA_RANDOMIZER_WIDGET_MIN_HEIGHT
 const LORA_CYCLER_WIDGET_MIN_WIDTH = 380
-const LORA_CYCLER_WIDGET_MIN_HEIGHT = 314
+const LORA_CYCLER_WIDGET_MIN_HEIGHT = 408
 const LORA_CYCLER_WIDGET_MAX_HEIGHT = LORA_CYCLER_WIDGET_MIN_HEIGHT
 const JSON_DISPLAY_WIDGET_MIN_WIDTH = 300
 const JSON_DISPLAY_WIDGET_MIN_HEIGHT = 200
 const AUTOCOMPLETE_TEXT_WIDGET_MIN_HEIGHT = 60
 const AUTOCOMPLETE_TEXT_WIDGET_MAX_HEIGHT = 100
+const AUTOCOMPLETE_METADATA_VERSION = 1
+const LORA_MANAGER_WIDGET_IDS_PROPERTY = '__lm_widget_ids'
 
 // @ts-ignore - ComfyUI external module
 import { app } from '../../../scripts/app.js'
@@ -199,7 +201,8 @@ function createLoraRandomizerWidget(node) {
 
   const vueApp = createApp(LoraRandomizerWidget, {
     widget,
-    node
+    node,
+    api
   })
 
   vueApp.use(PrimeVue, {
@@ -241,7 +244,24 @@ function createLoraCyclerWidget(node) {
 
   forwardMiddleMouseToCanvas(container)
 
-  let internalValue: CyclerConfig | undefined
+  const defaultConfig: CyclerConfig = {
+    current_index: 1,
+    total_count: 0,
+    pool_config_hash: '',
+    model_strength: 1.0,
+    clip_strength: 1.0,
+    use_same_clip_strength: true,
+    use_preset_strength: false,
+    preset_strength_scale: 1.0,
+    sort_by: 'filename',
+    current_lora_name: '',
+    current_lora_filename: '',
+    repeat_count: 1,
+    repeat_used: 0,
+    is_paused: false,
+    include_no_lora: false,
+  }
+  let internalValue: CyclerConfig | undefined = defaultConfig
 
   const widget = node.addDOMWidget(
     'cycler_config',
@@ -373,6 +393,136 @@ function createJsonDisplayWidget(node) {
 // Store nodeData options per widget type for autocomplete widgets
 const widgetInputOptions: Map<string, { placeholder?: string }> = new Map()
 
+function getSerializableWidgetNames(node: any): string[] {
+  return (node.widgets || [])
+    .filter((widget: any) => widget && widget.serialize !== false)
+    .map((widget: any) => widget.name)
+}
+
+function createAutocompleteMetadataValue(textWidgetName = 'text') {
+  return {
+    version: AUTOCOMPLETE_METADATA_VERSION,
+    textWidgetName
+  }
+}
+
+function shouldBypassAutocompleteWidgetMigration(
+  node: any,
+  widgetValues: unknown[]
+): boolean {
+  const inputDefs = node?.constructor?.nodeData?.inputs
+  if (!inputDefs || !Array.isArray(widgetValues)) {
+    return false
+  }
+
+  const widgetNames = new Set((node.widgets || []).map((widget: any) => widget?.name))
+  const hasAutocompleteMetadataWidget = Array.from(widgetNames).some((name) =>
+    typeof name === 'string' && name.startsWith('__lm_autocomplete_meta_')
+  )
+
+  if (!hasAutocompleteMetadataWidget) {
+    return false
+  }
+
+  const originalWidgetsInputs = Object.values(inputDefs).filter((input: any) =>
+    widgetNames.has(input.name) || input.forceInput
+  )
+
+  const widgetIndexHasForceInput = originalWidgetsInputs.flatMap((input: any) =>
+    input.control_after_generate
+      ? [!!input.forceInput, false]
+      : [!!input.forceInput]
+  )
+
+  return (
+    widgetIndexHasForceInput.some(Boolean) &&
+    widgetIndexHasForceInput.length === widgetValues.length
+  )
+}
+
+function remapWidgetValuesByName(
+  widgetValues: unknown[],
+  savedWidgetNames: string[],
+  currentWidgetNames: string[]
+): unknown[] {
+  const valueByName = new Map<string, unknown>()
+  savedWidgetNames.forEach((name, index) => {
+    if (index < widgetValues.length) {
+      valueByName.set(name, widgetValues[index])
+    }
+  })
+
+  const remappedValues: unknown[] = []
+  for (const name of currentWidgetNames) {
+    if (valueByName.has(name)) {
+      remappedValues.push(valueByName.get(name))
+    }
+  }
+
+  return remappedValues
+}
+
+function injectDefaultAutocompleteMetadataValues(
+  widgetValues: unknown[],
+  currentWidgetNames: string[]
+): unknown[] {
+  const repairedValues: unknown[] = []
+  let legacyValueIndex = 0
+
+  for (const widgetName of currentWidgetNames) {
+    if (widgetName.startsWith('__lm_autocomplete_meta_')) {
+      const textWidgetName = widgetName.replace('__lm_autocomplete_meta_', '') || 'text'
+      repairedValues.push(createAutocompleteMetadataValue(textWidgetName))
+      continue
+    }
+
+    if (legacyValueIndex < widgetValues.length) {
+      repairedValues.push(widgetValues[legacyValueIndex])
+      legacyValueIndex++
+    }
+  }
+
+  return repairedValues
+}
+
+function normalizeAutocompleteWidgetValues(node: any, info: any) {
+  if (!info || !Array.isArray(info.widgets_values)) {
+    return
+  }
+
+  const currentWidgetNames = getSerializableWidgetNames(node)
+  if (currentWidgetNames.length === 0) {
+    return
+  }
+
+  const savedWidgetNames = info.properties?.[LORA_MANAGER_WIDGET_IDS_PROPERTY]
+
+  if (Array.isArray(savedWidgetNames) && savedWidgetNames.length > 0) {
+    const remappedValues = remapWidgetValuesByName(
+      info.widgets_values,
+      savedWidgetNames,
+      currentWidgetNames
+    )
+    info.widgets_values = remappedValues
+    return
+  }
+
+  const metadataWidgetCount = currentWidgetNames.filter((name) =>
+    name.startsWith('__lm_autocomplete_meta_')
+  ).length
+
+  if (
+    metadataWidgetCount > 0 &&
+    info.widgets_values.length === currentWidgetNames.length - metadataWidgetCount
+  ) {
+    const repairedValues = injectDefaultAutocompleteMetadataValues(
+      info.widgets_values,
+      currentWidgetNames
+    )
+    info.widgets_values = repairedValues
+  }
+}
+
 // Listen for Vue DOM mode setting changes and dispatch custom event
 const initVueDomModeListener = () => {
   if (app.ui?.settings?.addEventListener) {
@@ -411,6 +561,7 @@ function createAutocompleteTextWidgetFactory(
   modelType: 'loras' | 'embeddings' | 'prompt',
   inputOptions: { placeholder?: string } = {}
 ) {
+  const metadataWidgetName = `__lm_autocomplete_meta_${widgetName}`
   const container = document.createElement('div')
   container.id = `autocomplete-text-widget-${node.id}-${widgetName}`
   container.style.width = '100%'
@@ -426,6 +577,16 @@ function createAutocompleteTextWidgetFactory(
   // the cloned widget shares the same element but needs access to inputEl
   const widgetElementRef = { inputEl: undefined as HTMLTextAreaElement | undefined }
   ;(container as any).__widgetInputEl = widgetElementRef
+
+  const metadataWidget = node.addWidget('text', metadataWidgetName, {
+    version: AUTOCOMPLETE_METADATA_VERSION,
+    textWidgetName: widgetName
+  })
+  metadataWidget.value = createAutocompleteMetadataValue(widgetName)
+  metadataWidget.type = 'LORA_MANAGER_AUTOCOMPLETE_METADATA'
+  metadataWidget.hidden = true
+  metadataWidget.computeSize = () => [0, -4]
+  metadataWidget.serializeValue = () => metadataWidget.value
 
   const widget = node.addDOMWidget(
     widgetName,
@@ -463,6 +624,7 @@ function createAutocompleteTextWidgetFactory(
       })
     }
   )
+  widget.metadataWidget = metadataWidget
 
   // Get spellcheck setting from ComfyUI settings (default: false)
   const spellcheck = app.ui?.settings?.getSettingValue?.('Comfy.TextareaWidget.Spellcheck') ?? false
@@ -558,20 +720,43 @@ app.registerExtension({
   // @ts-ignore
   async beforeRegisterNodeDef(nodeType, nodeData) {
     const comfyClass = nodeType.comfyClass
+    const inputs = { ...nodeData.input?.required, ...nodeData.input?.optional }
+    let hasAutocompleteWidget = false
 
     // Extract and store input options for autocomplete widgets
-    const inputs = { ...nodeData.input?.required, ...nodeData.input?.optional }
     for (const [inputName, inputDef] of Object.entries(inputs)) {
       // @ts-ignore
       if (Array.isArray(inputDef) && typeof inputDef[0] === 'string' && inputDef[0].startsWith('AUTOCOMPLETE_TEXT_')) {
         // @ts-ignore
         const options = inputDef[1] || {}
         widgetInputOptions.set(`${nodeData.name}:${inputName}`, options)
+        hasAutocompleteWidget = true
       }
     }
 
-    // Register mode change handlers for LoRA provider nodes
-    if (LORA_PROVIDER_NODE_TYPES.includes(comfyClass)) {
+    if (hasAutocompleteWidget) {
+      const originalOnSerialize = nodeType.prototype.onSerialize
+      const originalConfigure = nodeType.prototype.configure
+
+      nodeType.prototype.onSerialize = function (serialized: any) {
+        originalOnSerialize?.apply(this, arguments)
+
+        serialized.properties = serialized.properties || {}
+        const widgetIds = getSerializableWidgetNames(this)
+        serialized.properties[LORA_MANAGER_WIDGET_IDS_PROPERTY] = widgetIds
+      }
+
+      nodeType.prototype.configure = function (info: any) {
+        normalizeAutocompleteWidgetValues(this, info)
+        if (shouldBypassAutocompleteWidgetMigration(this, info?.widgets_values ?? [])) {
+          info.widgets_values = [...(info.widgets_values ?? []), null]
+        }
+        return originalConfigure?.apply(this, arguments)
+      }
+    }
+
+    // Register mode change handlers for LORA_STACK chain nodes
+    if (LORA_CHAIN_NODE_TYPES.includes(comfyClass)) {
       const originalOnNodeCreated = nodeType.prototype.onNodeCreated
 
       nodeType.prototype.onNodeCreated = function () {

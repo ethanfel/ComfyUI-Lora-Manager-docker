@@ -283,6 +283,121 @@
   align-items: center;
 }
 
+.section[data-v-9995b5ed] {
+  margin-bottom: 16px;
+}
+.section__header[data-v-9995b5ed] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.section__title[data-v-9995b5ed] {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-color, #fff);
+  opacity: 0.6;
+}
+.section__toggle[data-v-9995b5ed] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fg-color, #fff);
+  opacity: 0.7;
+}
+.section__toggle input[type="checkbox"][data-v-9995b5ed] {
+  margin: 0;
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+.section__toggle-label[data-v-9995b5ed] {
+  font-weight: 500;
+}
+.section__columns[data-v-9995b5ed] {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.section__column[data-v-9995b5ed] {
+  min-width: 0;
+}
+.section__column-header[data-v-9995b5ed] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.section__column-title[data-v-9995b5ed] {
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.section__column-title--include[data-v-9995b5ed] {
+  color: #4299e1;
+}
+.section__column-title--exclude[data-v-9995b5ed] {
+  color: #ef4444;
+}
+.section__input-wrapper[data-v-9995b5ed] {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+}
+.section__input[data-v-9995b5ed] {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 8px;
+  background: var(--comfy-input-bg, #333);
+  border: 1px solid var(--comfy-input-border, #444);
+  border-radius: 4px;
+  color: var(--fg-color, #fff);
+  font-size: 12px;
+  outline: none;
+}
+.section__input[data-v-9995b5ed]:focus {
+  border-color: #4299e1;
+}
+.section__add-btn[data-v-9995b5ed] {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--comfy-input-bg, #333);
+  border: 1px solid var(--comfy-input-border, #444);
+  border-radius: 4px;
+  color: var(--fg-color, #fff);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.section__add-btn[data-v-9995b5ed]:hover {
+  background: var(--comfy-input-bg-hover, #444);
+  border-color: #4299e1;
+}
+.section__patterns[data-v-9995b5ed] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-height: 22px;
+}
+.section__empty[data-v-9995b5ed] {
+  font-size: 10px;
+  color: var(--fg-color, #fff);
+  opacity: 0.3;
+  font-style: italic;
+  min-height: 22px;
+  display: flex;
+  align-items: center;
+}
+
 .section[data-v-dea4adf6] {
   margin-bottom: 16px;
 }
@@ -483,12 +598,12 @@ to { transform: rotate(360deg);
   transform: translateY(4px);
 }
 
-.summary-view[data-v-328e7526] {
+.summary-view[data-v-83235a00] {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
-.summary-view__filters[data-v-328e7526] {
+.summary-view__filters[data-v-83235a00] {
   flex: 1;
   overflow-y: auto;
   padding-right: 4px;
@@ -979,7 +1094,7 @@ to { transform: rotate(360deg);
   font-size: 13px;
 }
 
-.lora-pool-widget[data-v-4456abba] {
+.lora-pool-widget[data-v-ed73eab5] {
   padding: 12px;
   background: rgba(40, 44, 52, 0.6);
   border-radius: 4px;
@@ -1062,7 +1177,7 @@ to { transform: rotate(360deg);
   padding: 4px;
 }
 
-.single-slider[data-v-d04b968b] {
+.single-slider[data-v-04874dd7] {
   position: relative;
   width: 100%;
   height: 24px;
@@ -1070,14 +1185,14 @@ to { transform: rotate(360deg);
   cursor: default !important;
   touch-action: none;
 }
-.single-slider.disabled[data-v-d04b968b] {
+.single-slider.disabled[data-v-04874dd7] {
   opacity: 0.4;
   pointer-events: none;
 }
-.single-slider.is-dragging[data-v-d04b968b] {
+.single-slider.is-dragging[data-v-04874dd7] {
   cursor: ew-resize !important;
 }
-.slider-track[data-v-d04b968b] {
+.slider-track[data-v-04874dd7] {
   position: absolute;
   top: 12px;
   left: 0;
@@ -1087,13 +1202,13 @@ to { transform: rotate(360deg);
   border-radius: 4px;
   cursor: default !important;
 }
-.slider-track__bg[data-v-d04b968b] {
+.slider-track__bg[data-v-04874dd7] {
   position: absolute;
   inset: 0;
   background: rgba(66, 153, 225, 0.15);
   border-radius: 2px;
 }
-.slider-track__active[data-v-d04b968b] {
+.slider-track__active[data-v-04874dd7] {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1102,14 +1217,14 @@ to { transform: rotate(360deg);
   border-radius: 2px;
   transition: width 0.05s linear;
 }
-.slider-track__default[data-v-d04b968b] {
+.slider-track__default[data-v-04874dd7] {
   position: absolute;
   top: 0;
   bottom: 0;
   background: rgba(66, 153, 225, 0.1);
   border-radius: 2px;
 }
-.slider-handle[data-v-d04b968b] {
+.slider-handle[data-v-04874dd7] {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
@@ -1117,7 +1232,7 @@ to { transform: rotate(360deg);
   z-index: 2;
   touch-action: none;
 }
-.slider-handle__thumb[data-v-d04b968b] {
+.slider-handle__thumb[data-v-04874dd7] {
   width: 14px;
   height: 14px;
   background: var(--fg-color, #fff);
@@ -1128,13 +1243,13 @@ to { transform: rotate(360deg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s ease;
 }
-.slider-handle:hover .slider-handle__thumb[data-v-d04b968b] {
+.slider-handle:hover .slider-handle__thumb[data-v-04874dd7] {
   transform: scale(1.1);
 }
-.slider-handle:active .slider-handle__thumb[data-v-d04b968b] {
+.slider-handle:active .slider-handle__thumb[data-v-04874dd7] {
   transform: scale(1.15);
 }
-.slider-handle__value[data-v-d04b968b] {
+.slider-handle__value[data-v-04874dd7] {
   position: absolute;
   top: -6px;
   left: 50%;
@@ -1148,7 +1263,7 @@ to { transform: rotate(360deg);
   line-height: 14px;
 }
 
-.dual-range-slider[data-v-9f6c6950] {
+.dual-range-slider[data-v-e0c8dc9f] {
   position: relative;
   width: 100%;
   height: 24px;
@@ -1156,14 +1271,14 @@ to { transform: rotate(360deg);
   cursor: default !important;
   touch-action: none;
 }
-.dual-range-slider.disabled[data-v-9f6c6950] {
+.dual-range-slider.disabled[data-v-e0c8dc9f] {
   opacity: 0.4;
   pointer-events: none;
 }
-.dual-range-slider.is-dragging[data-v-9f6c6950] {
+.dual-range-slider.is-dragging[data-v-e0c8dc9f] {
   cursor: ew-resize !important;
 }
-.slider-track[data-v-9f6c6950] {
+.slider-track[data-v-e0c8dc9f] {
   position: absolute;
   top: 12px;
   left: 0;
@@ -1173,13 +1288,13 @@ to { transform: rotate(360deg);
   border-radius: 4px;
   cursor: default !important;
 }
-.slider-track__bg[data-v-9f6c6950] {
+.slider-track__bg[data-v-e0c8dc9f] {
   position: absolute;
   inset: 0;
   background: rgba(66, 153, 225, 0.15);
   border-radius: 2px;
 }
-.slider-track__active[data-v-9f6c6950] {
+.slider-track__active[data-v-e0c8dc9f] {
   position: absolute;
   top: 0;
   bottom: 0;
@@ -1187,24 +1302,24 @@ to { transform: rotate(360deg);
   border-radius: 2px;
   transition: left 0.05s linear, width 0.05s linear;
 }
-.slider-track__default[data-v-9f6c6950] {
+.slider-track__default[data-v-e0c8dc9f] {
   position: absolute;
   top: 0;
   bottom: 0;
   background: rgba(66, 153, 225, 0.1);
   border-radius: 2px;
 }
-.slider-track__segment[data-v-9f6c6950] {
+.slider-track__segment[data-v-e0c8dc9f] {
   position: absolute;
   top: 0;
   bottom: 0;
   background: rgba(66, 153, 225, 0.08);
   border-radius: 2px;
 }
-.slider-track__segment--expanded[data-v-9f6c6950] {
+.slider-track__segment--expanded[data-v-e0c8dc9f] {
   background: rgba(66, 153, 225, 0.15);
 }
-.slider-track__segment[data-v-9f6c6950]:not(:last-child)::after {
+.slider-track__segment[data-v-e0c8dc9f]:not(:last-child)::after {
   content: '';
   position: absolute;
   top: -1px;
@@ -1213,7 +1328,7 @@ to { transform: rotate(360deg);
   width: 1px;
   background: rgba(255, 255, 255, 0.1);
 }
-.slider-handle[data-v-9f6c6950] {
+.slider-handle[data-v-e0c8dc9f] {
   position: absolute;
   top: 0;
   transform: translateX(-50%);
@@ -1221,7 +1336,7 @@ to { transform: rotate(360deg);
   z-index: 2;
   touch-action: none;
 }
-.slider-handle__thumb[data-v-9f6c6950] {
+.slider-handle__thumb[data-v-e0c8dc9f] {
   width: 14px;
   height: 14px;
   background: var(--fg-color, #fff);
@@ -1232,13 +1347,13 @@ to { transform: rotate(360deg);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
   transition: transform 0.15s ease;
 }
-.slider-handle:hover .slider-handle__thumb[data-v-9f6c6950] {
+.slider-handle:hover .slider-handle__thumb[data-v-e0c8dc9f] {
   transform: scale(1.1);
 }
-.slider-handle:active .slider-handle__thumb[data-v-9f6c6950] {
+.slider-handle:active .slider-handle__thumb[data-v-e0c8dc9f] {
   transform: scale(1.15);
 }
-.slider-handle__value[data-v-9f6c6950] {
+.slider-handle__value[data-v-e0c8dc9f] {
   position: absolute;
   top: -6px;
   left: 50%;
@@ -1251,10 +1366,10 @@ to { transform: rotate(360deg);
   pointer-events: none;
   line-height: 14px;
 }
-.slider-handle--min .slider-handle__value[data-v-9f6c6950] {
+.slider-handle--min .slider-handle__value[data-v-e0c8dc9f] {
   text-align: center;
 }
-.slider-handle--max .slider-handle__value[data-v-9f6c6950] {
+.slider-handle--max .slider-handle__value[data-v-e0c8dc9f] {
   text-align: center;
 }
 
@@ -1462,7 +1577,7 @@ to { transform: rotate(360deg);
   transform: translateY(4px);
 }
 
-.lora-randomizer-widget[data-v-8063df56] {
+.lora-randomizer-widget[data-v-ca6e8cec] {
   padding: 6px;
   background: rgba(40, 44, 52, 0.6);
   border-radius: 6px;
@@ -1473,16 +1588,16 @@ to { transform: rotate(360deg);
   box-sizing: border-box;
 }
 
-.cycler-settings[data-v-5b16b9d3] {
+.cycler-settings[data-v-f0663be4] {
   display: flex;
   flex-direction: column;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   color: #e4e4e7;
 }
-.settings-header[data-v-5b16b9d3] {
+.settings-header[data-v-f0663be4] {
   margin-bottom: 8px;
 }
-.settings-title[data-v-5b16b9d3] {
+.settings-title[data-v-f0663be4] {
   font-size: 10px;
   font-weight: 600;
   letter-spacing: 0.05em;
@@ -1491,10 +1606,10 @@ to { transform: rotate(360deg);
   margin: 0;
   text-transform: uppercase;
 }
-.setting-section[data-v-5b16b9d3] {
+.setting-section[data-v-f0663be4] {
   margin-bottom: 8px;
 }
-.setting-label[data-v-5b16b9d3] {
+.setting-label[data-v-f0663be4] {
   font-size: 13px;
   font-weight: 500;
   color: rgba(226, 232, 240, 0.8);
@@ -1503,10 +1618,10 @@ to { transform: rotate(360deg);
 }
 
 /* Progress Display */
-.progress-section[data-v-5b16b9d3] {
+.progress-section[data-v-f0663be4] {
   margin-bottom: 12px;
 }
-.progress-display[data-v-5b16b9d3] {
+.progress-display[data-v-f0663be4] {
   background: rgba(26, 32, 44, 0.9);
   border: 1px solid rgba(226, 232, 240, 0.2);
   border-radius: 6px;
@@ -1516,31 +1631,31 @@ to { transform: rotate(360deg);
   align-items: center;
   transition: border-color 0.3s ease;
 }
-.progress-display.executing[data-v-5b16b9d3] {
+.progress-display.executing[data-v-f0663be4] {
   border-color: rgba(66, 153, 225, 0.5);
-  animation: pulse-5b16b9d3 2s ease-in-out infinite;
+  animation: pulse-f0663be4 2s ease-in-out infinite;
 }
-@keyframes pulse-5b16b9d3 {
+@keyframes pulse-f0663be4 {
 0%, 100% { border-color: rgba(66, 153, 225, 0.3);
 }
 50% { border-color: rgba(66, 153, 225, 0.7);
 }
 }
-.progress-info[data-v-5b16b9d3] {
+.progress-info[data-v-f0663be4] {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
   flex: 1;
 }
-.progress-label[data-v-5b16b9d3] {
+.progress-label[data-v-f0663be4] {
   font-size: 10px;
   font-weight: 500;
   color: rgba(226, 232, 240, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.03em;
 }
-.progress-name[data-v-5b16b9d3] {
+.progress-name[data-v-f0663be4] {
   font-size: 13px;
   font-weight: 500;
   color: rgba(191, 219, 254, 1);
@@ -1548,7 +1663,7 @@ to { transform: rotate(360deg);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.progress-name.clickable[data-v-5b16b9d3] {
+.progress-name.clickable[data-v-f0663be4] {
   cursor: pointer;
   padding: 2px 6px;
   margin: -2px -6px;
@@ -1558,34 +1673,42 @@ to { transform: rotate(360deg);
   align-items: center;
   gap: 4px;
 }
-.progress-name.clickable[data-v-5b16b9d3]:hover:not(.disabled) {
+.progress-name.clickable[data-v-f0663be4]:hover:not(.disabled) {
   background: rgba(66, 153, 225, 0.2);
   color: rgba(191, 219, 254, 1);
 }
-.progress-name.clickable.disabled[data-v-5b16b9d3] {
+.progress-name.no-lora[data-v-f0663be4] {
+  font-style: italic;
+  color: rgba(226, 232, 240, 0.6);
+}
+.progress-name.clickable.no-lora[data-v-f0663be4]:hover:not(.disabled) {
+  background: rgba(160, 174, 192, 0.2);
+  color: rgba(226, 232, 240, 0.8);
+}
+.progress-name.clickable.disabled[data-v-f0663be4] {
   cursor: not-allowed;
   opacity: 0.5;
 }
-.progress-info.disabled[data-v-5b16b9d3] {
+.progress-info.disabled[data-v-f0663be4] {
   cursor: not-allowed;
 }
-.selector-icon[data-v-5b16b9d3] {
+.selector-icon[data-v-f0663be4] {
   width: 16px;
   height: 16px;
   opacity: 0.5;
   flex-shrink: 0;
 }
-.progress-name.clickable:hover .selector-icon[data-v-5b16b9d3] {
+.progress-name.clickable:hover .selector-icon[data-v-f0663be4] {
   opacity: 0.8;
 }
-.progress-counter[data-v-5b16b9d3] {
+.progress-counter[data-v-f0663be4] {
   display: flex;
   align-items: center;
   gap: 4px;
   padding-left: 12px;
   flex-shrink: 0;
 }
-.progress-index[data-v-5b16b9d3] {
+.progress-index[data-v-f0663be4] {
   font-size: 18px;
   font-weight: 600;
   color: rgba(66, 153, 225, 1);
@@ -1594,12 +1717,12 @@ to { transform: rotate(360deg);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.progress-separator[data-v-5b16b9d3] {
+.progress-separator[data-v-f0663be4] {
   font-size: 14px;
   color: rgba(226, 232, 240, 0.4);
   margin: 0 2px;
 }
-.progress-total[data-v-5b16b9d3] {
+.progress-total[data-v-f0663be4] {
   font-size: 14px;
   font-weight: 500;
   color: rgba(226, 232, 240, 0.6);
@@ -1610,7 +1733,7 @@ to { transform: rotate(360deg);
 }
 
 /* Repeat Progress */
-.repeat-progress[data-v-5b16b9d3] {
+.repeat-progress[data-v-f0663be4] {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1620,23 +1743,23 @@ to { transform: rotate(360deg);
   border: 1px solid rgba(226, 232, 240, 0.1);
   border-radius: 4px;
 }
-.repeat-progress-track[data-v-5b16b9d3] {
+.repeat-progress-track[data-v-f0663be4] {
   width: 32px;
   height: 4px;
   background: rgba(226, 232, 240, 0.15);
   border-radius: 2px;
   overflow: hidden;
 }
-.repeat-progress-fill[data-v-5b16b9d3] {
+.repeat-progress-fill[data-v-f0663be4] {
   height: 100%;
   background: linear-gradient(90deg, #f59e0b, #fbbf24);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
-.repeat-progress-fill.is-complete[data-v-5b16b9d3] {
+.repeat-progress-fill.is-complete[data-v-f0663be4] {
   background: linear-gradient(90deg, #10b981, #34d399);
 }
-.repeat-progress-text[data-v-5b16b9d3] {
+.repeat-progress-text[data-v-f0663be4] {
   font-size: 10px;
   font-family: 'SF Mono', 'Roboto Mono', monospace;
   color: rgba(253, 230, 138, 0.9);
@@ -1645,19 +1768,19 @@ to { transform: rotate(360deg);
 }
 
 /* Index Controls Row - Grouped Layout */
-.index-controls-row[data-v-5b16b9d3] {
+.index-controls-row[data-v-f0663be4] {
   display: flex;
   align-items: flex-end;
   gap: 16px;
 }
 
 /* Control Group */
-.control-group[data-v-5b16b9d3] {
+.control-group[data-v-f0663be4] {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.control-group-label[data-v-5b16b9d3] {
+.control-group-label[data-v-f0663be4] {
   font-size: 11px;
   font-weight: 500;
   color: rgba(226, 232, 240, 0.5);
@@ -1665,13 +1788,13 @@ to { transform: rotate(360deg);
   letter-spacing: 0.03em;
   line-height: 1;
 }
-.control-group-content[data-v-5b16b9d3] {
+.control-group-content[data-v-f0663be4] {
   display: flex;
   align-items: baseline;
   gap: 4px;
   height: 32px;
 }
-.index-input[data-v-5b16b9d3] {
+.index-input[data-v-f0663be4] {
   width: 50px;
   height: 32px;
   padding: 0 8px;
@@ -1684,15 +1807,15 @@ to { transform: rotate(360deg);
   line-height: 32px;
   box-sizing: border-box;
 }
-.index-input[data-v-5b16b9d3]:focus {
+.index-input[data-v-f0663be4]:focus {
   outline: none;
   border-color: rgba(66, 153, 225, 0.6);
 }
-.index-input[data-v-5b16b9d3]:disabled {
+.index-input[data-v-f0663be4]:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.index-hint[data-v-5b16b9d3] {
+.index-hint[data-v-f0663be4] {
   font-size: 12px;
   color: rgba(226, 232, 240, 0.4);
   font-variant-numeric: tabular-nums;
@@ -1700,7 +1823,7 @@ to { transform: rotate(360deg);
 }
 
 /* Repeat Controls */
-.repeat-input[data-v-5b16b9d3] {
+.repeat-input[data-v-f0663be4] {
   width: 50px;
   height: 32px;
   padding: 0 6px;
@@ -1714,11 +1837,11 @@ to { transform: rotate(360deg);
   line-height: 32px;
   box-sizing: border-box;
 }
-.repeat-input[data-v-5b16b9d3]:focus {
+.repeat-input[data-v-f0663be4]:focus {
   outline: none;
   border-color: rgba(66, 153, 225, 0.6);
 }
-.repeat-suffix[data-v-5b16b9d3] {
+.repeat-suffix[data-v-f0663be4] {
   font-size: 13px;
   color: rgba(226, 232, 240, 0.4);
   font-weight: 500;
@@ -1726,7 +1849,7 @@ to { transform: rotate(360deg);
 }
 
 /* Action Buttons */
-.action-buttons[data-v-5b16b9d3] {
+.action-buttons[data-v-f0663be4] {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1734,7 +1857,7 @@ to { transform: rotate(360deg);
 }
 
 /* Control Buttons */
-.control-btn[data-v-5b16b9d3] {
+.control-btn[data-v-f0663be4] {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1748,52 +1871,52 @@ to { transform: rotate(360deg);
   cursor: pointer;
   transition: all 0.2s;
 }
-.control-btn[data-v-5b16b9d3]:hover:not(:disabled) {
+.control-btn[data-v-f0663be4]:hover:not(:disabled) {
   background: rgba(66, 153, 225, 0.2);
   border-color: rgba(66, 153, 225, 0.4);
   color: rgba(191, 219, 254, 1);
 }
-.control-btn[data-v-5b16b9d3]:disabled {
+.control-btn[data-v-f0663be4]:disabled {
   opacity: 0.4;
   cursor: not-allowed;
 }
-.control-btn.active[data-v-5b16b9d3] {
+.control-btn.active[data-v-f0663be4] {
   background: rgba(245, 158, 11, 0.2);
   border-color: rgba(245, 158, 11, 0.5);
   color: rgba(253, 230, 138, 1);
 }
-.control-btn.active[data-v-5b16b9d3]:hover {
+.control-btn.active[data-v-f0663be4]:hover {
   background: rgba(245, 158, 11, 0.3);
   border-color: rgba(245, 158, 11, 0.6);
 }
-.control-icon[data-v-5b16b9d3] {
+.control-icon[data-v-f0663be4] {
   width: 14px;
   height: 14px;
 }
 
 /* Slider Container */
-.slider-container[data-v-5b16b9d3] {
+.slider-container[data-v-f0663be4] {
   background: rgba(26, 32, 44, 0.9);
   border: 1px solid rgba(226, 232, 240, 0.2);
   border-radius: 6px;
   padding: 6px;
 }
-.slider-container--disabled[data-v-5b16b9d3] {
+.slider-container--disabled[data-v-f0663be4] {
   opacity: 0.5;
   pointer-events: none;
 }
-.section-header-with-toggle[data-v-5b16b9d3] {
+.section-header-with-toggle[data-v-f0663be4] {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 8px;
 }
-.section-header-with-toggle .setting-label[data-v-5b16b9d3] {
+.section-header-with-toggle .setting-label[data-v-f0663be4] {
   margin-bottom: 4px;
 }
 
 /* Toggle Switch */
-.toggle-switch[data-v-5b16b9d3] {
+.toggle-switch[data-v-f0663be4] {
   position: relative;
   width: 36px;
   height: 20px;
@@ -1802,7 +1925,7 @@ to { transform: rotate(360deg);
   border: none;
   cursor: pointer;
 }
-.toggle-switch__track[data-v-5b16b9d3] {
+.toggle-switch__track[data-v-f0663be4] {
   position: absolute;
   inset: 0;
   background: var(--comfy-input-bg, #333);
@@ -1810,11 +1933,11 @@ to { transform: rotate(360deg);
   border-radius: 10px;
   transition: all 0.2s;
 }
-.toggle-switch--active .toggle-switch__track[data-v-5b16b9d3] {
+.toggle-switch--active .toggle-switch__track[data-v-f0663be4] {
   background: rgba(66, 153, 225, 0.3);
   border-color: rgba(66, 153, 225, 0.6);
 }
-.toggle-switch__thumb[data-v-5b16b9d3] {
+.toggle-switch__thumb[data-v-f0663be4] {
   position: absolute;
   top: 3px;
   left: 2px;
@@ -1825,19 +1948,19 @@ to { transform: rotate(360deg);
   transition: all 0.2s;
   opacity: 0.6;
 }
-.toggle-switch--active .toggle-switch__thumb[data-v-5b16b9d3] {
+.toggle-switch--active .toggle-switch__thumb[data-v-f0663be4] {
   transform: translateX(16px);
   background: #4299e1;
   opacity: 1;
 }
-.toggle-switch:hover .toggle-switch__thumb[data-v-5b16b9d3] {
+.toggle-switch:hover .toggle-switch__thumb[data-v-f0663be4] {
   opacity: 1;
 }
 
-.search-container[data-v-d7fd504d] {
+.search-container[data-v-83f6f852] {
   position: relative;
 }
-.search-icon[data-v-d7fd504d] {
+.search-icon[data-v-83f6f852] {
   position: absolute;
   left: 10px;
   top: 50%;
@@ -1847,7 +1970,7 @@ to { transform: rotate(360deg);
   color: var(--fg-color, #fff);
   opacity: 0.5;
 }
-.search-input[data-v-d7fd504d] {
+.search-input[data-v-83f6f852] {
   width: 100%;
   padding: 8px 32px;
   background: var(--comfy-input-bg, #333);
@@ -1858,14 +1981,14 @@ to { transform: rotate(360deg);
   outline: none;
   box-sizing: border-box;
 }
-.search-input[data-v-d7fd504d]:focus {
+.search-input[data-v-83f6f852]:focus {
   border-color: rgba(66, 153, 225, 0.6);
 }
-.search-input[data-v-d7fd504d]::placeholder {
+.search-input[data-v-83f6f852]::placeholder {
   color: var(--fg-color, #fff);
   opacity: 0.4;
 }
-.clear-button[data-v-d7fd504d] {
+.clear-button[data-v-83f6f852] {
   position: absolute;
   right: 8px;
   top: 50%;
@@ -1882,22 +2005,22 @@ to { transform: rotate(360deg);
   opacity: 0.5;
   transition: opacity 0.15s;
 }
-.clear-button[data-v-d7fd504d]:hover {
+.clear-button[data-v-83f6f852]:hover {
   opacity: 0.8;
 }
-.clear-button svg[data-v-d7fd504d] {
+.clear-button svg[data-v-83f6f852] {
   width: 12px;
   height: 12px;
   color: var(--fg-color, #fff);
 }
-.lora-list[data-v-d7fd504d] {
+.lora-list[data-v-83f6f852] {
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-height: 400px;
   overflow-y: auto;
 }
-.lora-item[data-v-d7fd504d] {
+.lora-item[data-v-83f6f852] {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1907,14 +2030,14 @@ to { transform: rotate(360deg);
   transition: all 0.15s;
   border-left: 3px solid transparent;
 }
-.lora-item[data-v-d7fd504d]:hover {
+.lora-item[data-v-83f6f852]:hover {
   background: rgba(66, 153, 225, 0.15);
 }
-.lora-item.active[data-v-d7fd504d] {
+.lora-item.active[data-v-83f6f852] {
   background: rgba(66, 153, 225, 0.25);
   border-left-color: rgba(66, 153, 225, 0.8);
 }
-.lora-index[data-v-d7fd504d] {
+.lora-index[data-v-83f6f852] {
   font-family: 'SF Mono', 'Roboto Mono', monospace;
   font-size: 12px;
   color: rgba(226, 232, 240, 0.5);
@@ -1922,7 +2045,7 @@ to { transform: rotate(360deg);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-.lora-name[data-v-d7fd504d] {
+.lora-name[data-v-83f6f852] {
   flex: 1;
   font-size: 13px;
   color: var(--fg-color, #fff);
@@ -1930,7 +2053,7 @@ to { transform: rotate(360deg);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.current-badge[data-v-d7fd504d] {
+.current-badge[data-v-83f6f852] {
   font-size: 11px;
   padding: 2px 8px;
   background: rgba(66, 153, 225, 0.3);
@@ -1939,7 +2062,14 @@ to { transform: rotate(360deg);
   color: rgba(191, 219, 254, 1);
   font-weight: 500;
 }
-.no-results[data-v-d7fd504d] {
+.lora-item.no-lora-item .lora-name[data-v-83f6f852] {
+  font-style: italic;
+  color: rgba(226, 232, 240, 0.6);
+}
+.lora-item.no-lora-item:hover .lora-name[data-v-83f6f852] {
+  color: rgba(226, 232, 240, 0.8);
+}
+.no-results[data-v-83f6f852] {
   padding: 32px 20px;
   text-align: center;
   color: var(--fg-color, #fff);
@@ -1947,7 +2077,7 @@ to { transform: rotate(360deg);
   font-size: 13px;
 }
 
-.lora-cycler-widget[data-v-f09f4e8b] {
+.lora-cycler-widget[data-v-3f46897a] {
   padding: 6px;
   background: rgba(40, 44, 52, 0.6);
   border-radius: 6px;
@@ -1988,14 +2118,14 @@ to { transform: rotate(360deg);
   padding: 20px 0;
 }
 
-.autocomplete-text-widget[data-v-b3b00fdd] {
+.autocomplete-text-widget[data-v-76ce0f19] {
   background: transparent;
   height: 100%;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
 }
-.input-wrapper[data-v-b3b00fdd] {
+.input-wrapper[data-v-76ce0f19] {
   position: relative;
   flex: 1;
   display: flex;
@@ -2003,7 +2133,7 @@ to { transform: rotate(360deg);
 }
 
 /* Canvas mode styles (default) - matches built-in comfy-multiline-input */
-.text-input[data-v-b3b00fdd] {
+.text-input[data-v-76ce0f19] {
   flex: 1;
   width: 100%;
   background-color: var(--comfy-input-bg, #222);
@@ -2020,7 +2150,7 @@ to { transform: rotate(360deg);
 }
 
 /* Vue DOM mode styles - matches built-in p-textarea in Vue DOM mode */
-.text-input.vue-dom-mode[data-v-b3b00fdd] {
+.text-input.vue-dom-mode[data-v-76ce0f19] {
   background-color: var(--color-charcoal-400, #313235);
   color: #fff;
   padding: 8px 12px 30px 12px;  /* Reserve bottom space for clear button */
@@ -2029,12 +2159,12 @@ to { transform: rotate(360deg);
   font-size: 12px;
   font-family: inherit;
 }
-.text-input[data-v-b3b00fdd]:focus {
+.text-input[data-v-76ce0f19]:focus {
   outline: none;
 }
 
 /* Clear button styles */
-.clear-button[data-v-b3b00fdd] {
+.clear-button[data-v-76ce0f19] {
   position: absolute;
   right: 6px;
   bottom: 6px;  /* Changed from top to bottom */
@@ -2057,31 +2187,31 @@ to { transform: rotate(360deg);
 }
 
 /* Show clear button when hovering over input wrapper */
-.input-wrapper:hover .clear-button[data-v-b3b00fdd] {
+.input-wrapper:hover .clear-button[data-v-76ce0f19] {
   opacity: 0.7;
   pointer-events: auto;
 }
-.clear-button[data-v-b3b00fdd]:hover {
+.clear-button[data-v-76ce0f19]:hover {
   opacity: 1;
   background: rgba(255, 100, 100, 0.8);
 }
-.clear-button svg[data-v-b3b00fdd] {
+.clear-button svg[data-v-76ce0f19] {
   width: 12px;
   height: 12px;
 }
 
 /* Vue DOM mode adjustments for clear button */
-.text-input.vue-dom-mode ~ .clear-button[data-v-b3b00fdd] {
+.text-input.vue-dom-mode ~ .clear-button[data-v-76ce0f19] {
   right: 8px;
   bottom: 10px;  /* Changed from top to bottom, adjusted for Vue DOM padding */
   width: 20px;
   height: 20px;
   background: rgba(107, 114, 128, 0.6);
 }
-.text-input.vue-dom-mode ~ .clear-button[data-v-b3b00fdd]:hover {
+.text-input.vue-dom-mode ~ .clear-button[data-v-76ce0f19]:hover {
   background: oklch(62% 0.18 25);
 }
-.text-input.vue-dom-mode ~ .clear-button svg[data-v-b3b00fdd] {
+.text-input.vue-dom-mode ~ .clear-button svg[data-v-76ce0f19] {
   width: 14px;
   height: 14px;
 }`));
@@ -10490,12 +10620,12 @@ var PrimeVue = {
     setup(app2, configOptions);
   }
 };
-const _hoisted_1$m = { class: "filter-chip__text" };
-const _hoisted_2$i = {
+const _hoisted_1$k = { class: "filter-chip__text" };
+const _hoisted_2$j = {
   key: 0,
   class: "filter-chip__count"
 };
-const _sfc_main$n = /* @__PURE__ */ defineComponent({
+const _sfc_main$o = /* @__PURE__ */ defineComponent({
   __name: "FilterChip",
   props: {
     label: {},
@@ -10513,8 +10643,8 @@ const _sfc_main$n = /* @__PURE__ */ defineComponent({
       return openBlock(), createElementBlock("span", {
         class: normalizeClass(["filter-chip", variantClass.value])
       }, [
-        createBaseVNode("span", _hoisted_1$m, toDisplayString(__props.label), 1),
-        __props.count !== void 0 ? (openBlock(), createElementBlock("span", _hoisted_2$i, "(" + toDisplayString(__props.count) + ")", 1)) : createCommentVNode("", true),
+        createBaseVNode("span", _hoisted_1$k, toDisplayString(__props.label), 1),
+        __props.count !== void 0 ? (openBlock(), createElementBlock("span", _hoisted_2$j, "(" + toDisplayString(__props.count) + ")", 1)) : createCommentVNode("", true),
         __props.removable ? (openBlock(), createElementBlock("button", {
           key: 1,
           class: "filter-chip__remove",
@@ -10532,8 +10662,8 @@ const _export_sfc = (sfc, props) => {
   }
   return target;
 };
-const FilterChip = /* @__PURE__ */ _export_sfc(_sfc_main$n, [["__scopeId", "data-v-7e36267d"]]);
-const _sfc_main$m = /* @__PURE__ */ defineComponent({
+const FilterChip = /* @__PURE__ */ _export_sfc(_sfc_main$o, [["__scopeId", "data-v-7e36267d"]]);
+const _sfc_main$n = /* @__PURE__ */ defineComponent({
   __name: "EditButton",
   emits: ["click"],
   setup(__props) {
@@ -10555,19 +10685,19 @@ const _sfc_main$m = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const EditButton = /* @__PURE__ */ _export_sfc(_sfc_main$m, [["__scopeId", "data-v-8da8aa4b"]]);
-const _hoisted_1$l = { class: "section" };
-const _hoisted_2$h = { class: "section__header" };
-const _hoisted_3$f = { class: "section__content" };
-const _hoisted_4$d = {
+const EditButton = /* @__PURE__ */ _export_sfc(_sfc_main$n, [["__scopeId", "data-v-8da8aa4b"]]);
+const _hoisted_1$j = { class: "section" };
+const _hoisted_2$i = { class: "section__header" };
+const _hoisted_3$g = { class: "section__content" };
+const _hoisted_4$e = {
   key: 0,
   class: "section__placeholder"
 };
-const _hoisted_5$b = {
+const _hoisted_5$c = {
   key: 1,
   class: "section__chips"
 };
-const _sfc_main$l = /* @__PURE__ */ defineComponent({
+const _sfc_main$m = /* @__PURE__ */ defineComponent({
   __name: "BaseModelSection",
   props: {
     selected: {},
@@ -10581,15 +10711,15 @@ const _sfc_main$l = /* @__PURE__ */ defineComponent({
       return model == null ? void 0 : model.count;
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$l, [
-        createBaseVNode("div", _hoisted_2$h, [
+      return openBlock(), createElementBlock("div", _hoisted_1$j, [
+        createBaseVNode("div", _hoisted_2$i, [
           _cache[1] || (_cache[1] = createBaseVNode("span", { class: "section__title" }, "BASE MODEL", -1)),
           createVNode(EditButton, {
             onClick: _cache[0] || (_cache[0] = ($event) => _ctx.$emit("edit"))
           })
         ]),
-        createBaseVNode("div", _hoisted_3$f, [
-          __props.selected.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_4$d, " All models ")) : (openBlock(), createElementBlock("div", _hoisted_5$b, [
+        createBaseVNode("div", _hoisted_3$g, [
+          __props.selected.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_4$e, " All models ")) : (openBlock(), createElementBlock("div", _hoisted_5$c, [
             (openBlock(true), createElementBlock(Fragment, null, renderList(__props.selected, (name) => {
               return openBlock(), createBlock(FilterChip, {
                 key: name,
@@ -10604,32 +10734,32 @@ const _sfc_main$l = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const BaseModelSection = /* @__PURE__ */ _export_sfc(_sfc_main$l, [["__scopeId", "data-v-12f059e2"]]);
-const _hoisted_1$k = { class: "section" };
-const _hoisted_2$g = { class: "section__columns" };
-const _hoisted_3$e = { class: "section__column" };
-const _hoisted_4$c = { class: "section__column-header" };
-const _hoisted_5$a = { class: "section__column-content" };
-const _hoisted_6$a = {
+const BaseModelSection = /* @__PURE__ */ _export_sfc(_sfc_main$m, [["__scopeId", "data-v-12f059e2"]]);
+const _hoisted_1$i = { class: "section" };
+const _hoisted_2$h = { class: "section__columns" };
+const _hoisted_3$f = { class: "section__column" };
+const _hoisted_4$d = { class: "section__column-header" };
+const _hoisted_5$b = { class: "section__column-content" };
+const _hoisted_6$b = {
   key: 0,
   class: "section__empty"
 };
-const _hoisted_7$8 = {
+const _hoisted_7$9 = {
   key: 1,
   class: "section__chips"
 };
-const _hoisted_8$6 = { class: "section__column" };
-const _hoisted_9$4 = { class: "section__column-header" };
-const _hoisted_10$4 = { class: "section__column-content" };
-const _hoisted_11$3 = {
+const _hoisted_8$7 = { class: "section__column" };
+const _hoisted_9$5 = { class: "section__column-header" };
+const _hoisted_10$5 = { class: "section__column-content" };
+const _hoisted_11$4 = {
   key: 0,
   class: "section__empty"
 };
-const _hoisted_12$3 = {
+const _hoisted_12$4 = {
   key: 1,
   class: "section__chips"
 };
-const _sfc_main$k = /* @__PURE__ */ defineComponent({
+const _sfc_main$l = /* @__PURE__ */ defineComponent({
   __name: "TagsSection",
   props: {
     includeTags: {},
@@ -10638,20 +10768,20 @@ const _sfc_main$k = /* @__PURE__ */ defineComponent({
   emits: ["edit-include", "edit-exclude"],
   setup(__props) {
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$k, [
+      return openBlock(), createElementBlock("div", _hoisted_1$i, [
         _cache[4] || (_cache[4] = createBaseVNode("div", { class: "section__header" }, [
           createBaseVNode("span", { class: "section__title" }, "TAGS")
         ], -1)),
-        createBaseVNode("div", _hoisted_2$g, [
-          createBaseVNode("div", _hoisted_3$e, [
-            createBaseVNode("div", _hoisted_4$c, [
+        createBaseVNode("div", _hoisted_2$h, [
+          createBaseVNode("div", _hoisted_3$f, [
+            createBaseVNode("div", _hoisted_4$d, [
               _cache[2] || (_cache[2] = createBaseVNode("span", { class: "section__column-title section__column-title--include" }, "INCLUDE", -1)),
               createVNode(EditButton, {
                 onClick: _cache[0] || (_cache[0] = ($event) => _ctx.$emit("edit-include"))
               })
             ]),
-            createBaseVNode("div", _hoisted_5$a, [
-              __props.includeTags.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_6$a, " None ")) : (openBlock(), createElementBlock("div", _hoisted_7$8, [
+            createBaseVNode("div", _hoisted_5$b, [
+              __props.includeTags.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_6$b, " None ")) : (openBlock(), createElementBlock("div", _hoisted_7$9, [
                 (openBlock(true), createElementBlock(Fragment, null, renderList(__props.includeTags, (tag) => {
                   return openBlock(), createBlock(FilterChip, {
                     key: tag,
@@ -10662,15 +10792,15 @@ const _sfc_main$k = /* @__PURE__ */ defineComponent({
               ]))
             ])
           ]),
-          createBaseVNode("div", _hoisted_8$6, [
-            createBaseVNode("div", _hoisted_9$4, [
+          createBaseVNode("div", _hoisted_8$7, [
+            createBaseVNode("div", _hoisted_9$5, [
               _cache[3] || (_cache[3] = createBaseVNode("span", { class: "section__column-title section__column-title--exclude" }, "EXCLUDE", -1)),
               createVNode(EditButton, {
                 onClick: _cache[1] || (_cache[1] = ($event) => _ctx.$emit("edit-exclude"))
               })
             ]),
-            createBaseVNode("div", _hoisted_10$4, [
-              __props.excludeTags.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_11$3, " None ")) : (openBlock(), createElementBlock("div", _hoisted_12$3, [
+            createBaseVNode("div", _hoisted_10$5, [
+              __props.excludeTags.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_11$4, " None ")) : (openBlock(), createElementBlock("div", _hoisted_12$4, [
                 (openBlock(true), createElementBlock(Fragment, null, renderList(__props.excludeTags, (tag) => {
                   return openBlock(), createBlock(FilterChip, {
                     key: tag,
@@ -10686,32 +10816,32 @@ const _sfc_main$k = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const TagsSection = /* @__PURE__ */ _export_sfc(_sfc_main$k, [["__scopeId", "data-v-b869b780"]]);
-const _hoisted_1$j = { class: "section" };
-const _hoisted_2$f = { class: "section__columns" };
-const _hoisted_3$d = { class: "section__column" };
-const _hoisted_4$b = { class: "section__column-header" };
-const _hoisted_5$9 = { class: "section__content" };
-const _hoisted_6$9 = {
+const TagsSection = /* @__PURE__ */ _export_sfc(_sfc_main$l, [["__scopeId", "data-v-b869b780"]]);
+const _hoisted_1$h = { class: "section" };
+const _hoisted_2$g = { class: "section__columns" };
+const _hoisted_3$e = { class: "section__column" };
+const _hoisted_4$c = { class: "section__column-header" };
+const _hoisted_5$a = { class: "section__content" };
+const _hoisted_6$a = {
   key: 0,
   class: "section__paths"
 };
-const _hoisted_7$7 = {
+const _hoisted_7$8 = {
   key: 1,
   class: "section__empty"
 };
-const _hoisted_8$5 = { class: "section__column" };
-const _hoisted_9$3 = { class: "section__column-header" };
-const _hoisted_10$3 = { class: "section__content" };
-const _hoisted_11$2 = {
+const _hoisted_8$6 = { class: "section__column" };
+const _hoisted_9$4 = { class: "section__column-header" };
+const _hoisted_10$4 = { class: "section__content" };
+const _hoisted_11$3 = {
   key: 0,
   class: "section__paths"
 };
-const _hoisted_12$2 = {
+const _hoisted_12$3 = {
   key: 1,
   class: "section__empty"
 };
-const _sfc_main$j = /* @__PURE__ */ defineComponent({
+const _sfc_main$k = /* @__PURE__ */ defineComponent({
   __name: "FoldersSection",
   props: {
     includeFolders: {},
@@ -10732,13 +10862,13 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
       emit2("update:excludeFolders", props.excludeFolders.filter((p2) => p2 !== path));
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$j, [
+      return openBlock(), createElementBlock("div", _hoisted_1$h, [
         _cache[6] || (_cache[6] = createBaseVNode("div", { class: "section__header" }, [
           createBaseVNode("span", { class: "section__title" }, "FOLDERS")
         ], -1)),
-        createBaseVNode("div", _hoisted_2$f, [
-          createBaseVNode("div", _hoisted_3$d, [
-            createBaseVNode("div", _hoisted_4$b, [
+        createBaseVNode("div", _hoisted_2$g, [
+          createBaseVNode("div", _hoisted_3$e, [
+            createBaseVNode("div", _hoisted_4$c, [
               _cache[3] || (_cache[3] = createBaseVNode("span", { class: "section__column-title section__column-title--include" }, "INCLUDE", -1)),
               createBaseVNode("button", {
                 type: "button",
@@ -10753,8 +10883,8 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
                 ], -1)
               ])])
             ]),
-            createBaseVNode("div", _hoisted_5$9, [
-              __props.includeFolders.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_6$9, [
+            createBaseVNode("div", _hoisted_5$a, [
+              __props.includeFolders.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_6$a, [
                 (openBlock(true), createElementBlock(Fragment, null, renderList(__props.includeFolders, (path) => {
                   return openBlock(), createBlock(FilterChip, {
                     key: path,
@@ -10764,11 +10894,11 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
                     onRemove: ($event) => removeInclude(path)
                   }, null, 8, ["label", "onRemove"]);
                 }), 128))
-              ])) : (openBlock(), createElementBlock("div", _hoisted_7$7, " No folders selected "))
+              ])) : (openBlock(), createElementBlock("div", _hoisted_7$8, " No folders selected "))
             ])
           ]),
-          createBaseVNode("div", _hoisted_8$5, [
-            createBaseVNode("div", _hoisted_9$3, [
+          createBaseVNode("div", _hoisted_8$6, [
+            createBaseVNode("div", _hoisted_9$4, [
               _cache[5] || (_cache[5] = createBaseVNode("span", { class: "section__column-title section__column-title--exclude" }, "EXCLUDE", -1)),
               createBaseVNode("button", {
                 type: "button",
@@ -10783,8 +10913,8 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
                 ], -1)
               ])])
             ]),
-            createBaseVNode("div", _hoisted_10$3, [
-              __props.excludeFolders.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_11$2, [
+            createBaseVNode("div", _hoisted_10$4, [
+              __props.excludeFolders.length > 0 ? (openBlock(), createElementBlock("div", _hoisted_11$3, [
                 (openBlock(true), createElementBlock(Fragment, null, renderList(__props.excludeFolders, (path) => {
                   return openBlock(), createBlock(FilterChip, {
                     key: path,
@@ -10794,7 +10924,7 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
                     onRemove: ($event) => removeExclude(path)
                   }, null, 8, ["label", "onRemove"]);
                 }), 128))
-              ])) : (openBlock(), createElementBlock("div", _hoisted_12$2, " No folders selected "))
+              ])) : (openBlock(), createElementBlock("div", _hoisted_12$3, " No folders selected "))
             ])
           ])
         ])
@@ -10802,8 +10932,148 @@ const _sfc_main$j = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const FoldersSection = /* @__PURE__ */ _export_sfc(_sfc_main$j, [["__scopeId", "data-v-af9caf84"]]);
-const _hoisted_1$i = { class: "section" };
+const FoldersSection = /* @__PURE__ */ _export_sfc(_sfc_main$k, [["__scopeId", "data-v-af9caf84"]]);
+const _hoisted_1$g = { class: "section" };
+const _hoisted_2$f = { class: "section__header" };
+const _hoisted_3$d = { class: "section__toggle" };
+const _hoisted_4$b = ["checked"];
+const _hoisted_5$9 = { class: "section__columns" };
+const _hoisted_6$9 = { class: "section__column" };
+const _hoisted_7$7 = { class: "section__input-wrapper" };
+const _hoisted_8$5 = ["placeholder"];
+const _hoisted_9$3 = { class: "section__patterns" };
+const _hoisted_10$3 = {
+  key: 0,
+  class: "section__empty"
+};
+const _hoisted_11$2 = { class: "section__column" };
+const _hoisted_12$2 = { class: "section__input-wrapper" };
+const _hoisted_13$2 = ["placeholder"];
+const _hoisted_14$2 = { class: "section__patterns" };
+const _hoisted_15$2 = {
+  key: 0,
+  class: "section__empty"
+};
+const _sfc_main$j = /* @__PURE__ */ defineComponent({
+  __name: "NamePatternsSection",
+  props: {
+    includePatterns: {},
+    excludePatterns: {},
+    useRegex: { type: Boolean }
+  },
+  emits: ["update:includePatterns", "update:excludePatterns", "update:useRegex"],
+  setup(__props, { emit: __emit }) {
+    const props = __props;
+    const emit2 = __emit;
+    const includeInput = ref("");
+    const excludeInput = ref("");
+    const addInclude = () => {
+      const pattern = includeInput.value.trim();
+      if (pattern && !props.includePatterns.includes(pattern)) {
+        emit2("update:includePatterns", [...props.includePatterns, pattern]);
+        includeInput.value = "";
+      }
+    };
+    const addExclude = () => {
+      const pattern = excludeInput.value.trim();
+      if (pattern && !props.excludePatterns.includes(pattern)) {
+        emit2("update:excludePatterns", [...props.excludePatterns, pattern]);
+        excludeInput.value = "";
+      }
+    };
+    const removeInclude = (pattern) => {
+      emit2("update:includePatterns", props.includePatterns.filter((p2) => p2 !== pattern));
+    };
+    const removeExclude = (pattern) => {
+      emit2("update:excludePatterns", props.excludePatterns.filter((p2) => p2 !== pattern));
+    };
+    return (_ctx, _cache) => {
+      return openBlock(), createElementBlock("div", _hoisted_1$g, [
+        createBaseVNode("div", _hoisted_2$f, [
+          _cache[4] || (_cache[4] = createBaseVNode("span", { class: "section__title" }, "NAME PATTERNS", -1)),
+          createBaseVNode("label", _hoisted_3$d, [
+            createBaseVNode("input", {
+              type: "checkbox",
+              checked: __props.useRegex,
+              onChange: _cache[0] || (_cache[0] = ($event) => _ctx.$emit("update:useRegex", $event.target.checked))
+            }, null, 40, _hoisted_4$b),
+            _cache[3] || (_cache[3] = createBaseVNode("span", { class: "section__toggle-label" }, "Use Regex", -1))
+          ])
+        ]),
+        createBaseVNode("div", _hoisted_5$9, [
+          createBaseVNode("div", _hoisted_6$9, [
+            _cache[5] || (_cache[5] = createBaseVNode("div", { class: "section__column-header" }, [
+              createBaseVNode("span", { class: "section__column-title section__column-title--include" }, "INCLUDE")
+            ], -1)),
+            createBaseVNode("div", _hoisted_7$7, [
+              withDirectives(createBaseVNode("input", {
+                type: "text",
+                "onUpdate:modelValue": _cache[1] || (_cache[1] = ($event) => includeInput.value = $event),
+                placeholder: __props.useRegex ? "Add regex pattern..." : "Add text pattern...",
+                class: "section__input",
+                onKeydown: withKeys(addInclude, ["enter"])
+              }, null, 40, _hoisted_8$5), [
+                [vModelText, includeInput.value]
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "section__add-btn",
+                onClick: addInclude
+              }, "+")
+            ]),
+            createBaseVNode("div", _hoisted_9$3, [
+              (openBlock(true), createElementBlock(Fragment, null, renderList(__props.includePatterns, (pattern) => {
+                return openBlock(), createBlock(FilterChip, {
+                  key: pattern,
+                  label: pattern,
+                  variant: "include",
+                  removable: "",
+                  onRemove: ($event) => removeInclude(pattern)
+                }, null, 8, ["label", "onRemove"]);
+              }), 128)),
+              __props.includePatterns.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_10$3, toDisplayString(__props.useRegex ? "No regex patterns" : "No text patterns"), 1)) : createCommentVNode("", true)
+            ])
+          ]),
+          createBaseVNode("div", _hoisted_11$2, [
+            _cache[6] || (_cache[6] = createBaseVNode("div", { class: "section__column-header" }, [
+              createBaseVNode("span", { class: "section__column-title section__column-title--exclude" }, "EXCLUDE")
+            ], -1)),
+            createBaseVNode("div", _hoisted_12$2, [
+              withDirectives(createBaseVNode("input", {
+                type: "text",
+                "onUpdate:modelValue": _cache[2] || (_cache[2] = ($event) => excludeInput.value = $event),
+                placeholder: __props.useRegex ? "Add regex pattern..." : "Add text pattern...",
+                class: "section__input",
+                onKeydown: withKeys(addExclude, ["enter"])
+              }, null, 40, _hoisted_13$2), [
+                [vModelText, excludeInput.value]
+              ]),
+              createBaseVNode("button", {
+                type: "button",
+                class: "section__add-btn",
+                onClick: addExclude
+              }, "+")
+            ]),
+            createBaseVNode("div", _hoisted_14$2, [
+              (openBlock(true), createElementBlock(Fragment, null, renderList(__props.excludePatterns, (pattern) => {
+                return openBlock(), createBlock(FilterChip, {
+                  key: pattern,
+                  label: pattern,
+                  variant: "exclude",
+                  removable: "",
+                  onRemove: ($event) => removeExclude(pattern)
+                }, null, 8, ["label", "onRemove"]);
+              }), 128)),
+              __props.excludePatterns.length === 0 ? (openBlock(), createElementBlock("div", _hoisted_15$2, toDisplayString(__props.useRegex ? "No regex patterns" : "No text patterns"), 1)) : createCommentVNode("", true)
+            ])
+          ])
+        ])
+      ]);
+    };
+  }
+});
+const NamePatternsSection = /* @__PURE__ */ _export_sfc(_sfc_main$j, [["__scopeId", "data-v-9995b5ed"]]);
+const _hoisted_1$f = { class: "section" };
 const _hoisted_2$e = { class: "section__toggles" };
 const _hoisted_3$c = { class: "toggle-item" };
 const _hoisted_4$a = ["aria-checked"];
@@ -10818,7 +11088,7 @@ const _sfc_main$i = /* @__PURE__ */ defineComponent({
   emits: ["update:noCreditRequired", "update:allowSelling"],
   setup(__props) {
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$i, [
+      return openBlock(), createElementBlock("div", _hoisted_1$f, [
         _cache[6] || (_cache[6] = createBaseVNode("div", { class: "section__header" }, [
           createBaseVNode("span", { class: "section__title" }, "LICENSE")
         ], -1)),
@@ -10855,7 +11125,7 @@ const _sfc_main$i = /* @__PURE__ */ defineComponent({
   }
 });
 const LicenseSection = /* @__PURE__ */ _export_sfc(_sfc_main$i, [["__scopeId", "data-v-dea4adf6"]]);
-const _hoisted_1$h = { class: "preview" };
+const _hoisted_1$e = { class: "preview" };
 const _hoisted_2$d = { class: "preview__title" };
 const _hoisted_3$b = ["disabled"];
 const _hoisted_4$9 = {
@@ -10892,7 +11162,7 @@ const _sfc_main$h = /* @__PURE__ */ defineComponent({
       img.style.display = "none";
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$h, [
+      return openBlock(), createElementBlock("div", _hoisted_1$e, [
         createBaseVNode("div", {
           class: "preview__header",
           onMouseenter: _cache[1] || (_cache[1] = ($event) => showTooltip.value = true),
@@ -10956,7 +11226,7 @@ const _sfc_main$h = /* @__PURE__ */ defineComponent({
   }
 });
 const LoraPoolPreview = /* @__PURE__ */ _export_sfc(_sfc_main$h, [["__scopeId", "data-v-6a4b50a1"]]);
-const _hoisted_1$g = { class: "summary-view" };
+const _hoisted_1$d = { class: "summary-view" };
 const _hoisted_2$c = { class: "summary-view__filters" };
 const _sfc_main$g = /* @__PURE__ */ defineComponent({
   __name: "LoraPoolSummaryView",
@@ -10967,16 +11237,19 @@ const _sfc_main$g = /* @__PURE__ */ defineComponent({
     excludeTags: {},
     includeFolders: {},
     excludeFolders: {},
+    includePatterns: {},
+    excludePatterns: {},
+    useRegex: { type: Boolean },
     noCreditRequired: { type: Boolean },
     allowSelling: { type: Boolean },
     previewItems: {},
     matchCount: {},
     isLoading: { type: Boolean }
   },
-  emits: ["open-modal", "update:includeFolders", "update:excludeFolders", "update:noCreditRequired", "update:allowSelling", "refresh"],
+  emits: ["open-modal", "update:includeFolders", "update:excludeFolders", "update:includePatterns", "update:excludePatterns", "update:useRegex", "update:noCreditRequired", "update:allowSelling", "refresh"],
   setup(__props) {
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$g, [
+      return openBlock(), createElementBlock("div", _hoisted_1$d, [
         createBaseVNode("div", _hoisted_2$c, [
           createVNode(BaseModelSection, {
             selected: __props.selectedBaseModels,
@@ -10997,25 +11270,33 @@ const _sfc_main$g = /* @__PURE__ */ defineComponent({
             onEditInclude: _cache[5] || (_cache[5] = ($event) => _ctx.$emit("open-modal", "includeFolders")),
             onEditExclude: _cache[6] || (_cache[6] = ($event) => _ctx.$emit("open-modal", "excludeFolders"))
           }, null, 8, ["include-folders", "exclude-folders"]),
+          createVNode(NamePatternsSection, {
+            "include-patterns": __props.includePatterns,
+            "exclude-patterns": __props.excludePatterns,
+            "use-regex": __props.useRegex,
+            "onUpdate:includePatterns": _cache[7] || (_cache[7] = ($event) => _ctx.$emit("update:includePatterns", $event)),
+            "onUpdate:excludePatterns": _cache[8] || (_cache[8] = ($event) => _ctx.$emit("update:excludePatterns", $event)),
+            "onUpdate:useRegex": _cache[9] || (_cache[9] = ($event) => _ctx.$emit("update:useRegex", $event))
+          }, null, 8, ["include-patterns", "exclude-patterns", "use-regex"]),
           createVNode(LicenseSection, {
             "no-credit-required": __props.noCreditRequired,
             "allow-selling": __props.allowSelling,
-            "onUpdate:noCreditRequired": _cache[7] || (_cache[7] = ($event) => _ctx.$emit("update:noCreditRequired", $event)),
-            "onUpdate:allowSelling": _cache[8] || (_cache[8] = ($event) => _ctx.$emit("update:allowSelling", $event))
+            "onUpdate:noCreditRequired": _cache[10] || (_cache[10] = ($event) => _ctx.$emit("update:noCreditRequired", $event)),
+            "onUpdate:allowSelling": _cache[11] || (_cache[11] = ($event) => _ctx.$emit("update:allowSelling", $event))
           }, null, 8, ["no-credit-required", "allow-selling"])
         ]),
         createVNode(LoraPoolPreview, {
           items: __props.previewItems,
           "match-count": __props.matchCount,
           "is-loading": __props.isLoading,
-          onRefresh: _cache[9] || (_cache[9] = ($event) => _ctx.$emit("refresh"))
+          onRefresh: _cache[12] || (_cache[12] = ($event) => _ctx.$emit("refresh"))
         }, null, 8, ["items", "match-count", "is-loading"])
       ]);
     };
   }
 });
-const LoraPoolSummaryView = /* @__PURE__ */ _export_sfc(_sfc_main$g, [["__scopeId", "data-v-328e7526"]]);
-const _hoisted_1$f = { class: "lora-pool-modal__header" };
+const LoraPoolSummaryView = /* @__PURE__ */ _export_sfc(_sfc_main$g, [["__scopeId", "data-v-83235a00"]]);
+const _hoisted_1$c = { class: "lora-pool-modal__header" };
 const _hoisted_2$b = { class: "lora-pool-modal__title-container" };
 const _hoisted_3$a = { class: "lora-pool-modal__title" };
 const _hoisted_4$8 = {
@@ -11075,7 +11356,7 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
                 role: "dialog",
                 "aria-modal": "true"
               }, [
-                createBaseVNode("div", _hoisted_1$f, [
+                createBaseVNode("div", _hoisted_1$c, [
                   createBaseVNode("div", _hoisted_2$b, [
                     createBaseVNode("h3", _hoisted_3$a, toDisplayString(__props.title), 1),
                     __props.subtitle ? (openBlock(), createElementBlock("p", _hoisted_4$8, toDisplayString(__props.subtitle), 1)) : createCommentVNode("", true)
@@ -11103,7 +11384,7 @@ const _sfc_main$f = /* @__PURE__ */ defineComponent({
   }
 });
 const ModalWrapper = /* @__PURE__ */ _export_sfc(_sfc_main$f, [["__scopeId", "data-v-7b4de03d"]]);
-const _hoisted_1$e = { class: "search-container" };
+const _hoisted_1$b = { class: "search-container" };
 const _hoisted_2$a = { class: "model-list" };
 const _hoisted_3$9 = ["checked", "onChange"];
 const _hoisted_4$7 = { class: "model-checkbox-visual" };
@@ -11169,7 +11450,7 @@ const _sfc_main$e = /* @__PURE__ */ defineComponent({
         onClose: _cache[1] || (_cache[1] = ($event) => _ctx.$emit("close"))
       }, {
         search: withCtx(() => [
-          createBaseVNode("div", _hoisted_1$e, [
+          createBaseVNode("div", _hoisted_1$b, [
             _cache[3] || (_cache[3] = createBaseVNode("svg", {
               class: "search-icon",
               viewBox: "0 0 16 16",
@@ -11234,7 +11515,7 @@ const _sfc_main$e = /* @__PURE__ */ defineComponent({
   }
 });
 const BaseModelModal = /* @__PURE__ */ _export_sfc(_sfc_main$e, [["__scopeId", "data-v-e02ca44a"]]);
-const _hoisted_1$d = { class: "search-container" };
+const _hoisted_1$a = { class: "search-container" };
 const _hoisted_2$9 = ["onClick"];
 const _hoisted_3$8 = {
   key: 0,
@@ -11332,7 +11613,7 @@ const _sfc_main$d = /* @__PURE__ */ defineComponent({
         onClose: _cache[1] || (_cache[1] = ($event) => _ctx.$emit("close"))
       }, {
         search: withCtx(() => [
-          createBaseVNode("div", _hoisted_1$d, [
+          createBaseVNode("div", _hoisted_1$a, [
             _cache[3] || (_cache[3] = createBaseVNode("svg", {
               class: "search-icon",
               viewBox: "0 0 16 16",
@@ -11390,7 +11671,7 @@ const _sfc_main$d = /* @__PURE__ */ defineComponent({
   }
 });
 const TagsModal = /* @__PURE__ */ _export_sfc(_sfc_main$d, [["__scopeId", "data-v-48c2535d"]]);
-const _hoisted_1$c = { class: "tree-node" };
+const _hoisted_1$9 = { class: "tree-node" };
 const _hoisted_2$8 = {
   key: 1,
   class: "tree-node__toggle-spacer"
@@ -11433,7 +11714,7 @@ const _sfc_main$c = /* @__PURE__ */ defineComponent({
     };
     return (_ctx, _cache) => {
       const _component_FolderTreeNode = resolveComponent("FolderTreeNode", true);
-      return openBlock(), createElementBlock("div", _hoisted_1$c, [
+      return openBlock(), createElementBlock("div", _hoisted_1$9, [
         createBaseVNode("div", {
           class: normalizeClass(["tree-node__item", [
             `tree-node__item--${__props.variant}`,
@@ -11500,7 +11781,7 @@ const _sfc_main$c = /* @__PURE__ */ defineComponent({
   }
 });
 const FolderTreeNode = /* @__PURE__ */ _export_sfc(_sfc_main$c, [["__scopeId", "data-v-90187dd4"]]);
-const _hoisted_1$b = { class: "search-container" };
+const _hoisted_1$8 = { class: "search-container" };
 const _hoisted_2$7 = { class: "folder-tree" };
 const _hoisted_3$6 = {
   key: 1,
@@ -11570,7 +11851,7 @@ const _sfc_main$b = /* @__PURE__ */ defineComponent({
         onClose: _cache[1] || (_cache[1] = ($event) => _ctx.$emit("close"))
       }, {
         search: withCtx(() => [
-          createBaseVNode("div", _hoisted_1$b, [
+          createBaseVNode("div", _hoisted_1$8, [
             _cache[2] || (_cache[2] = createBaseVNode("svg", {
               class: "search-icon",
               viewBox: "0 0 16 16",
@@ -11657,7 +11938,7 @@ function useLoraPoolApi() {
     });
   };
   const fetchLoras = async (params) => {
-    var _a2, _b, _c, _d;
+    var _a2, _b, _c, _d, _e2, _f;
     isLoading.value = true;
     try {
       const urlParams = new URLSearchParams();
@@ -11676,6 +11957,11 @@ function useLoraPoolApi() {
       }
       if (params.allowSelling !== void 0) {
         urlParams.set("allow_selling_generated_content", String(params.allowSelling));
+      }
+      (_e2 = params.namePatternsInclude) == null ? void 0 : _e2.forEach((pattern) => urlParams.append("name_pattern_include", pattern));
+      (_f = params.namePatternsExclude) == null ? void 0 : _f.forEach((pattern) => urlParams.append("name_pattern_exclude", pattern));
+      if (params.namePatternsUseRegex !== void 0) {
+        urlParams.set("name_pattern_use_regex", String(params.namePatternsUseRegex));
       }
       const response = await fetch(`/api/lm/loras/list?${urlParams}`);
       const data = await response.json();
@@ -11708,6 +11994,9 @@ function useLoraPoolState(widget) {
   const excludeFolders = ref([]);
   const noCreditRequired = ref(false);
   const allowSelling = ref(false);
+  const includePatterns = ref([]);
+  const excludePatterns = ref([]);
+  const useRegex = ref(false);
   const availableBaseModels = ref([]);
   const availableTags = ref([]);
   const folderTree = ref([]);
@@ -11730,6 +12019,11 @@ function useLoraPoolState(widget) {
         license: {
           noCreditRequired: noCreditRequired.value,
           allowSelling: allowSelling.value
+        },
+        namePatterns: {
+          include: includePatterns.value,
+          exclude: excludePatterns.value,
+          useRegex: useRegex.value
         }
       },
       preview: {
@@ -11743,7 +12037,7 @@ function useLoraPoolState(widget) {
     return config;
   };
   const restoreFromConfig = (config) => {
-    var _a2, _b, _c, _d, _e2, _f;
+    var _a2, _b, _c, _d, _e2, _f, _g, _h, _i;
     isRestoring = true;
     try {
       if (!(config == null ? void 0 : config.filters)) return;
@@ -11760,6 +12054,9 @@ function useLoraPoolState(widget) {
       updateIfChanged(excludeFolders, ((_d = filters.folders) == null ? void 0 : _d.exclude) || []);
       updateIfChanged(noCreditRequired, ((_e2 = filters.license) == null ? void 0 : _e2.noCreditRequired) ?? false);
       updateIfChanged(allowSelling, ((_f = filters.license) == null ? void 0 : _f.allowSelling) ?? false);
+      updateIfChanged(includePatterns, ((_g = filters.namePatterns) == null ? void 0 : _g.include) || []);
+      updateIfChanged(excludePatterns, ((_h = filters.namePatterns) == null ? void 0 : _h.exclude) || []);
+      updateIfChanged(useRegex, ((_i = filters.namePatterns) == null ? void 0 : _i.useRegex) ?? false);
       matchCount.value = (preview == null ? void 0 : preview.matchCount) || 0;
     } finally {
       isRestoring = false;
@@ -11784,6 +12081,9 @@ function useLoraPoolState(widget) {
       foldersExclude: excludeFolders.value,
       noCreditRequired: noCreditRequired.value || void 0,
       allowSelling: allowSelling.value || void 0,
+      namePatternsInclude: includePatterns.value,
+      namePatternsExclude: excludePatterns.value,
+      namePatternsUseRegex: useRegex.value,
       pageSize: 6
     });
     previewItems.value = result.items;
@@ -11804,7 +12104,10 @@ function useLoraPoolState(widget) {
     includeFolders,
     excludeFolders,
     noCreditRequired,
-    allowSelling
+    allowSelling,
+    includePatterns,
+    excludePatterns,
+    useRegex
   ], onFilterChange, { deep: true });
   return {
     // Filter state
@@ -11815,6 +12118,9 @@ function useLoraPoolState(widget) {
     excludeFolders,
     noCreditRequired,
     allowSelling,
+    includePatterns,
+    excludePatterns,
+    useRegex,
     // Available options
     availableBaseModels,
     availableTags,
@@ -11850,7 +12156,6 @@ function useModalState() {
     isModalOpen
   };
 }
-const _hoisted_1$a = { class: "lora-pool-widget" };
 const _sfc_main$a = /* @__PURE__ */ defineComponent({
   __name: "LoraPoolWidget",
   props: {
@@ -11863,6 +12168,35 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
     const modalState = useModalState();
     const openModal = (modal) => {
       modalState.openModal(modal);
+    };
+    const onWheel = (event) => {
+      const target = event.target;
+      if (target == null ? void 0 : target.closest('[data-capture-wheel="true"]')) {
+        event.stopPropagation();
+        return;
+      }
+      const app2 = window.app;
+      if (!app2 || !app2.canvas || typeof app2.canvas.processMouseWheel !== "function") {
+        return;
+      }
+      const deltaX = event.deltaX;
+      const deltaY = event.deltaY;
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (event.ctrlKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      if (isHorizontal) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      app2.canvas.processMouseWheel(event);
     };
     onMounted(async () => {
       props.widget.callback = (v2) => {
@@ -11879,7 +12213,10 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
       await state.refreshPreview();
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$a, [
+      return openBlock(), createElementBlock("div", {
+        class: "lora-pool-widget",
+        onWheel
+      }, [
         createVNode(LoraPoolSummaryView, {
           "selected-base-models": unref(state).selectedBaseModels.value,
           "available-base-models": unref(state).availableBaseModels.value,
@@ -11887,6 +12224,9 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           "exclude-tags": unref(state).excludeTags.value,
           "include-folders": unref(state).includeFolders.value,
           "exclude-folders": unref(state).excludeFolders.value,
+          "include-patterns": unref(state).includePatterns.value,
+          "exclude-patterns": unref(state).excludePatterns.value,
+          "use-regex": unref(state).useRegex.value,
           "no-credit-required": unref(state).noCreditRequired.value,
           "allow-selling": unref(state).allowSelling.value,
           "preview-items": unref(state).previewItems.value,
@@ -11895,16 +12235,19 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           onOpenModal: openModal,
           "onUpdate:includeFolders": _cache[0] || (_cache[0] = ($event) => unref(state).includeFolders.value = $event),
           "onUpdate:excludeFolders": _cache[1] || (_cache[1] = ($event) => unref(state).excludeFolders.value = $event),
-          "onUpdate:noCreditRequired": _cache[2] || (_cache[2] = ($event) => unref(state).noCreditRequired.value = $event),
-          "onUpdate:allowSelling": _cache[3] || (_cache[3] = ($event) => unref(state).allowSelling.value = $event),
+          "onUpdate:includePatterns": _cache[2] || (_cache[2] = ($event) => unref(state).includePatterns.value = $event),
+          "onUpdate:excludePatterns": _cache[3] || (_cache[3] = ($event) => unref(state).excludePatterns.value = $event),
+          "onUpdate:useRegex": _cache[4] || (_cache[4] = ($event) => unref(state).useRegex.value = $event),
+          "onUpdate:noCreditRequired": _cache[5] || (_cache[5] = ($event) => unref(state).noCreditRequired.value = $event),
+          "onUpdate:allowSelling": _cache[6] || (_cache[6] = ($event) => unref(state).allowSelling.value = $event),
           onRefresh: unref(state).refreshPreview
-        }, null, 8, ["selected-base-models", "available-base-models", "include-tags", "exclude-tags", "include-folders", "exclude-folders", "no-credit-required", "allow-selling", "preview-items", "match-count", "is-loading", "onRefresh"]),
+        }, null, 8, ["selected-base-models", "available-base-models", "include-tags", "exclude-tags", "include-folders", "exclude-folders", "include-patterns", "exclude-patterns", "use-regex", "no-credit-required", "allow-selling", "preview-items", "match-count", "is-loading", "onRefresh"]),
         createVNode(BaseModelModal, {
           visible: unref(modalState).isModalOpen("baseModels"),
           models: unref(state).availableBaseModels.value,
           selected: unref(state).selectedBaseModels.value,
           onClose: unref(modalState).closeModal,
-          "onUpdate:selected": _cache[4] || (_cache[4] = ($event) => unref(state).selectedBaseModels.value = $event)
+          "onUpdate:selected": _cache[7] || (_cache[7] = ($event) => unref(state).selectedBaseModels.value = $event)
         }, null, 8, ["visible", "models", "selected", "onClose"]),
         createVNode(TagsModal, {
           visible: unref(modalState).isModalOpen("includeTags"),
@@ -11912,7 +12255,7 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           selected: unref(state).includeTags.value,
           variant: "include",
           onClose: unref(modalState).closeModal,
-          "onUpdate:selected": _cache[5] || (_cache[5] = ($event) => unref(state).includeTags.value = $event)
+          "onUpdate:selected": _cache[8] || (_cache[8] = ($event) => unref(state).includeTags.value = $event)
         }, null, 8, ["visible", "tags", "selected", "onClose"]),
         createVNode(TagsModal, {
           visible: unref(modalState).isModalOpen("excludeTags"),
@@ -11920,7 +12263,7 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           selected: unref(state).excludeTags.value,
           variant: "exclude",
           onClose: unref(modalState).closeModal,
-          "onUpdate:selected": _cache[6] || (_cache[6] = ($event) => unref(state).excludeTags.value = $event)
+          "onUpdate:selected": _cache[9] || (_cache[9] = ($event) => unref(state).excludeTags.value = $event)
         }, null, 8, ["visible", "tags", "selected", "onClose"]),
         createVNode(FoldersModal, {
           visible: unref(modalState).isModalOpen("includeFolders"),
@@ -11928,7 +12271,7 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           selected: unref(state).includeFolders.value,
           variant: "include",
           onClose: unref(modalState).closeModal,
-          "onUpdate:selected": _cache[7] || (_cache[7] = ($event) => unref(state).includeFolders.value = $event)
+          "onUpdate:selected": _cache[10] || (_cache[10] = ($event) => unref(state).includeFolders.value = $event)
         }, null, 8, ["visible", "folders", "selected", "onClose"]),
         createVNode(FoldersModal, {
           visible: unref(modalState).isModalOpen("excludeFolders"),
@@ -11936,14 +12279,14 @@ const _sfc_main$a = /* @__PURE__ */ defineComponent({
           selected: unref(state).excludeFolders.value,
           variant: "exclude",
           onClose: unref(modalState).closeModal,
-          "onUpdate:selected": _cache[8] || (_cache[8] = ($event) => unref(state).excludeFolders.value = $event)
+          "onUpdate:selected": _cache[11] || (_cache[11] = ($event) => unref(state).excludeFolders.value = $event)
         }, null, 8, ["visible", "folders", "selected", "onClose"])
-      ]);
+      ], 32);
     };
   }
 });
-const LoraPoolWidget = /* @__PURE__ */ _export_sfc(_sfc_main$a, [["__scopeId", "data-v-4456abba"]]);
-const _hoisted_1$9 = { class: "last-used-preview" };
+const LoraPoolWidget = /* @__PURE__ */ _export_sfc(_sfc_main$a, [["__scopeId", "data-v-ed73eab5"]]);
+const _hoisted_1$7 = { class: "last-used-preview" };
 const _hoisted_2$6 = { class: "last-used-preview__content" };
 const _hoisted_3$5 = ["src", "onError"];
 const _hoisted_4$4 = {
@@ -11985,7 +12328,7 @@ const _sfc_main$9 = /* @__PURE__ */ defineComponent({
       previewUrls.value[loraName] = "";
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$9, [
+      return openBlock(), createElementBlock("div", _hoisted_1$7, [
         createBaseVNode("div", _hoisted_2$6, [
           (openBlock(true), createElementBlock(Fragment, null, renderList(displayLoras.value, (lora) => {
             return openBlock(), createElementBlock("div", {
@@ -12019,7 +12362,7 @@ const _sfc_main$9 = /* @__PURE__ */ defineComponent({
   }
 });
 const LastUsedPreview = /* @__PURE__ */ _export_sfc(_sfc_main$9, [["__scopeId", "data-v-b940502e"]]);
-const _hoisted_1$8 = { class: "slider-handle__value" };
+const _hoisted_1$6 = { class: "slider-handle__value" };
 const _sfc_main$8 = /* @__PURE__ */ defineComponent({
   __name: "SingleSlider",
   props: {
@@ -12095,10 +12438,10 @@ const _sfc_main$8 = /* @__PURE__ */ defineComponent({
       if (!rect) return;
       const rootRect = event.currentTarget.getBoundingClientRect();
       if (event.clientX < rootRect.left || event.clientX > rootRect.right || event.clientY < rootRect.top || event.clientY > rootRect.bottom) return;
-      event.preventDefault();
       const delta = event.deltaY > 0 ? -1 : 1;
       const newValue = snapToStep(props.value + delta * props.step);
       emit2("update:value", newValue);
+      event.stopPropagation();
     };
     const stopDrag = (event) => {
       if (!dragging.value) return;
@@ -12146,14 +12489,14 @@ const _sfc_main$8 = /* @__PURE__ */ defineComponent({
           onPointercancel: withModifiers(stopDrag, ["stop"])
         }, [
           _cache[1] || (_cache[1] = createBaseVNode("div", { class: "slider-handle__thumb" }, null, -1)),
-          createBaseVNode("div", _hoisted_1$8, toDisplayString(formatValue(__props.value)), 1)
+          createBaseVNode("div", _hoisted_1$6, toDisplayString(formatValue(__props.value)), 1)
         ], 36)
       ], 34);
     };
   }
 });
-const SingleSlider = /* @__PURE__ */ _export_sfc(_sfc_main$8, [["__scopeId", "data-v-d04b968b"]]);
-const _hoisted_1$7 = { class: "slider-handle__value" };
+const SingleSlider = /* @__PURE__ */ _export_sfc(_sfc_main$8, [["__scopeId", "data-v-04874dd7"]]);
+const _hoisted_1$5 = { class: "slider-handle__value" };
 const _hoisted_2$5 = { class: "slider-handle__value" };
 const _sfc_main$7 = /* @__PURE__ */ defineComponent({
   __name: "DualRangeSlider",
@@ -12325,7 +12668,6 @@ const _sfc_main$7 = /* @__PURE__ */ defineComponent({
       if (!rect) return;
       const rootRect = event.currentTarget.getBoundingClientRect();
       if (event.clientX < rootRect.left || event.clientX > rootRect.right || event.clientY < rootRect.top || event.clientY > rootRect.bottom) return;
-      event.preventDefault();
       const delta = event.deltaY > 0 ? -1 : 1;
       const relativeX = event.clientX - rect.left;
       const rangeWidth = rect.width;
@@ -12361,6 +12703,7 @@ const _sfc_main$7 = /* @__PURE__ */ defineComponent({
           }
         }
       }
+      event.stopPropagation();
     };
     const stopDrag = (event) => {
       if (!dragging.value) return;
@@ -12418,7 +12761,7 @@ const _sfc_main$7 = /* @__PURE__ */ defineComponent({
           onPointercancel: withModifiers(stopDrag, ["stop"])
         }, [
           _cache[3] || (_cache[3] = createBaseVNode("div", { class: "slider-handle__thumb" }, null, -1)),
-          createBaseVNode("div", _hoisted_1$7, toDisplayString(formatValue(__props.valueMin)), 1)
+          createBaseVNode("div", _hoisted_1$5, toDisplayString(formatValue(__props.valueMin)), 1)
         ], 36),
         createBaseVNode("div", {
           class: "slider-handle slider-handle--max",
@@ -12435,8 +12778,8 @@ const _sfc_main$7 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const DualRangeSlider = /* @__PURE__ */ _export_sfc(_sfc_main$7, [["__scopeId", "data-v-9f6c6950"]]);
-const _hoisted_1$6 = { class: "randomizer-settings" };
+const DualRangeSlider = /* @__PURE__ */ _export_sfc(_sfc_main$7, [["__scopeId", "data-v-e0c8dc9f"]]);
+const _hoisted_1$4 = { class: "randomizer-settings" };
 const _hoisted_2$4 = { class: "setting-section" };
 const _hoisted_3$4 = { class: "count-mode-tabs" };
 const _hoisted_4$3 = ["checked"];
@@ -12497,7 +12840,7 @@ const _sfc_main$6 = /* @__PURE__ */ defineComponent({
       );
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$6, [
+      return openBlock(), createElementBlock("div", _hoisted_1$4, [
         _cache[29] || (_cache[29] = createBaseVNode("div", { class: "settings-header" }, [
           createBaseVNode("h3", { class: "settings-title" }, "RANDOMIZER SETTINGS")
         ], -1)),
@@ -12893,12 +13236,12 @@ function useLoraRandomizerState(widget) {
     initializeNextSeed
   };
 }
-const _hoisted_1$5 = { class: "lora-randomizer-widget" };
 const _sfc_main$5 = /* @__PURE__ */ defineComponent({
   __name: "LoraRandomizerWidget",
   props: {
     widget: {},
-    node: {}
+    node: {},
+    api: {}
   },
   setup(__props) {
     const props = __props;
@@ -12906,6 +13249,7 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
     const HAS_EXECUTED = Symbol("HAS_EXECUTED");
     const currentLoras = ref([]);
     const isMounted = ref(false);
+    const pendingExecutions = [];
     const canReuseLast = computed(() => {
       const lastUsed = state.lastUsed.value;
       if (!lastUsed || lastUsed.length === 0) return false;
@@ -12965,6 +13309,35 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
         state.rollMode.value = "fixed";
       }
     };
+    const onWheel = (event) => {
+      const target = event.target;
+      if (target == null ? void 0 : target.closest('[data-capture-wheel="true"]')) {
+        event.stopPropagation();
+        return;
+      }
+      const app2 = window.app;
+      if (!app2 || !app2.canvas || typeof app2.canvas.processMouseWheel !== "function") {
+        return;
+      }
+      const deltaX = event.deltaX;
+      const deltaY = event.deltaY;
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (event.ctrlKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      if (isHorizontal) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      app2.canvas.processMouseWheel(event);
+    };
     watch(() => {
       var _a2, _b;
       return (_b = (_a2 = props.node.widgets) == null ? void 0 : _a2.find((w2) => w2.name === "loras")) == null ? void 0 : _b.value;
@@ -13006,25 +13379,61 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
       };
       const originalOnExecuted = (_b = props.node.onExecuted) == null ? void 0 : _b.bind(props.node);
       props.node.onExecuted = function(output) {
-        var _a3;
         console.log("[LoraRandomizerWidget] Node executed with output:", output);
+        const pendingUpdate = {};
         if ((output == null ? void 0 : output.last_used) !== void 0) {
-          state.lastUsed.value = output.last_used;
-          console.log(`[LoraRandomizerWidget] Updated last_used: ${output.last_used ? output.last_used.length : 0} LoRAs`);
+          pendingUpdate.lastUsed = output.last_used;
+          console.log(`[LoraRandomizerWidget] Queued last_used update: ${output.last_used ? output.last_used.length : 0} LoRAs`);
         }
-        const lorasWidget2 = (_a3 = props.node.widgets) == null ? void 0 : _a3.find((w2) => w2.name === "loras");
-        if (lorasWidget2 && (output == null ? void 0 : output.loras) && Array.isArray(output.loras)) {
-          console.log("[LoraRandomizerWidget] Received loras data from backend:", output.loras);
-          lorasWidget2.value = output.loras;
-          currentLoras.value = output.loras;
+        if ((output == null ? void 0 : output.loras) && Array.isArray(output.loras)) {
+          pendingUpdate.loras = output.loras;
+          console.log("[LoraRandomizerWidget] Queued loras data from backend:", output.loras);
+        }
+        if (pendingUpdate.lastUsed !== void 0 || pendingUpdate.loras !== void 0) {
+          pendingExecutions.push(pendingUpdate);
         }
         if (originalOnExecuted) {
           return originalOnExecuted(output);
         }
       };
+      if (props.api) {
+        const handleExecutionComplete = () => {
+          var _a3;
+          if (pendingExecutions.length === 0) {
+            return;
+          }
+          const pending = pendingExecutions.shift();
+          if (pending.lastUsed !== void 0) {
+            state.lastUsed.value = pending.lastUsed;
+          }
+          if (pending.loras !== void 0) {
+            const lorasWidget2 = (_a3 = props.node.widgets) == null ? void 0 : _a3.find((w2) => w2.name === "loras");
+            if (lorasWidget2) {
+              lorasWidget2.value = pending.loras;
+            }
+            currentLoras.value = pending.loras;
+          }
+        };
+        props.api.addEventListener("execution_success", handleExecutionComplete);
+        props.api.addEventListener("execution_error", handleExecutionComplete);
+        props.api.addEventListener("execution_interrupted", handleExecutionComplete);
+        const apiCleanup = () => {
+          props.api.removeEventListener("execution_success", handleExecutionComplete);
+          props.api.removeEventListener("execution_error", handleExecutionComplete);
+          props.api.removeEventListener("execution_interrupted", handleExecutionComplete);
+        };
+        const existingCleanup = props.widget.onRemoveCleanup;
+        props.widget.onRemoveCleanup = () => {
+          existingCleanup == null ? void 0 : existingCleanup();
+          apiCleanup();
+        };
+      }
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$5, [
+      return openBlock(), createElementBlock("div", {
+        class: "lora-randomizer-widget",
+        onWheel
+      }, [
         createVNode(LoraRandomizerSettingsView, {
           "count-mode": unref(state).countMode.value,
           "count-fixed": unref(state).countFixed.value,
@@ -13061,12 +13470,12 @@ const _sfc_main$5 = /* @__PURE__ */ defineComponent({
           onAlwaysRandomize: handleAlwaysRandomize,
           onReuseLast: handleReuseLast
         }, null, 8, ["count-mode", "count-fixed", "count-min", "count-max", "model-strength-min", "model-strength-max", "use-custom-clip-range", "clip-strength-min", "clip-strength-max", "roll-mode", "is-rolling", "is-clip-strength-disabled", "last-used", "current-loras", "can-reuse-last", "use-recommended-strength", "recommended-strength-scale-min", "recommended-strength-scale-max"])
-      ]);
+      ], 32);
     };
   }
 });
-const LoraRandomizerWidget = /* @__PURE__ */ _export_sfc(_sfc_main$5, [["__scopeId", "data-v-8063df56"]]);
-const _hoisted_1$4 = { class: "cycler-settings" };
+const LoraRandomizerWidget = /* @__PURE__ */ _export_sfc(_sfc_main$5, [["__scopeId", "data-v-ca6e8cec"]]);
+const _hoisted_1$3 = { class: "cycler-settings" };
 const _hoisted_2$3 = { class: "setting-section progress-section" };
 const _hoisted_3$3 = { class: "progress-label" };
 const _hoisted_4$2 = ["title"];
@@ -13106,8 +13515,14 @@ const _hoisted_24 = { class: "setting-section" };
 const _hoisted_25 = { class: "slider-container" };
 const _hoisted_26 = { class: "setting-section" };
 const _hoisted_27 = { class: "section-header-with-toggle" };
-const _hoisted_28 = { class: "setting-label" };
-const _hoisted_29 = ["aria-checked"];
+const _hoisted_28 = ["aria-checked"];
+const _hoisted_29 = { class: "setting-section" };
+const _hoisted_30 = { class: "section-header-with-toggle" };
+const _hoisted_31 = { class: "setting-label" };
+const _hoisted_32 = ["aria-checked"];
+const _hoisted_33 = { class: "setting-section" };
+const _hoisted_34 = { class: "section-header-with-toggle" };
+const _hoisted_35 = ["aria-checked"];
 const _sfc_main$4 = /* @__PURE__ */ defineComponent({
   __name: "LoraCyclerSettingsView",
   props: {
@@ -13118,15 +13533,19 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
     modelStrength: {},
     clipStrength: {},
     useCustomClipRange: { type: Boolean },
+    usePresetStrength: { type: Boolean },
+    presetStrengthScale: {},
     isClipStrengthDisabled: { type: Boolean },
     repeatCount: {},
     repeatUsed: {},
     isPaused: { type: Boolean },
     isPauseDisabled: { type: Boolean },
     isWorkflowExecuting: { type: Boolean },
-    executingRepeatStep: {}
+    executingRepeatStep: {},
+    includeNoLora: { type: Boolean },
+    isNoLora: { type: Boolean }
   },
-  emits: ["update:currentIndex", "update:modelStrength", "update:clipStrength", "update:useCustomClipRange", "update:repeatCount", "toggle-pause", "reset-index", "open-lora-selector"],
+  emits: ["update:currentIndex", "update:modelStrength", "update:clipStrength", "update:useCustomClipRange", "update:usePresetStrength", "update:presetStrengthScale", "update:repeatCount", "update:includeNoLora", "toggle-pause", "reset-index", "open-lora-selector"],
   setup(__props, { emit: __emit }) {
     const props = __props;
     const emit2 = __emit;
@@ -13171,8 +13590,8 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
       tempRepeat.value = "";
     };
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$4, [
-        _cache[21] || (_cache[21] = createBaseVNode("div", { class: "settings-header" }, [
+      return openBlock(), createElementBlock("div", _hoisted_1$3, [
+        _cache[28] || (_cache[28] = createBaseVNode("div", { class: "settings-header" }, [
           createBaseVNode("h3", { class: "settings-title" }, "CYCLER SETTINGS")
         ], -1)),
         createBaseVNode("div", _hoisted_2$3, [
@@ -13185,11 +13604,11 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
             }, [
               createBaseVNode("span", _hoisted_3$3, toDisplayString(__props.isWorkflowExecuting ? "Using LoRA:" : "Next LoRA:"), 1),
               createBaseVNode("span", {
-                class: normalizeClass(["progress-name clickable", { disabled: __props.isPauseDisabled }]),
+                class: normalizeClass(["progress-name clickable", { disabled: __props.isPauseDisabled, "no-lora": __props.isNoLora }]),
                 title: __props.currentLoraFilename
               }, [
                 createTextVNode(toDisplayString(__props.currentLoraName || "None") + " ", 1),
-                _cache[11] || (_cache[11] = createBaseVNode("svg", {
+                _cache[14] || (_cache[14] = createBaseVNode("svg", {
                   class: "selector-icon",
                   viewBox: "0 0 24 24",
                   fill: "currentColor"
@@ -13200,7 +13619,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
             ], 2),
             createBaseVNode("div", _hoisted_5$1, [
               createBaseVNode("span", _hoisted_6$1, toDisplayString(__props.currentIndex), 1),
-              _cache[12] || (_cache[12] = createBaseVNode("span", { class: "progress-separator" }, "/", -1)),
+              _cache[15] || (_cache[15] = createBaseVNode("span", { class: "progress-separator" }, "/", -1)),
               createBaseVNode("span", _hoisted_7$1, toDisplayString(__props.totalCount), 1),
               __props.repeatCount > 1 ? (openBlock(), createElementBlock("div", _hoisted_8, [
                 createBaseVNode("div", _hoisted_9, [
@@ -13217,7 +13636,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
         createBaseVNode("div", _hoisted_11, [
           createBaseVNode("div", _hoisted_12, [
             createBaseVNode("div", _hoisted_13, [
-              _cache[13] || (_cache[13] = createBaseVNode("label", { class: "control-group-label" }, "Starting Index", -1)),
+              _cache[16] || (_cache[16] = createBaseVNode("label", { class: "control-group-label" }, "Starting Index", -1)),
               createBaseVNode("div", _hoisted_14, [
                 createBaseVNode("input", {
                   type: "number",
@@ -13239,7 +13658,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
               ])
             ]),
             createBaseVNode("div", _hoisted_17, [
-              _cache[15] || (_cache[15] = createBaseVNode("label", { class: "control-group-label" }, "Repeat", -1)),
+              _cache[18] || (_cache[18] = createBaseVNode("label", { class: "control-group-label" }, "Repeat", -1)),
               createBaseVNode("div", _hoisted_18, [
                 createBaseVNode("input", {
                   type: "number",
@@ -13257,7 +13676,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
                   }, ["stop"])),
                   title: "Each LoRA will be used this many times before moving to the next"
                 }, null, 40, _hoisted_19),
-                _cache[14] || (_cache[14] = createBaseVNode("span", { class: "repeat-suffix" }, "×", -1))
+                _cache[17] || (_cache[17] = createBaseVNode("span", { class: "repeat-suffix" }, "×", -1))
               ])
             ]),
             createBaseVNode("div", _hoisted_20, [
@@ -13267,9 +13686,9 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
                 onClick: _cache[6] || (_cache[6] = ($event) => _ctx.$emit("toggle-pause")),
                 title: __props.isPauseDisabled ? "Cannot pause while prompts are queued" : __props.isPaused ? "Continue iteration" : "Pause iteration"
               }, [
-                __props.isPaused ? (openBlock(), createElementBlock("svg", _hoisted_22, [..._cache[16] || (_cache[16] = [
+                __props.isPaused ? (openBlock(), createElementBlock("svg", _hoisted_22, [..._cache[19] || (_cache[19] = [
                   createBaseVNode("path", { d: "M8 5v14l11-7z" }, null, -1)
-                ])])) : (openBlock(), createElementBlock("svg", _hoisted_23, [..._cache[17] || (_cache[17] = [
+                ])])) : (openBlock(), createElementBlock("svg", _hoisted_23, [..._cache[20] || (_cache[20] = [
                   createBaseVNode("path", { d: "M6 4h4v16H6zm8 0h4v16h-4z" }, null, -1)
                 ])]))
               ], 10, _hoisted_21),
@@ -13277,7 +13696,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
                 class: "control-btn",
                 onClick: _cache[7] || (_cache[7] = ($event) => _ctx.$emit("reset-index")),
                 title: "Reset to index 1"
-              }, [..._cache[18] || (_cache[18] = [
+              }, [..._cache[21] || (_cache[21] = [
                 createBaseVNode("svg", {
                   viewBox: "0 0 24 24",
                   fill: "currentColor",
@@ -13290,7 +13709,7 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
           ])
         ]),
         createBaseVNode("div", _hoisted_24, [
-          _cache[19] || (_cache[19] = createBaseVNode("label", { class: "setting-label" }, "Model Strength", -1)),
+          _cache[22] || (_cache[22] = createBaseVNode("label", { class: "setting-label" }, "Model Strength", -1)),
           createBaseVNode("div", _hoisted_25, [
             createVNode(SingleSlider, {
               min: -10,
@@ -13304,18 +13723,47 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
         ]),
         createBaseVNode("div", _hoisted_26, [
           createBaseVNode("div", _hoisted_27, [
-            createBaseVNode("label", _hoisted_28, " Clip Strength - " + toDisplayString(__props.useCustomClipRange ? "Custom Value" : "Use Model Strength"), 1),
+            _cache[24] || (_cache[24] = createBaseVNode("label", { class: "setting-label" }, " Preset Strength Scale ", -1)),
+            createBaseVNode("button", {
+              type: "button",
+              class: normalizeClass(["toggle-switch", { "toggle-switch--active": __props.usePresetStrength }]),
+              onClick: _cache[9] || (_cache[9] = ($event) => _ctx.$emit("update:usePresetStrength", !__props.usePresetStrength)),
+              role: "switch",
+              "aria-checked": __props.usePresetStrength,
+              title: "Use scaled preset strength when enabled"
+            }, [..._cache[23] || (_cache[23] = [
+              createBaseVNode("span", { class: "toggle-switch__track" }, null, -1),
+              createBaseVNode("span", { class: "toggle-switch__thumb" }, null, -1)
+            ])], 10, _hoisted_28)
+          ]),
+          createBaseVNode("div", {
+            class: normalizeClass(["slider-container", { "slider-container--disabled": !__props.usePresetStrength }])
+          }, [
+            createVNode(SingleSlider, {
+              min: 0,
+              max: 2,
+              value: __props.presetStrengthScale,
+              step: 0.1,
+              "default-range": { min: 0.5, max: 1 },
+              disabled: !__props.usePresetStrength,
+              "onUpdate:value": _cache[10] || (_cache[10] = ($event) => _ctx.$emit("update:presetStrengthScale", $event))
+            }, null, 8, ["value", "disabled"])
+          ], 2)
+        ]),
+        createBaseVNode("div", _hoisted_29, [
+          createBaseVNode("div", _hoisted_30, [
+            createBaseVNode("label", _hoisted_31, " Clip Strength - " + toDisplayString(__props.useCustomClipRange ? "Custom Value" : "Use Model Strength"), 1),
             createBaseVNode("button", {
               type: "button",
               class: normalizeClass(["toggle-switch", { "toggle-switch--active": __props.useCustomClipRange }]),
-              onClick: _cache[9] || (_cache[9] = ($event) => _ctx.$emit("update:useCustomClipRange", !__props.useCustomClipRange)),
+              onClick: _cache[11] || (_cache[11] = ($event) => _ctx.$emit("update:useCustomClipRange", !__props.useCustomClipRange)),
               role: "switch",
               "aria-checked": __props.useCustomClipRange,
               title: "Use custom clip strength when enabled, otherwise use model strength"
-            }, [..._cache[20] || (_cache[20] = [
+            }, [..._cache[25] || (_cache[25] = [
               createBaseVNode("span", { class: "toggle-switch__track" }, null, -1),
               createBaseVNode("span", { class: "toggle-switch__thumb" }, null, -1)
-            ])], 10, _hoisted_29)
+            ])], 10, _hoisted_32)
           ]),
           createBaseVNode("div", {
             class: normalizeClass(["slider-container", { "slider-container--disabled": __props.isClipStrengthDisabled }])
@@ -13327,16 +13775,32 @@ const _sfc_main$4 = /* @__PURE__ */ defineComponent({
               step: 0.1,
               "default-range": { min: 0.5, max: 1.5 },
               disabled: __props.isClipStrengthDisabled,
-              "onUpdate:value": _cache[10] || (_cache[10] = ($event) => _ctx.$emit("update:clipStrength", $event))
+              "onUpdate:value": _cache[12] || (_cache[12] = ($event) => _ctx.$emit("update:clipStrength", $event))
             }, null, 8, ["value", "disabled"])
           ], 2)
+        ]),
+        createBaseVNode("div", _hoisted_33, [
+          createBaseVNode("div", _hoisted_34, [
+            _cache[27] || (_cache[27] = createBaseVNode("label", { class: "setting-label" }, ' Add "No LoRA" step ', -1)),
+            createBaseVNode("button", {
+              type: "button",
+              class: normalizeClass(["toggle-switch", { "toggle-switch--active": __props.includeNoLora }]),
+              onClick: _cache[13] || (_cache[13] = ($event) => _ctx.$emit("update:includeNoLora", !__props.includeNoLora)),
+              role: "switch",
+              "aria-checked": __props.includeNoLora,
+              title: "Add an iteration without LoRA for comparison"
+            }, [..._cache[26] || (_cache[26] = [
+              createBaseVNode("span", { class: "toggle-switch__track" }, null, -1),
+              createBaseVNode("span", { class: "toggle-switch__thumb" }, null, -1)
+            ])], 10, _hoisted_35)
+          ])
         ])
       ]);
     };
   }
 });
-const LoraCyclerSettingsView = /* @__PURE__ */ _export_sfc(_sfc_main$4, [["__scopeId", "data-v-5b16b9d3"]]);
-const _hoisted_1$3 = { class: "search-container" };
+const LoraCyclerSettingsView = /* @__PURE__ */ _export_sfc(_sfc_main$4, [["__scopeId", "data-v-f0663be4"]]);
+const _hoisted_1$2 = { class: "search-container" };
 const _hoisted_2$2 = { class: "lora-list" };
 const _hoisted_3$2 = ["onMouseenter", "onClick"];
 const _hoisted_4$1 = { class: "lora-index" };
@@ -13354,7 +13818,8 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
   props: {
     visible: { type: Boolean },
     loraList: {},
-    currentIndex: {}
+    currentIndex: {},
+    includeNoLora: { type: Boolean }
   },
   emits: ["close", "select"],
   setup(__props, { emit: __emit }) {
@@ -13364,7 +13829,8 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     const searchInputRef = ref(null);
     let previewTooltip = null;
     const subtitleText = computed(() => {
-      const total = props.loraList.length;
+      const baseTotal = props.loraList.length;
+      const total = props.includeNoLora ? baseTotal + 1 : baseTotal;
       const filtered = filteredList.value.length;
       if (filtered === total) {
         return `Total: ${total} LoRA${total !== 1 ? "s" : ""}`;
@@ -13376,6 +13842,12 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
         index: idx + 1,
         lora
       }));
+      if (props.includeNoLora) {
+        list.push({
+          index: list.length + 1,
+          lora: { file_name: "No LoRA" }
+        });
+      }
       if (!searchQuery.value.trim()) {
         return list;
       }
@@ -13459,7 +13931,7 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
         onClose: _cache[1] || (_cache[1] = ($event) => _ctx.$emit("close"))
       }, {
         search: withCtx(() => [
-          createBaseVNode("div", _hoisted_1$3, [
+          createBaseVNode("div", _hoisted_1$2, [
             _cache[3] || (_cache[3] = createBaseVNode("svg", {
               class: "search-icon",
               viewBox: "0 0 16 16",
@@ -13497,7 +13969,10 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
             (openBlock(true), createElementBlock(Fragment, null, renderList(filteredList.value, (item) => {
               return openBlock(), createElementBlock("div", {
                 key: item.index,
-                class: normalizeClass(["lora-item", { active: __props.currentIndex === item.index }]),
+                class: normalizeClass(["lora-item", {
+                  active: __props.currentIndex === item.index,
+                  "no-lora-item": item.lora.file_name === "No LoRA"
+                }]),
                 onMouseenter: ($event) => showPreview(item.lora.file_name, $event),
                 onMouseleave: hidePreview,
                 onClick: ($event) => selectLora(item.index)
@@ -13518,7 +13993,7 @@ const _sfc_main$3 = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const LoraListModal = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-d7fd504d"]]);
+const LoraListModal = /* @__PURE__ */ _export_sfc(_sfc_main$3, [["__scopeId", "data-v-83f6f852"]]);
 function useLoraCyclerState(widget) {
   let isRestoring = false;
   const currentIndex = ref(1);
@@ -13527,6 +14002,8 @@ function useLoraCyclerState(widget) {
   const modelStrength = ref(1);
   const clipStrength = ref(1);
   const useCustomClipRange = ref(false);
+  const usePresetStrength = ref(false);
+  const presetStrengthScale = ref(1);
   const sortBy = ref("filename");
   const currentLoraName = ref("");
   const currentLoraFilename = ref("");
@@ -13537,6 +14014,7 @@ function useLoraCyclerState(widget) {
   const repeatUsed = ref(0);
   const displayRepeatUsed = ref(0);
   const isPaused = ref(false);
+  const includeNoLora = ref(false);
   const isWorkflowExecuting = ref(false);
   const executingRepeatStep = ref(0);
   const buildConfig = () => {
@@ -13548,6 +14026,8 @@ function useLoraCyclerState(widget) {
         model_strength: modelStrength.value,
         clip_strength: clipStrength.value,
         use_same_clip_strength: !useCustomClipRange.value,
+        use_preset_strength: usePresetStrength.value,
+        preset_strength_scale: presetStrengthScale.value,
         sort_by: sortBy.value,
         current_lora_name: currentLoraName.value,
         current_lora_filename: currentLoraFilename.value,
@@ -13555,7 +14035,8 @@ function useLoraCyclerState(widget) {
         next_index: nextIndex.value,
         repeat_count: repeatCount.value,
         repeat_used: repeatUsed.value,
-        is_paused: isPaused.value
+        is_paused: isPaused.value,
+        include_no_lora: includeNoLora.value
       };
     }
     return {
@@ -13565,6 +14046,8 @@ function useLoraCyclerState(widget) {
       model_strength: modelStrength.value,
       clip_strength: clipStrength.value,
       use_same_clip_strength: !useCustomClipRange.value,
+      use_preset_strength: usePresetStrength.value,
+      preset_strength_scale: presetStrengthScale.value,
       sort_by: sortBy.value,
       current_lora_name: currentLoraName.value,
       current_lora_filename: currentLoraFilename.value,
@@ -13572,7 +14055,8 @@ function useLoraCyclerState(widget) {
       next_index: nextIndex.value,
       repeat_count: repeatCount.value,
       repeat_used: repeatUsed.value,
-      is_paused: isPaused.value
+      is_paused: isPaused.value,
+      include_no_lora: includeNoLora.value
     };
   };
   const restoreFromConfig = (config) => {
@@ -13584,12 +14068,15 @@ function useLoraCyclerState(widget) {
       modelStrength.value = config.model_strength ?? 1;
       clipStrength.value = config.clip_strength ?? 1;
       useCustomClipRange.value = !(config.use_same_clip_strength ?? true);
+      usePresetStrength.value = config.use_preset_strength ?? false;
+      presetStrengthScale.value = config.preset_strength_scale ?? 1;
       sortBy.value = config.sort_by || "filename";
       currentLoraName.value = config.current_lora_name || "";
       currentLoraFilename.value = config.current_lora_filename || "";
       repeatCount.value = config.repeat_count ?? 1;
       repeatUsed.value = config.repeat_used ?? 0;
       isPaused.value = config.is_paused ?? false;
+      includeNoLora.value = config.include_no_lora ?? false;
     } finally {
       isRestoring = false;
     }
@@ -13598,7 +14085,8 @@ function useLoraCyclerState(widget) {
     executionIndex.value = nextIndex.value;
     const current = executionIndex.value ?? currentIndex.value;
     let next = current + 1;
-    if (totalCount.value > 0 && next > totalCount.value) {
+    const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value;
+    if (effectiveTotalCount > 0 && next > effectiveTotalCount) {
       next = 1;
     }
     nextIndex.value = next;
@@ -13606,7 +14094,8 @@ function useLoraCyclerState(widget) {
   const initializeNextIndex = () => {
     if (nextIndex.value === null) {
       let next = currentIndex.value + 1;
-      if (totalCount.value > 0 && next > totalCount.value) {
+      const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value;
+      if (effectiveTotalCount > 0 && next > effectiveTotalCount) {
         next = 1;
       }
       nextIndex.value = next;
@@ -13684,7 +14173,8 @@ function useLoraCyclerState(widget) {
     }
   };
   const setIndex = (index) => {
-    if (index >= 1 && index <= totalCount.value) {
+    const effectiveTotalCount = includeNoLora.value ? totalCount.value + 1 : totalCount.value;
+    if (index >= 1 && index <= effectiveTotalCount) {
       currentIndex.value = index;
     }
   };
@@ -13709,12 +14199,15 @@ function useLoraCyclerState(widget) {
     modelStrength,
     clipStrength,
     useCustomClipRange,
+    usePresetStrength,
+    presetStrengthScale,
     sortBy,
     currentLoraName,
     currentLoraFilename,
     repeatCount,
     repeatUsed,
-    isPaused
+    isPaused,
+    includeNoLora
   ], () => {
     widget.value = buildConfig();
   }, { deep: true });
@@ -13726,6 +14219,8 @@ function useLoraCyclerState(widget) {
     modelStrength,
     clipStrength,
     useCustomClipRange,
+    usePresetStrength,
+    presetStrengthScale,
     sortBy,
     currentLoraName,
     currentLoraFilename,
@@ -13736,6 +14231,7 @@ function useLoraCyclerState(widget) {
     repeatUsed,
     displayRepeatUsed,
     isPaused,
+    includeNoLora,
     isWorkflowExecuting,
     executingRepeatStep,
     // Computed
@@ -13753,7 +14249,6 @@ function useLoraCyclerState(widget) {
     togglePause
   };
 }
-const _hoisted_1$2 = { class: "lora-cycler-widget" };
 const _sfc_main$2 = /* @__PURE__ */ defineComponent({
   __name: "LoraCyclerWidget",
   props: {
@@ -13772,6 +14267,21 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
     const isMounted = ref(false);
     const isModalOpen = ref(false);
     const cachedLoraList = ref([]);
+    const displayTotalCount = computed(() => {
+      const baseCount = state.totalCount.value;
+      return state.includeNoLora.value ? baseCount + 1 : baseCount;
+    });
+    const displayLoraName = computed(() => {
+      const currentIndex = state.currentIndex.value;
+      const totalCount = state.totalCount.value;
+      if (state.includeNoLora.value && currentIndex === totalCount + 1) {
+        return "No LoRA";
+      }
+      return state.currentLoraName.value;
+    });
+    const isNoLora = computed(() => {
+      return state.includeNoLora.value && state.currentIndex.value === state.totalCount.value + 1;
+    });
     const getPoolConfig = () => {
       if (props.node.getPoolConfig) {
         return props.node.getPoolConfig();
@@ -13779,7 +14289,13 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
       return null;
     };
     const updateDisplayFromLoraList = (loraList, index) => {
-      if (loraList.length > 0 && index > 0 && index <= loraList.length) {
+      const actualLoraCount = loraList.length;
+      if (state.includeNoLora.value && index === actualLoraCount + 1) {
+        state.currentLoraName.value = "No LoRA";
+        state.currentLoraFilename.value = "No LoRA";
+        return;
+      }
+      if (actualLoraCount > 0 && index > 0 && index <= actualLoraCount) {
         const currentLora = loraList[index - 1];
         if (currentLora) {
           state.currentLoraName.value = currentLora.file_name;
@@ -13788,17 +14304,19 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
       }
     };
     const handleIndexUpdate = async (newIndex) => {
+      const maxIndex = state.includeNoLora.value ? state.totalCount.value + 1 : state.totalCount.value;
+      const clampedIndex = Math.max(1, Math.min(newIndex, maxIndex || 1));
       props.widget[HAS_EXECUTED] = false;
       state.executionIndex.value = null;
       state.nextIndex.value = null;
       executionQueue.length = 0;
       hasQueuedPrompts.value = false;
-      state.setIndex(newIndex);
+      state.setIndex(clampedIndex);
       try {
         const poolConfig = getPoolConfig();
         const loraList = await state.fetchCyclerList(poolConfig);
         cachedLoraList.value = loraList;
-        updateDisplayFromLoraList(loraList, newIndex);
+        updateDisplayFromLoraList(loraList, clampedIndex);
       } catch (error) {
         console.error("[LoraCyclerWidget] Error updating index:", error);
       }
@@ -13816,6 +14334,12 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
       state.repeatCount.value = newValue;
       state.repeatUsed.value = 0;
       state.displayRepeatUsed.value = 0;
+    };
+    const handleIncludeNoLoraChange = (newValue) => {
+      state.includeNoLora.value = newValue;
+      if (!newValue && state.currentIndex.value > state.totalCount.value) {
+        state.currentIndex.value = Math.max(1, state.totalCount.value);
+      }
     };
     const handleTogglePause = () => {
       state.togglePause();
@@ -13835,6 +14359,35 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
       } catch (error) {
         console.error("[LoraCyclerWidget] Error resetting index:", error);
       }
+    };
+    const onWheel = (event) => {
+      const target = event.target;
+      if (target == null ? void 0 : target.closest('[data-capture-wheel="true"]')) {
+        event.stopPropagation();
+        return;
+      }
+      const app2 = window.app;
+      if (!app2 || !app2.canvas || typeof app2.canvas.processMouseWheel !== "function") {
+        return;
+      }
+      const deltaX = event.deltaX;
+      const deltaY = event.deltaY;
+      const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY);
+      if (event.ctrlKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      if (isHorizontal) {
+        event.preventDefault();
+        event.stopPropagation();
+        app2.canvas.processMouseWheel(event);
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      app2.canvas.processMouseWheel(event);
     };
     const checkPoolConfigChanges = async () => {
       if (!isMounted.value) return;
@@ -13992,15 +14545,20 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
       };
     });
     return (_ctx, _cache) => {
-      return openBlock(), createElementBlock("div", _hoisted_1$2, [
+      return openBlock(), createElementBlock("div", {
+        class: "lora-cycler-widget",
+        onWheel
+      }, [
         createVNode(LoraCyclerSettingsView, {
           "current-index": unref(state).currentIndex.value,
-          "total-count": unref(state).totalCount.value,
-          "current-lora-name": unref(state).currentLoraName.value,
+          "total-count": displayTotalCount.value,
+          "current-lora-name": displayLoraName.value,
           "current-lora-filename": unref(state).currentLoraFilename.value,
           "model-strength": unref(state).modelStrength.value,
           "clip-strength": unref(state).clipStrength.value,
           "use-custom-clip-range": unref(state).useCustomClipRange.value,
+          "use-preset-strength": unref(state).usePresetStrength.value,
+          "preset-strength-scale": unref(state).presetStrengthScale.value,
           "is-clip-strength-disabled": unref(state).isClipStrengthDisabled.value,
           "is-loading": unref(state).isLoading.value,
           "repeat-count": unref(state).repeatCount.value,
@@ -14009,27 +14567,33 @@ const _sfc_main$2 = /* @__PURE__ */ defineComponent({
           "is-pause-disabled": hasQueuedPrompts.value,
           "is-workflow-executing": unref(state).isWorkflowExecuting.value,
           "executing-repeat-step": unref(state).executingRepeatStep.value,
+          "include-no-lora": unref(state).includeNoLora.value,
+          "is-no-lora": isNoLora.value,
           "onUpdate:currentIndex": handleIndexUpdate,
           "onUpdate:modelStrength": _cache[0] || (_cache[0] = ($event) => unref(state).modelStrength.value = $event),
           "onUpdate:clipStrength": _cache[1] || (_cache[1] = ($event) => unref(state).clipStrength.value = $event),
           "onUpdate:useCustomClipRange": handleUseCustomClipRangeChange,
+          "onUpdate:usePresetStrength": _cache[2] || (_cache[2] = ($event) => unref(state).usePresetStrength.value = $event),
+          "onUpdate:presetStrengthScale": _cache[3] || (_cache[3] = ($event) => unref(state).presetStrengthScale.value = $event),
           "onUpdate:repeatCount": handleRepeatCountChange,
+          "onUpdate:includeNoLora": handleIncludeNoLoraChange,
           onTogglePause: handleTogglePause,
           onResetIndex: handleResetIndex,
-          onOpenLoraSelector: _cache[2] || (_cache[2] = ($event) => isModalOpen.value = true)
-        }, null, 8, ["current-index", "total-count", "current-lora-name", "current-lora-filename", "model-strength", "clip-strength", "use-custom-clip-range", "is-clip-strength-disabled", "is-loading", "repeat-count", "repeat-used", "is-paused", "is-pause-disabled", "is-workflow-executing", "executing-repeat-step"]),
+          onOpenLoraSelector: _cache[4] || (_cache[4] = ($event) => isModalOpen.value = true)
+        }, null, 8, ["current-index", "total-count", "current-lora-name", "current-lora-filename", "model-strength", "clip-strength", "use-custom-clip-range", "use-preset-strength", "preset-strength-scale", "is-clip-strength-disabled", "is-loading", "repeat-count", "repeat-used", "is-paused", "is-pause-disabled", "is-workflow-executing", "executing-repeat-step", "include-no-lora", "is-no-lora"]),
         createVNode(LoraListModal, {
           visible: isModalOpen.value,
           "lora-list": cachedLoraList.value,
           "current-index": unref(state).currentIndex.value,
-          onClose: _cache[3] || (_cache[3] = ($event) => isModalOpen.value = false),
+          "include-no-lora": unref(state).includeNoLora.value,
+          onClose: _cache[5] || (_cache[5] = ($event) => isModalOpen.value = false),
           onSelect: handleModalSelect
-        }, null, 8, ["visible", "lora-list", "current-index"])
-      ]);
+        }, null, 8, ["visible", "lora-list", "current-index", "include-no-lora"])
+      ], 32);
     };
   }
 });
-const LoraCyclerWidget = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-f09f4e8b"]]);
+const LoraCyclerWidget = /* @__PURE__ */ _export_sfc(_sfc_main$2, [["__scopeId", "data-v-3f46897a"]]);
 const _hoisted_1$1 = { class: "json-display-widget" };
 const _hoisted_2$1 = {
   class: "json-content",
@@ -14269,7 +14833,7 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
         app2.canvas.processMouseWheel(event);
       }
     };
-    const onExternalValueChange = (event) => {
+    const onExternalValueChange = () => {
       updateHasTextState();
     };
     const setupWidgetOnSetValue = () => {
@@ -14293,6 +14857,9 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
     onMounted(() => {
       if (textareaRef.value) {
         props.widget.inputEl = textareaRef.value;
+        textareaRef.value._autocompleteHostWidget = props.widget;
+        textareaRef.value._autocompleteMetadataWidget = props.widget.metadataWidget;
+        textareaRef.value._autocompleteTextWidgetName = props.widget.name ?? "text";
         const container = textareaRef.value.closest('[id^="autocomplete-text-widget-"]');
         if (container && container.__widgetInputEl) {
           container.__widgetInputEl.inputEl = textareaRef.value;
@@ -14311,6 +14878,9 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
         props.widget.inputEl = void 0;
       }
       if (textareaRef.value) {
+        delete textareaRef.value._autocompleteHostWidget;
+        delete textareaRef.value._autocompleteMetadataWidget;
+        delete textareaRef.value._autocompleteTextWidgetName;
         textareaRef.value.removeEventListener("lora-manager:autocomplete-value-changed", onExternalValueChange);
       }
       if (props.widget) {
@@ -14362,16 +14932,29 @@ const _sfc_main = /* @__PURE__ */ defineComponent({
     };
   }
 });
-const AutocompleteTextWidget = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-b3b00fdd"]]);
+const AutocompleteTextWidget = /* @__PURE__ */ _export_sfc(_sfc_main, [["__scopeId", "data-v-76ce0f19"]]);
 const LORA_PROVIDER_NODE_TYPES$1 = [
   "Lora Stacker (LoraManager)",
   "Lora Randomizer (LoraManager)",
   "Lora Cycler (LoraManager)"
 ];
+const LORA_STACK_AGGREGATOR_NODE_TYPES$1 = [
+  "Lora Stack Combiner (LoraManager)"
+];
+const LORA_CHAIN_NODE_TYPES$1 = [
+  ...LORA_PROVIDER_NODE_TYPES$1,
+  ...LORA_STACK_AGGREGATOR_NODE_TYPES$1
+];
+function isLoraStackAggregatorNode$1(comfyClass) {
+  return LORA_STACK_AGGREGATOR_NODE_TYPES$1.includes(comfyClass);
+}
 function getActiveLorasFromNodeByType(node) {
   const comfyClass = node == null ? void 0 : node.comfyClass;
   if (comfyClass === "Lora Cycler (LoraManager)") {
     return extractFromCyclerConfig(node);
+  }
+  if (isLoraStackAggregatorNode$1(comfyClass)) {
+    return /* @__PURE__ */ new Set();
   }
   return extractFromLorasWidget(node);
 }
@@ -14432,8 +15015,18 @@ const LORA_PROVIDER_NODE_TYPES = [
   "Lora Randomizer (LoraManager)",
   "Lora Cycler (LoraManager)"
 ];
-function isLoraProviderNode(comfyClass) {
-  return LORA_PROVIDER_NODE_TYPES.includes(comfyClass);
+const LORA_STACK_AGGREGATOR_NODE_TYPES = [
+  "Lora Stack Combiner (LoraManager)"
+];
+const LORA_CHAIN_NODE_TYPES = [
+  ...LORA_PROVIDER_NODE_TYPES,
+  ...LORA_STACK_AGGREGATOR_NODE_TYPES
+];
+function isLoraStackAggregatorNode(comfyClass) {
+  return LORA_STACK_AGGREGATOR_NODE_TYPES.includes(comfyClass);
+}
+function isLoraChainNode(comfyClass) {
+  return LORA_CHAIN_NODE_TYPES.includes(comfyClass);
 }
 function isMapLike(collection) {
   return collection && typeof collection.entries === "function" && typeof collection.values === "function";
@@ -14471,14 +15064,17 @@ function getLinkFromGraph(graph, linkId) {
   }
   return graph.links[linkId] || null;
 }
-function getConnectedInputStackers(node) {
+function isLoraStackInput(input) {
+  return (input == null ? void 0 : input.type) === "LORA_STACK";
+}
+function getConnectedInputLoraChainNodes(node) {
   var _a2, _b;
-  const connectedStackers = [];
+  const connectedNodes = [];
   if (!(node == null ? void 0 : node.inputs)) {
-    return connectedStackers;
+    return connectedNodes;
   }
   for (const input of node.inputs) {
-    if (input.name !== "lora_stack" || !input.link) {
+    if (!isLoraStackInput(input) || !input.link) {
       continue;
     }
     const link = getLinkFromGraph(node.graph, input.link);
@@ -14486,11 +15082,11 @@ function getConnectedInputStackers(node) {
       continue;
     }
     const sourceNode = (_b = (_a2 = node.graph) == null ? void 0 : _a2.getNodeById) == null ? void 0 : _b.call(_a2, link.origin_id);
-    if (sourceNode && isLoraProviderNode(sourceNode.comfyClass)) {
-      connectedStackers.push(sourceNode);
+    if (sourceNode && isLoraChainNode(sourceNode.comfyClass)) {
+      connectedNodes.push(sourceNode);
     }
   }
-  return connectedStackers;
+  return connectedNodes;
 }
 function getConnectedTriggerToggleNodes(node) {
   var _a2, _b, _c;
@@ -14525,6 +15121,9 @@ function getActiveLorasFromNode(node) {
     }
     return activeLoraNames;
   }
+  if (isLoraStackAggregatorNode(node.comfyClass)) {
+    return activeLoraNames;
+  }
   let lorasWidget = node.lorasWidget;
   if (!lorasWidget && node.widgets) {
     lorasWidget = node.widgets.find((w2) => w2.name === "loras");
@@ -14548,11 +15147,14 @@ function collectActiveLorasFromChain(node, visited = /* @__PURE__ */ new Set()) 
   }
   visited.add(nodeKey);
   const isNodeActive2 = node.mode === void 0 || node.mode === 0 || node.mode === 3;
-  const allActiveLoraNames = isNodeActive2 ? getActiveLorasFromNode(node) : /* @__PURE__ */ new Set();
-  const inputStackers = getConnectedInputStackers(node);
-  for (const stacker of inputStackers) {
-    const stackerLoras = collectActiveLorasFromChain(stacker, visited);
-    stackerLoras.forEach((name) => allActiveLoraNames.add(name));
+  if (!isNodeActive2) {
+    return /* @__PURE__ */ new Set();
+  }
+  const allActiveLoraNames = getActiveLorasFromNode(node);
+  const inputChainNodes = getConnectedInputLoraChainNodes(node);
+  for (const chainNode of inputChainNodes) {
+    const upstreamLoras = collectActiveLorasFromChain(chainNode, visited);
+    upstreamLoras.forEach((name) => allActiveLoraNames.add(name));
   }
   return allActiveLoraNames;
 }
@@ -14621,7 +15223,7 @@ function updateDownstreamLoaders(startNode, visited = /* @__PURE__ */ new Set())
             if (targetNode && targetNode.comfyClass === "Lora Loader (LoraManager)") {
               const allActiveLoraNames = collectActiveLorasFromChain(targetNode);
               updateConnectedTriggerWords(targetNode, allActiveLoraNames);
-            } else if (targetNode && isLoraProviderNode(targetNode.comfyClass)) {
+            } else if (targetNode && isLoraChainNode(targetNode.comfyClass)) {
               updateDownstreamLoaders(targetNode, visited);
             }
           }
@@ -14631,17 +15233,19 @@ function updateDownstreamLoaders(startNode, visited = /* @__PURE__ */ new Set())
   }
 }
 const LORA_POOL_WIDGET_MIN_WIDTH = 500;
-const LORA_POOL_WIDGET_MIN_HEIGHT = 400;
+const LORA_POOL_WIDGET_MIN_HEIGHT = 520;
 const LORA_RANDOMIZER_WIDGET_MIN_WIDTH = 500;
 const LORA_RANDOMIZER_WIDGET_MIN_HEIGHT = 448;
 const LORA_RANDOMIZER_WIDGET_MAX_HEIGHT = LORA_RANDOMIZER_WIDGET_MIN_HEIGHT;
 const LORA_CYCLER_WIDGET_MIN_WIDTH = 380;
-const LORA_CYCLER_WIDGET_MIN_HEIGHT = 314;
+const LORA_CYCLER_WIDGET_MIN_HEIGHT = 408;
 const LORA_CYCLER_WIDGET_MAX_HEIGHT = LORA_CYCLER_WIDGET_MIN_HEIGHT;
 const JSON_DISPLAY_WIDGET_MIN_WIDTH = 300;
 const JSON_DISPLAY_WIDGET_MIN_HEIGHT = 200;
 const AUTOCOMPLETE_TEXT_WIDGET_MIN_HEIGHT = 60;
 const AUTOCOMPLETE_TEXT_WIDGET_MAX_HEIGHT = 100;
+const AUTOCOMPLETE_METADATA_VERSION = 1;
+const LORA_MANAGER_WIDGET_IDS_PROPERTY = "__lm_widget_ids";
 function forwardMiddleMouseToCanvas(container) {
   if (!container) return;
   container.addEventListener("pointerdown", (event) => {
@@ -14775,7 +15379,8 @@ function createLoraRandomizerWidget(node) {
   };
   const vueApp = createApp(LoraRandomizerWidget, {
     widget,
-    node
+    node,
+    api
   });
   vueApp.use(PrimeVue, {
     unstyled: true,
@@ -14807,7 +15412,24 @@ function createLoraCyclerWidget(node) {
   container.style.flexDirection = "column";
   container.style.overflow = "hidden";
   forwardMiddleMouseToCanvas(container);
-  let internalValue;
+  const defaultConfig = {
+    current_index: 1,
+    total_count: 0,
+    pool_config_hash: "",
+    model_strength: 1,
+    clip_strength: 1,
+    use_same_clip_strength: true,
+    use_preset_strength: false,
+    preset_strength_scale: 1,
+    sort_by: "filename",
+    current_lora_name: "",
+    current_lora_filename: "",
+    repeat_count: 1,
+    repeat_used: 0,
+    is_paused: false,
+    include_no_lora: false
+  };
+  let internalValue = defaultConfig;
   const widget = node.addDOMWidget(
     "cycler_config",
     "CYCLER_CONFIG",
@@ -14912,6 +15534,97 @@ function createJsonDisplayWidget(node) {
   return { widget };
 }
 const widgetInputOptions = /* @__PURE__ */ new Map();
+function getSerializableWidgetNames(node) {
+  return (node.widgets || []).filter((widget) => widget && widget.serialize !== false).map((widget) => widget.name);
+}
+function createAutocompleteMetadataValue(textWidgetName = "text") {
+  return {
+    version: AUTOCOMPLETE_METADATA_VERSION,
+    textWidgetName
+  };
+}
+function shouldBypassAutocompleteWidgetMigration(node, widgetValues) {
+  var _a2, _b;
+  const inputDefs = (_b = (_a2 = node == null ? void 0 : node.constructor) == null ? void 0 : _a2.nodeData) == null ? void 0 : _b.inputs;
+  if (!inputDefs || !Array.isArray(widgetValues)) {
+    return false;
+  }
+  const widgetNames = new Set((node.widgets || []).map((widget) => widget == null ? void 0 : widget.name));
+  const hasAutocompleteMetadataWidget = Array.from(widgetNames).some(
+    (name) => typeof name === "string" && name.startsWith("__lm_autocomplete_meta_")
+  );
+  if (!hasAutocompleteMetadataWidget) {
+    return false;
+  }
+  const originalWidgetsInputs = Object.values(inputDefs).filter(
+    (input) => widgetNames.has(input.name) || input.forceInput
+  );
+  const widgetIndexHasForceInput = originalWidgetsInputs.flatMap(
+    (input) => input.control_after_generate ? [!!input.forceInput, false] : [!!input.forceInput]
+  );
+  return widgetIndexHasForceInput.some(Boolean) && widgetIndexHasForceInput.length === widgetValues.length;
+}
+function remapWidgetValuesByName(widgetValues, savedWidgetNames, currentWidgetNames) {
+  const valueByName = /* @__PURE__ */ new Map();
+  savedWidgetNames.forEach((name, index) => {
+    if (index < widgetValues.length) {
+      valueByName.set(name, widgetValues[index]);
+    }
+  });
+  const remappedValues = [];
+  for (const name of currentWidgetNames) {
+    if (valueByName.has(name)) {
+      remappedValues.push(valueByName.get(name));
+    }
+  }
+  return remappedValues;
+}
+function injectDefaultAutocompleteMetadataValues(widgetValues, currentWidgetNames) {
+  const repairedValues = [];
+  let legacyValueIndex = 0;
+  for (const widgetName of currentWidgetNames) {
+    if (widgetName.startsWith("__lm_autocomplete_meta_")) {
+      const textWidgetName = widgetName.replace("__lm_autocomplete_meta_", "") || "text";
+      repairedValues.push(createAutocompleteMetadataValue(textWidgetName));
+      continue;
+    }
+    if (legacyValueIndex < widgetValues.length) {
+      repairedValues.push(widgetValues[legacyValueIndex]);
+      legacyValueIndex++;
+    }
+  }
+  return repairedValues;
+}
+function normalizeAutocompleteWidgetValues(node, info) {
+  var _a2;
+  if (!info || !Array.isArray(info.widgets_values)) {
+    return;
+  }
+  const currentWidgetNames = getSerializableWidgetNames(node);
+  if (currentWidgetNames.length === 0) {
+    return;
+  }
+  const savedWidgetNames = (_a2 = info.properties) == null ? void 0 : _a2[LORA_MANAGER_WIDGET_IDS_PROPERTY];
+  if (Array.isArray(savedWidgetNames) && savedWidgetNames.length > 0) {
+    const remappedValues = remapWidgetValuesByName(
+      info.widgets_values,
+      savedWidgetNames,
+      currentWidgetNames
+    );
+    info.widgets_values = remappedValues;
+    return;
+  }
+  const metadataWidgetCount = currentWidgetNames.filter(
+    (name) => name.startsWith("__lm_autocomplete_meta_")
+  ).length;
+  if (metadataWidgetCount > 0 && info.widgets_values.length === currentWidgetNames.length - metadataWidgetCount) {
+    const repairedValues = injectDefaultAutocompleteMetadataValues(
+      info.widgets_values,
+      currentWidgetNames
+    );
+    info.widgets_values = repairedValues;
+  }
+}
 const initVueDomModeListener = () => {
   var _a2, _b;
   if ((_b = (_a2 = app$1.ui) == null ? void 0 : _a2.settings) == null ? void 0 : _b.addEventListener) {
@@ -14939,6 +15652,7 @@ if ((_a = app$1.ui) == null ? void 0 : _a.settings) {
 }
 function createAutocompleteTextWidgetFactory(node, widgetName, modelType, inputOptions = {}) {
   var _a2, _b, _c;
+  const metadataWidgetName = `__lm_autocomplete_meta_${widgetName}`;
   const container = document.createElement("div");
   container.id = `autocomplete-text-widget-${node.id}-${widgetName}`;
   container.style.width = "100%";
@@ -14949,6 +15663,15 @@ function createAutocompleteTextWidgetFactory(node, widgetName, modelType, inputO
   forwardMiddleMouseToCanvas(container);
   const widgetElementRef = { inputEl: void 0 };
   container.__widgetInputEl = widgetElementRef;
+  const metadataWidget = node.addWidget("text", metadataWidgetName, {
+    version: AUTOCOMPLETE_METADATA_VERSION,
+    textWidgetName: widgetName
+  });
+  metadataWidget.value = createAutocompleteMetadataValue(widgetName);
+  metadataWidget.type = "LORA_MANAGER_AUTOCOMPLETE_METADATA";
+  metadataWidget.hidden = true;
+  metadataWidget.computeSize = () => [0, -4];
+  metadataWidget.serializeValue = () => metadataWidget.value;
   const widget = node.addDOMWidget(
     widgetName,
     `AUTOCOMPLETE_TEXT_${modelType.toUpperCase()}`,
@@ -14983,6 +15706,7 @@ function createAutocompleteTextWidgetFactory(node, widgetName, modelType, inputO
       }
     }
   );
+  widget.metadataWidget = metadataWidget;
   const spellcheck = ((_c = (_b = (_a2 = app$1.ui) == null ? void 0 : _a2.settings) == null ? void 0 : _b.getSettingValue) == null ? void 0 : _c.call(_b, "Comfy.TextareaWidget.Spellcheck")) ?? false;
   const vueApp = createApp(AutocompleteTextWidget, {
     widget,
@@ -15067,13 +15791,32 @@ app$1.registerExtension({
     var _a2, _b;
     const comfyClass = nodeType.comfyClass;
     const inputs = { ...(_a2 = nodeData.input) == null ? void 0 : _a2.required, ...(_b = nodeData.input) == null ? void 0 : _b.optional };
+    let hasAutocompleteWidget = false;
     for (const [inputName, inputDef] of Object.entries(inputs)) {
       if (Array.isArray(inputDef) && typeof inputDef[0] === "string" && inputDef[0].startsWith("AUTOCOMPLETE_TEXT_")) {
         const options = inputDef[1] || {};
         widgetInputOptions.set(`${nodeData.name}:${inputName}`, options);
+        hasAutocompleteWidget = true;
       }
     }
-    if (LORA_PROVIDER_NODE_TYPES$1.includes(comfyClass)) {
+    if (hasAutocompleteWidget) {
+      const originalOnSerialize = nodeType.prototype.onSerialize;
+      const originalConfigure = nodeType.prototype.configure;
+      nodeType.prototype.onSerialize = function(serialized) {
+        originalOnSerialize == null ? void 0 : originalOnSerialize.apply(this, arguments);
+        serialized.properties = serialized.properties || {};
+        const widgetIds = getSerializableWidgetNames(this);
+        serialized.properties[LORA_MANAGER_WIDGET_IDS_PROPERTY] = widgetIds;
+      };
+      nodeType.prototype.configure = function(info) {
+        normalizeAutocompleteWidgetValues(this, info);
+        if (shouldBypassAutocompleteWidgetMigration(this, (info == null ? void 0 : info.widgets_values) ?? [])) {
+          info.widgets_values = [...info.widgets_values ?? [], null];
+        }
+        return originalConfigure == null ? void 0 : originalConfigure.apply(this, arguments);
+      };
+    }
+    if (LORA_CHAIN_NODE_TYPES$1.includes(comfyClass)) {
       const originalOnNodeCreated = nodeType.prototype.onNodeCreated;
       nodeType.prototype.onNodeCreated = function() {
         originalOnNodeCreated == null ? void 0 : originalOnNodeCreated.apply(this, arguments);

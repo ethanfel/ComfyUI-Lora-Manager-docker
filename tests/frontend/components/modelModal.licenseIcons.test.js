@@ -80,11 +80,19 @@ vi.mock(MODEL_VERSIONS_MODULE, () => ({
 }));
 
 vi.mock(RECIPE_TAB_MODULE, () => ({
-  loadRecipesForLora: vi.fn(),
+  loadRecipesForModel: vi.fn(),
 }));
 
 vi.mock(I18N_HELPERS_MODULE, () => ({
   translate: vi.fn((_, __, fallback) => fallback || ''),
+}));
+
+vi.mock('../../../static/js/api/apiConfig.js', () => ({
+  MODEL_TYPES: {
+    LORA: 'loras',
+    CHECKPOINT: 'checkpoints',
+    EMBEDDING: 'embeddings'
+  }
 }));
 
 vi.mock(API_FACTORY, () => ({

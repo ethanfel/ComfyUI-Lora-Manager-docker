@@ -1,7 +1,12 @@
 import { api } from "../../scripts/api.js";
 import { app } from "../../scripts/app.js";
 import { TextAreaCaretHelper } from "./textarea_caret_helper.js";
-import { getPromptTagAutocompletePreference, getTagSpaceReplacementPreference } from "./settings.js";
+import {
+    getAutocompleteAppendCommaPreference,
+    getAutocompleteAcceptKeyPreference,
+    getPromptTagAutocompletePreference,
+    getTagSpaceReplacementPreference,
+} from "./settings.js";
 import { showToast } from "./utils.js";
 
 // Command definitions for category filtering
@@ -108,6 +113,42 @@ function parseSearchTokens(term = '') {
     return { include, exclude };
 }
 
+function formatAutocompleteInsertion(text = '') {
+    const trimmed = typeof text === 'string' ? text.trim() : '';
+    if (!trimmed) {
+        return '';
+    }
+
+    return getAutocompleteAppendCommaPreference() ? `${trimmed},` : `${trimmed} `;
+}
+
+function shouldAcceptAutocompleteKey(key) {
+    const mode = getAutocompleteAcceptKeyPreference();
+
+    if (mode === 'tab_only') {
+        return key === 'Tab';
+    }
+
+    if (mode === 'enter_only') {
+        return key === 'Enter';
+    }
+
+    return key === 'Tab' || key === 'Enter';
+}
+
+function normalizeAutocompleteMatchText(text = '') {
+    return text.toLowerCase().replace(/[-_\s']/g, '');
+}
+
+const AUTOCOMPLETE_METADATA_VERSION = 1;
+
+function createAutocompleteMetadataBase(textWidgetName = 'text') {
+    return {
+        version: AUTOCOMPLETE_METADATA_VERSION,
+        textWidgetName,
+    };
+}
+
 function createDefaultBehavior(modelType) {
     return {
         enablePreview: false,
@@ -116,7 +157,7 @@ function createDefaultBehavior(modelType) {
             if (!trimmed) {
                 return '';
             }
-            return `${trimmed}, `;
+            return formatAutocompleteInsertion(trimmed);
         },
     };
 }
@@ -185,9 +226,9 @@ const MODEL_BEHAVIORS = {
             }
 
             if (clipStrength !== null) {
-                return `<lora:${fileName}:${strength}:${clipStrength}>, `;
+                return formatAutocompleteInsertion(`<lora:${fileName}:${strength}:${clipStrength}>`);
             }
-            return `<lora:${fileName}:${strength}>, `;
+            return formatAutocompleteInsertion(`<lora:${fileName}:${strength}>`);
         }
     },
     embeddings: {
@@ -202,13 +243,13 @@ const MODEL_BEHAVIORS = {
             const { directories, fileName } = splitRelativePath(relativePath);
             const trimmedName = removeGeneralExtension(fileName);
             const folder = directories.length ? `${directories.join('/')}/` : '';
-            return `embedding:${folder}${trimmedName}, `;
+            return formatAutocompleteInsertion(`embedding:${folder}${trimmedName}`);
         },
     },
     custom_words: {
         enablePreview: false,
         async getInsertText(_instance, relativePath) {
-            return `${relativePath}, `;
+            return formatAutocompleteInsertion(relativePath);
         },
     },
     prompt: {
@@ -245,7 +286,7 @@ const MODEL_BEHAVIORS = {
                 const { directories, fileName } = splitRelativePath(relativePath);
                 const trimmedName = removeGeneralExtension(fileName);
                 const folder = directories.length ? `${directories.join('/')}/` : '';
-                return `embedding:${folder}${trimmedName}, `;
+                return formatAutocompleteInsertion(`embedding:${folder}${trimmedName}`);
             } else {
                 let tagText = relativePath;
 
@@ -253,7 +294,7 @@ const MODEL_BEHAVIORS = {
                     tagText = tagText.replace(/_/g, ' ');
                 }
 
-                return `${tagText}, `;
+                return formatAutocompleteInsertion(tagText);
             }
         },
     },
@@ -620,18 +661,131 @@ class AutoComplete {
     }
     
     getSearchTerm(value) {
-        // Use helper to get text before cursor for more accurate positioning
-        const beforeCursor = this.helper.getBeforeCursor();
-        if (!beforeCursor) {
-            return '';
+        return this.getActiveSearchRange(value).text;
+    }
+
+    getActiveSearchRange(value = null) {
+        const currentValue = typeof value === 'string' ? value : this.inputElement.value;
+        const caretPos = this.getCaretPosition();
+        const beforeCursor = this.helper.getBeforeCursor() ?? currentValue.substring(0, caretPos);
+        let start = this._getHardBoundaryStart(beforeCursor);
+
+        if (!getAutocompleteAppendCommaPreference()) {
+            const persistedBoundaryEnd = this._getPersistedBoundaryEnd(currentValue, caretPos);
+            if (persistedBoundaryEnd !== null && persistedBoundaryEnd > start) {
+                start = persistedBoundaryEnd;
+            }
         }
 
-        // Split on comma and '>' delimiters only (do not split on spaces)
-        const segments = beforeCursor.split(/[,\>]+/);
+        const rawText = beforeCursor.substring(start);
+        const text = rawText.trim();
+        const leadingWhitespaceLength = rawText.length - rawText.trimStart().length;
+        const trimmedStart = start + leadingWhitespaceLength;
 
-        // Return the last non-empty segment as search term
-        const lastSegment = segments[segments.length - 1] || '';
-        return lastSegment.trim();
+        return {
+            start,
+            trimmedStart,
+            end: caretPos,
+            beforeCursor,
+            rawText,
+            text,
+        };
+    }
+
+    _getHardBoundaryStart(beforeCursor = '') {
+        const lastComma = beforeCursor.lastIndexOf(',');
+        const lastAngle = beforeCursor.lastIndexOf('>');
+        const lastNewline = Math.max(beforeCursor.lastIndexOf('\n'), beforeCursor.lastIndexOf('\r'));
+        return Math.max(lastComma, lastAngle, lastNewline) + 1;
+    }
+
+    _getMetadataWidget() {
+        return this.inputElement?._autocompleteMetadataWidget
+            ?? this.inputElement?._autocompleteHostWidget?.metadataWidget
+            ?? null;
+    }
+
+    _getMetadataBase() {
+        return createAutocompleteMetadataBase(this.inputElement?._autocompleteTextWidgetName ?? 'text');
+    }
+
+    _getAutocompleteMetadata() {
+        const metadataWidget = this._getMetadataWidget();
+        const value = metadataWidget?.value;
+
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+            return this._getMetadataBase();
+        }
+
+        return {
+            ...this._getMetadataBase(),
+            ...value,
+        };
+    }
+
+    _setAutocompleteMetadata(metadata = {}) {
+        const metadataWidget = this._getMetadataWidget();
+        if (!metadataWidget) {
+            return;
+        }
+
+        metadataWidget.value = {
+            ...this._getMetadataBase(),
+            ...metadata,
+        };
+    }
+
+    _clearLastAcceptedBoundary() {
+        const metadataWidget = this._getMetadataWidget();
+        if (!metadataWidget) {
+            return;
+        }
+
+        const metadata = this._getAutocompleteMetadata();
+        delete metadata.lastAccepted;
+        metadataWidget.value = metadata;
+    }
+
+    _storeLastAcceptedBoundary(boundary) {
+        this._setAutocompleteMetadata({ lastAccepted: boundary });
+    }
+
+    _getPersistedBoundaryEnd(currentValue, caretPos) {
+        const metadata = this._getAutocompleteMetadata();
+        const boundary = metadata?.lastAccepted;
+
+        if (!boundary || typeof boundary !== 'object') {
+            return null;
+        }
+
+        const { start, end, insertedText, textSnapshot } = boundary;
+
+        if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end < start) {
+            this._clearLastAcceptedBoundary();
+            return null;
+        }
+
+        if (end > currentValue.length || end > caretPos) {
+            this._clearLastAcceptedBoundary();
+            return null;
+        }
+
+        if (typeof insertedText !== 'string' || insertedText.length === 0) {
+            this._clearLastAcceptedBoundary();
+            return null;
+        }
+
+        if (currentValue.slice(start, end) !== insertedText) {
+            this._clearLastAcceptedBoundary();
+            return null;
+        }
+
+        if (typeof textSnapshot !== 'string' || currentValue.slice(0, end) !== textSnapshot) {
+            this._clearLastAcceptedBoundary();
+            return null;
+        }
+
+        return end;
     }
 
     /**
@@ -738,9 +892,103 @@ class AutoComplete {
         return { matched: false, isExactMatch: false };
     }
 
+    _getLiveSearchTermForAcceptance() {
+        const rawSearchTerm = this.getSearchTerm(this.inputElement.value);
+
+        if (this.modelType === 'embeddings') {
+            const match = rawSearchTerm.match(/^emb:(.*)$/i);
+            return (match?.[1] || '').trim();
+        }
+
+        if (this.modelType === 'prompt') {
+            const embeddingMatch = rawSearchTerm.match(/^emb:(.*)$/i);
+            if (embeddingMatch) {
+                return (embeddingMatch[1] || '').trim();
+            }
+
+            const commandResult = this._parseCommandInput(rawSearchTerm);
+            return commandResult.searchTerm ?? rawSearchTerm;
+        }
+
+        return rawSearchTerm;
+    }
+
+    _getPreferredSelectedIndex(searchTerm = '') {
+        if (!this.items?.length) {
+            return -1;
+        }
+
+        if (this.showingCommands) {
+            if (this.selectedIndex >= 0 && this.selectedIndex < this.items.length) {
+                return this.selectedIndex;
+            }
+            return 0;
+        }
+
+        const trimmedSearchTerm = searchTerm.trim();
+        if (!trimmedSearchTerm) {
+            if (this.selectedIndex >= 0 && this.selectedIndex < this.items.length) {
+                return this.selectedIndex;
+            }
+            return 0;
+        }
+
+        const searchLower = trimmedSearchTerm.toLowerCase();
+        const normalizedSearch = normalizeAutocompleteMatchText(trimmedSearchTerm);
+        let bestIndex = -1;
+        let bestScore = -Infinity;
+
+        this.items.forEach((item, index) => {
+            const displayText = this._getDisplayText(item);
+            const textLower = displayText.toLowerCase();
+            const normalizedText = normalizeAutocompleteMatchText(displayText);
+            let score = -1;
+
+            if (textLower === searchLower) {
+                score = 5000;
+            } else if (normalizedText === normalizedSearch) {
+                score = 4500;
+            } else if (textLower.startsWith(searchLower)) {
+                score = 4000;
+            } else if (normalizedText.startsWith(normalizedSearch)) {
+                score = 3500;
+            } else if (textLower.includes(searchLower)) {
+                score = 3000;
+            } else if (normalizedText.includes(normalizedSearch)) {
+                score = 2500;
+            }
+
+            if (score > -1) {
+                score -= index;
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestIndex = index;
+                }
+            }
+        });
+
+        if (bestIndex !== -1) {
+            return bestIndex;
+        }
+
+        if (this.selectedIndex >= 0 && this.selectedIndex < this.items.length) {
+            return this.selectedIndex;
+        }
+
+        return 0;
+    }
+
     async search(term = '', endpoint = null) {
         try {
             this.currentSearchTerm = term;
+
+            // Save current search type to detect mode changes during async search
+            const searchTypeAtStart = this.searchType;
+
+            // Clear items before starting new search to avoid stale data
+            // This is critical for preventing command suggestions from persisting
+            // when switching from command mode to regular tag search
+            this.items = [];
 
             if (!endpoint) {
                 endpoint = `/lm/${this.modelType}/relative-paths`;
@@ -776,7 +1024,15 @@ class AutoComplete {
 
             const resultsArrays = await Promise.all(searchPromises);
 
-            // Merge and deduplicate results
+            // Check if search type changed during async operation
+            // If so, skip updating items to prevent stale data from showing
+            if (this.searchType !== searchTypeAtStart) {
+                console.log('[Lora Manager] Search type changed during search, skipping update');
+                return;
+            }
+
+            // Merge and deduplicate results while preserving order from backend
+            // Backend returns results sorted by relevance, so we maintain that order
             const seen = new Set();
             const mergedItems = [];
 
@@ -793,39 +1049,10 @@ class AutoComplete {
                 }
             }
 
-            // Score and sort results: exact matches first, then by match quality
-            const scoredItems = mergedItems.map(item => {
-                let bestScore = -1;
-                let isExact = false;
-
-                for (const query of queriesToExecute) {
-                    const match = this._matchItem(item, query);
-                    if (match.matched) {
-                        // Higher score for exact matches
-                        const score = match.isExactMatch ? 1000 : 100;
-                        if (score > bestScore) {
-                            bestScore = score;
-                            isExact = match.isExactMatch;
-                        }
-                    }
-                }
-
-                return { item, score: bestScore, isExact };
-            });
-
-            // Sort by score (descending), exact matches first
-            scoredItems.sort((a, b) => {
-                if (b.isExact !== a.isExact) {
-                    return b.isExact ? 1 : -1;
-                }
-                return b.score - a.score;
-            });
-
-            // Extract just the items
-            const sortedItems = scoredItems.map(s => s.item);
-
-            if (sortedItems.length > 0) {
-                this.items = sortedItems;
+            // Use backend-sorted results directly without re-scoring
+            // Backend already ranks by: FTS5 bm25 score + post count + exact prefix boost
+            if (mergedItems.length > 0) {
+                this.items = mergedItems;
                 this.render();
                 this.show();
             } else {
@@ -908,6 +1135,12 @@ class AutoComplete {
      * @param {string} filter - Optional filter for commands
      */
     _showCommandList(filter = '') {
+        // Only show command list if we're in command mode
+        // This prevents stale command suggestions from appearing after switching to tag search
+        if (this.searchType !== 'commands' && this.showingCommands !== true) {
+            return;
+        }
+        
         const filterLower = filter.toLowerCase();
 
         // Get unique commands (avoid duplicates like /char and /character)
@@ -942,12 +1175,20 @@ class AutoComplete {
      * Render the command list dropdown
      */
     _renderCommandList() {
-        this.dropdown.innerHTML = '';
+        // Clear command list items properly based on rendering mode
+        if (this.contentContainer) {
+            // Virtual scrolling mode - clear content container
+            this.contentContainer.innerHTML = '';
+        } else {
+            // Non-virtual scrolling mode - clear dropdown direct children
+            this.dropdown.innerHTML = '';
+        }
         this.selectedIndex = -1;
 
         this.items.forEach((item, index) => {
             const itemEl = document.createElement('div');
             itemEl.className = 'comfy-autocomplete-item comfy-autocomplete-command';
+            itemEl.dataset.index = index.toString();
 
             const cmdSpan = document.createElement('span');
             cmdSpan.className = 'lm-autocomplete-command-name';
@@ -973,6 +1214,8 @@ class AutoComplete {
                 justify-content: space-between;
                 align-items: center;
                 gap: 12px;
+                height: ${this.options.itemHeight}px;
+                box-sizing: border-box;
             `;
 
             itemEl.addEventListener('mouseenter', () => {
@@ -983,17 +1226,28 @@ class AutoComplete {
                 this._insertCommand(item.command);
             });
 
-            this.dropdown.appendChild(itemEl);
+            // Append to correct container based on rendering mode
+            if (this.contentContainer) {
+                this.contentContainer.appendChild(itemEl);
+            } else {
+                this.dropdown.appendChild(itemEl);
+            }
         });
 
         // Remove border from last item
-        if (this.dropdown.lastChild) {
-            this.dropdown.lastChild.style.borderBottom = 'none';
+        const lastChild = this.contentContainer ? this.contentContainer.lastChild : this.dropdown.lastChild;
+        if (lastChild) {
+            lastChild.style.borderBottom = 'none';
         }
 
-        // Auto-select first item
+        // Auto-select immediately so accept keys remain stable.
         if (this.items.length > 0) {
-            setTimeout(() => this.selectItem(0), 100);
+            this.selectItem(0);
+        }
+        
+        // Update virtual scroll height for virtual scrolling mode
+        if (this.contentContainer) {
+            this.updateVirtualScrollHeight();
         }
     }
 
@@ -1003,25 +1257,12 @@ class AutoComplete {
      */
     _insertCommand(command) {
         const currentValue = this.inputElement.value;
-        const caretPos = this.getCaretPosition();
-
-        // Find the start of the current command being typed
-        const beforeCursor = currentValue.substring(0, caretPos);
-        const segments = beforeCursor.split(/[,\>]+/);
-        const lastSegment = segments[segments.length - 1] || '';
-        let commandStartPos = caretPos - lastSegment.length;
-
-        // Preserve leading space if the last segment starts with a space
-        // This handles cases like "1girl, /character" where we want to keep the space
-        // after the comma instead of replacing it
-        if (lastSegment.length > 0 && lastSegment[0] === ' ') {
-            // Move start position past the leading space to preserve it
-            commandStartPos = commandStartPos + 1;
-        }
+        const activeRange = this.getActiveSearchRange(currentValue);
+        const commandStartPos = activeRange.trimmedStart;
 
         // Insert command with trailing space
         const insertText = command + ' ';
-        const newValue = currentValue.substring(0, commandStartPos) + insertText + currentValue.substring(caretPos);
+        const newValue = currentValue.substring(0, commandStartPos) + insertText + currentValue.substring(activeRange.end);
         const newCaretPos = commandStartPos + insertText.length;
 
         this.inputElement.value = newValue;
@@ -1057,28 +1298,49 @@ class AutoComplete {
         }
 
         if (this.options.enableVirtualScroll && this.contentContainer) {
-            // Use virtual scrolling - only update visible items if dropdown is already visible
-            // If not visible, updateVisibleItems() will be called from show() after display:block
+            // Use virtual scrolling - always update visible items to ensure content is fresh
+            // The dropdown visibility is controlled by show()/hide()
             this.updateVirtualScrollHeight();
-            if (this.isVisible && this.dropdown.style.display !== 'none') {
-                this.updateVisibleItems();
-            }
+            this.updateVisibleItems();
         } else {
             // Traditional rendering (fallback)
             this.dropdown.innerHTML = '';
 
-            // Check if items are enriched (have tag_name, category, post_count)
+            // Check if items are enriched (have tag_name, category, post_count) or command objects
             const isEnriched = this.items[0] && typeof this.items[0] === 'object' && 'tag_name' in this.items[0];
+            const isCommand = this.items[0] && typeof this.items[0] === 'object' && 'command' in this.items[0];
 
             this.items.forEach((itemData, index) => {
                 const item = document.createElement('div');
                 item.className = 'comfy-autocomplete-item';
 
-                // Get the display text and path for insertion
-                const displayText = isEnriched ? itemData.tag_name : itemData;
-                const insertPath = isEnriched ? itemData.tag_name : itemData;
+                if (isCommand) {
+                    // Render command item
+                    const cmdSpan = document.createElement('span');
+                    cmdSpan.className = 'lm-autocomplete-command-name';
+                    cmdSpan.textContent = itemData.command;
 
-                if (isEnriched) {
+                    const labelSpan = document.createElement('span');
+                    labelSpan.className = 'lm-autocomplete-command-label';
+                    labelSpan.textContent = itemData.label;
+
+                    item.appendChild(cmdSpan);
+                    item.appendChild(labelSpan);
+                    item.style.cssText = `
+                        padding: 8px 12px;
+                        cursor: pointer;
+                        color: rgba(226, 232, 240, 0.8);
+                        border-bottom: 1px solid rgba(226, 232, 240, 0.1);
+                        transition: all 0.2s ease;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 12px;
+                    `;
+                } else if (isEnriched) {
                     // Render enriched item with category badge and post count
                     this._renderEnrichedItem(item, itemData, this.currentSearchTerm);
                 } else {
@@ -1087,7 +1349,7 @@ class AutoComplete {
                     const nameSpan = document.createElement('span');
                     nameSpan.className = 'lm-autocomplete-name';
                     // Use display text without extension for cleaner UI
-                    const displayTextWithoutExt = this._getDisplayText(displayText);
+                    const displayTextWithoutExt = this._getDisplayText(itemData);
                     nameSpan.innerHTML = this.highlightMatch(displayTextWithoutExt, this.currentSearchTerm);
                     nameSpan.style.cssText = `
                         flex: 1;
@@ -1096,24 +1358,24 @@ class AutoComplete {
                         text-overflow: ellipsis;
                     `;
                     item.appendChild(nameSpan);
+                    
+                    // Apply item styles with new color scheme
+                    item.style.cssText = `
+                        padding: 8px 12px;
+                        cursor: pointer;
+                        color: rgba(226, 232, 240, 0.8);
+                        border-bottom: 1px solid rgba(226, 232, 240, 0.1);
+                        transition: all 0.2s ease;
+                        white-space: nowrap;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        position: relative;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                        gap: 8px;
+                    `;
                 }
-
-                // Apply item styles with new color scheme
-                item.style.cssText = `
-                    padding: 8px 12px;
-                    cursor: pointer;
-                    color: rgba(226, 232, 240, 0.8);
-                    border-bottom: 1px solid rgba(226, 232, 240, 0.1);
-                    transition: all 0.2s ease;
-                    white-space: nowrap;
-                    overflow: hidden;
-                    text-overflow: ellipsis;
-                    position: relative;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                    gap: 8px;
-                `;
 
                 // Hover and selection handlers
                 item.addEventListener('mouseenter', () => {
@@ -1126,7 +1388,12 @@ class AutoComplete {
 
                 // Click handler
                 item.addEventListener('click', () => {
-                    this.insertSelection(insertPath);
+                    if (isCommand) {
+                        this._insertCommand(itemData.command);
+                    } else {
+                        const insertPath = isEnriched ? itemData.tag_name : itemData;
+                        this.insertSelection(insertPath);
+                    }
                 });
 
                 this.dropdown.appendChild(item);
@@ -1138,11 +1405,10 @@ class AutoComplete {
             }
         }
 
-        // Auto-select the first item with a small delay
+        // Auto-select immediately so accept keys do not fall through
+        // to native focus traversal while the dropdown is visible.
         if (this.items.length > 0) {
-            setTimeout(() => {
-                this.selectItem(0);
-            }, 100);
+            this.selectItem(0);
         }
     }
 
@@ -1369,38 +1635,10 @@ class AutoComplete {
                 this.hasMoreItems = false;
             }
 
-            // If we got new items, add them and re-render
+            // If we got new items, append them and re-render
+            // IMPORTANT: Do NOT re-sort! Backend already returns results sorted by relevance
             if (newItems.length > 0) {
-                const currentLength = this.items.length;
                 this.items.push(...newItems);
-
-                // Re-score and sort all items
-                const scoredItems = this.items.map(item => {
-                    let bestScore = -1;
-                    let isExact = false;
-
-                    for (const query of queriesToExecute) {
-                        const match = this._matchItem(item, query);
-                        if (match.matched) {
-                            const score = match.isExactMatch ? 1000 : 100;
-                            if (score > bestScore) {
-                                bestScore = score;
-                                isExact = match.isExactMatch;
-                            }
-                        }
-                    }
-
-                    return { item, score: bestScore, isExact };
-                });
-
-                scoredItems.sort((a, b) => {
-                    if (b.isExact !== a.isExact) {
-                        return b.isExact ? 1 : -1;
-                    }
-                    return b.score - a.score;
-                });
-
-                this.items = scoredItems.map(s => s.item);
 
                 // Update render
                 if (this.options.enableVirtualScroll) {
@@ -1458,10 +1696,18 @@ class AutoComplete {
      * Update the total height of the virtual scroll container
      */
     updateVirtualScrollHeight() {
-        if (!this.contentContainer) return;
+        if (!this.contentContainer || !this.scrollContainer) return;
 
         this.totalHeight = this.items.length * this.options.itemHeight;
         this.contentContainer.style.height = `${this.totalHeight}px`;
+        
+        // Adjust scroll container max-height based on actual content
+        // Only show scrollbar when content exceeds visibleItems limit
+        const maxHeight = this.options.visibleItems * this.options.itemHeight;
+        const shouldShowScrollbar = this.totalHeight > maxHeight;
+        
+        this.scrollContainer.style.maxHeight = shouldShowScrollbar ? `${maxHeight}px` : `${this.totalHeight}px`;
+        this.scrollContainer.style.overflowY = shouldShowScrollbar ? 'auto' : 'hidden';
     }
 
     /**
@@ -1473,11 +1719,12 @@ class AutoComplete {
         const scrollTop = this.scrollContainer.scrollTop;
         const containerHeight = this.scrollContainer.clientHeight;
 
-        // Calculate which items should be visible
-        const startIndex = Math.max(0, Math.floor(scrollTop / this.options.itemHeight) - 2);
+        // Calculate which items should be visible with a larger buffer for smoother rendering
+        // Use a fixed buffer of 5 items to ensure selected item is always rendered
+        const startIndex = Math.max(0, Math.floor(scrollTop / this.options.itemHeight) - 5);
         const endIndex = Math.min(
             this.items.length - 1,
-            Math.ceil((scrollTop + containerHeight) / this.options.itemHeight) + 2
+            Math.ceil((scrollTop + containerHeight) / this.options.itemHeight) + 5
         );
 
         // Clear current content
@@ -1492,10 +1739,11 @@ class AutoComplete {
 
         // Render visible items
         const isEnriched = this.items[0] && typeof this.items[0] === 'object' && 'tag_name' in this.items[0];
+        const isCommand = this.items[0] && typeof this.items[0] === 'object' && 'command' in this.items[0];
 
         for (let i = startIndex; i <= endIndex; i++) {
             const itemData = this.items[i];
-            const itemEl = this.createItemElement(itemData, i, isEnriched);
+            const itemEl = this.createItemElement(itemData, i, isEnriched, isCommand);
             this.contentContainer.appendChild(itemEl);
         }
 
@@ -1505,12 +1753,22 @@ class AutoComplete {
             bottomSpacer.style.height = `${(this.items.length - 1 - endIndex) * this.options.itemHeight}px`;
             this.contentContainer.appendChild(bottomSpacer);
         }
+        
+        // Re-apply selection styling after re-rendering
+        // This ensures the selected item remains highlighted even after DOM updates
+        if (this.selectedIndex >= startIndex && this.selectedIndex <= endIndex) {
+            const selectedEl = this.contentContainer.querySelector(`.comfy-autocomplete-item[data-index="${this.selectedIndex}"]`);
+            if (selectedEl) {
+                selectedEl.classList.add('comfy-autocomplete-item-selected');
+                selectedEl.style.backgroundColor = 'rgba(66, 153, 225, 0.2)';
+            }
+        }
     }
 
     /**
      * Create a single item element
      */
-    createItemElement(itemData, index, isEnriched) {
+    createItemElement(itemData, index, isEnriched, isCommand = false) {
         const item = document.createElement('div');
         item.className = 'comfy-autocomplete-item';
         item.dataset.index = index.toString();
@@ -1532,16 +1790,31 @@ class AutoComplete {
             box-sizing: border-box;
         `;
 
-        const displayText = isEnriched ? itemData.tag_name : itemData;
-        const insertPath = isEnriched ? itemData.tag_name : itemData;
+        // Check if this is a command object (override parameter if needed)
+        if (!isCommand && itemData && typeof itemData === 'object' && 'command' in itemData) {
+            isCommand = true;
+        }
 
-        if (isEnriched) {
+        if (isCommand) {
+            // Render command item
+            const cmdSpan = document.createElement('span');
+            cmdSpan.className = 'lm-autocomplete-command-name';
+            cmdSpan.textContent = itemData.command;
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'lm-autocomplete-command-label';
+            labelSpan.textContent = itemData.label;
+
+            item.appendChild(cmdSpan);
+            item.appendChild(labelSpan);
+            item.style.gap = '12px';
+        } else if (isEnriched) {
             this._renderEnrichedItem(item, itemData, this.currentSearchTerm);
         } else {
             const nameSpan = document.createElement('span');
             nameSpan.className = 'lm-autocomplete-name';
             // Use display text without extension for cleaner UI
-            const displayTextWithoutExt = this._getDisplayText(displayText);
+            const displayTextWithoutExt = this._getDisplayText(itemData);
             nameSpan.innerHTML = this.highlightMatch(displayTextWithoutExt, this.currentSearchTerm);
             nameSpan.style.cssText = `
                 flex: 1;
@@ -1561,8 +1834,14 @@ class AutoComplete {
             this.hidePreview();
         });
 
+        // Click handler
         item.addEventListener('click', () => {
-            this.insertSelection(insertPath);
+            if (isCommand) {
+                this._insertCommand(itemData.command);
+            } else {
+                const insertPath = isEnriched ? itemData.tag_name : itemData;
+                this.insertSelection(insertPath);
+            }
         });
 
         return item;
@@ -1578,7 +1857,10 @@ class AutoComplete {
         if (this.options.enableVirtualScroll && this.contentContainer) {
             this.dropdown.style.display = 'block';
             this.isVisible = true;
-            this.updateVisibleItems();
+            // Skip updateVisibleItems if showing commands (already rendered by _renderCommandList)
+            if (!this.showingCommands) {
+                this.updateVisibleItems();
+            }
             this.positionAtCursor();
         } else {
             // Position dropdown at cursor position using TextAreaCaretHelper
@@ -1638,6 +1920,19 @@ class AutoComplete {
         this.isVisible = false;
         this.selectedIndex = -1;
         this.showingCommands = false;
+        
+        // Clear items to prevent stale data from being displayed
+        // when autocomplete is shown again
+        this.items = [];
+        
+        // Clear content container to prevent stale items from showing
+        if (this.contentContainer) {
+            // Virtual scrolling mode - clear content container
+            this.contentContainer.innerHTML = '';
+        } else {
+            // Non-virtual scrolling mode - clear dropdown direct children
+            this.dropdown.innerHTML = '';
+        }
 
         // Reset virtual scrolling state
         this.virtualScrollOffset = 0;
@@ -1688,26 +1983,22 @@ class AutoComplete {
 
                 // If item is not visible, scroll to make it visible
                 if (itemTop < scrollTop || itemBottom > scrollBottom) {
-                    this.scrollContainer.scrollTop = itemTop - containerHeight / 2;
+                    // Scroll to position the item in the visible area
+                    // Position item at 1/3 from top for better visibility
+                    const targetScrollTop = Math.max(0, itemTop - containerHeight / 3);
+                    this.scrollContainer.scrollTop = targetScrollTop;
+                    
                     // Re-render visible items after scroll
                     this.updateVisibleItems();
-                }
-
-                // Find the item element using data-index attribute
-                const selectedEl = container.querySelector(`.comfy-autocomplete-item[data-index="${index}"]`);
-
-                if (selectedEl) {
-                    selectedEl.classList.add('comfy-autocomplete-item-selected');
-                    selectedEl.style.backgroundColor = 'rgba(66, 153, 225, 0.2)';
-
-                    // Show preview for selected item
-                    if (this.options.showPreview) {
-                        if (typeof this.behavior.showPreview === 'function') {
-                            this.behavior.showPreview(this, this.items[index], selectedEl);
-                        } else if (this.previewTooltip) {
-                            this.showPreviewForItem(this.items[index], selectedEl);
-                        }
-                    }
+                    
+                    // Apply selection after DOM is updated
+                    // Use setTimeout to ensure DOM has been re-rendered
+                    setTimeout(() => {
+                        this._applyItemSelection(index);
+                    }, 0);
+                } else {
+                    // Item is already visible, apply selection immediately
+                    this._applyItemSelection(index);
                 }
             } else {
                 // Traditional rendering
@@ -1731,6 +2022,31 @@ class AutoComplete {
             }
         }
     }
+
+    /**
+     * Apply selection styling to an item (used after virtual scroll re-render)
+     * @param {number} index - Index of item to select
+     */
+    _applyItemSelection(index) {
+        if (!this.contentContainer) return;
+
+        // Find the item element using data-index attribute
+        const selectedEl = this.contentContainer.querySelector(`.comfy-autocomplete-item[data-index="${index}"]`);
+
+        if (selectedEl) {
+            selectedEl.classList.add('comfy-autocomplete-item-selected');
+            selectedEl.style.backgroundColor = 'rgba(66, 153, 225, 0.2)';
+
+            // Show preview for selected item
+            if (this.options.showPreview) {
+                if (typeof this.behavior.showPreview === 'function') {
+                    this.behavior.showPreview(this, this.items[index], selectedEl);
+                } else if (this.previewTooltip) {
+                    this.showPreviewForItem(this.items[index], selectedEl);
+                }
+            }
+        }
+    }
     
     handleKeyDown(e) {
         if (!this.isVisible) {
@@ -1740,17 +2056,57 @@ class AutoComplete {
         switch (e.key) {
             case 'ArrowDown':
                 e.preventDefault();
-                this.selectItem(Math.min(this.selectedIndex + 1, this.items.length - 1));
+                if (this.options.enableVirtualScroll && this.scrollContainer) {
+                    // For virtual scrolling, handle boundary cases
+                    if (this.selectedIndex >= this.items.length - 1) {
+                        // Already at last item, try to load more
+                        if (this.hasMoreItems && !this.isLoadingMore) {
+                            this.loadMoreItems().then(() => {
+                                // After loading more, select the next item
+                                if (this.selectedIndex < this.items.length - 1) {
+                                    this.selectItem(this.selectedIndex + 1);
+                                }
+                            });
+                        }
+                    } else {
+                        this.selectItem(this.selectedIndex + 1);
+                    }
+                } else {
+                    this.selectItem(Math.min(this.selectedIndex + 1, this.items.length - 1));
+                }
                 break;
                 
             case 'ArrowUp':
                 e.preventDefault();
-                this.selectItem(Math.max(this.selectedIndex - 1, 0));
+                if (this.options.enableVirtualScroll && this.scrollContainer) {
+                    // For virtual scrolling, handle top boundary
+                    if (this.selectedIndex <= 0) {
+                        // Already at first item, ensure it's selected
+                        this.selectItem(0);
+                    } else {
+                        this.selectItem(this.selectedIndex - 1);
+                    }
+                } else {
+                    this.selectItem(Math.max(this.selectedIndex - 1, 0));
+                }
                 break;
                 
             case 'Enter':
-                e.preventDefault();
+            case 'Tab':
+                if (!shouldAcceptAutocompleteKey(e.key)) {
+                    break;
+                }
+
+                {
+                    const liveSearchTerm = this._getLiveSearchTermForAcceptance();
+                    const preferredIndex = this._getPreferredSelectedIndex(liveSearchTerm);
+                    if (preferredIndex !== -1 && preferredIndex !== this.selectedIndex) {
+                        this.selectItem(preferredIndex);
+                    }
+                }
+
                 if (this.selectedIndex >= 0 && this.selectedIndex < this.items.length) {
+                    e.preventDefault();
                     if (this.showingCommands) {
                         // Insert command
                         this._insertCommand(this.items[this.selectedIndex].command);
@@ -1780,27 +2136,62 @@ class AutoComplete {
         }
 
         const currentValue = this.inputElement.value;
-        const caretPos = this.getCaretPosition();
-
-        // Use getSearchTerm to get the current search term before cursor
-        const beforeCursor = currentValue.substring(0, caretPos);
-        const fullSearchTerm = this.getSearchTerm(beforeCursor);
+        const activeRange = this.getActiveSearchRange(currentValue);
+        const caretPos = activeRange.end;
+        const fullSearchTerm = activeRange.text;
+        let replaceStartPos = activeRange.trimmedStart;
 
         // For regular tag autocomplete (no command), only replace the last space-separated token
         // This allows "hello 1gi" + selecting "1girl" to become "hello 1girl, "
+        // However, if the user typed a multi-word phrase that matches a tag (e.g., "looking to the side"
+        // matching "looking_to_the_side"), replace the entire phrase instead of just the last word.
         // Command mode (e.g., "/char miku") should replace the entire command+search
         let searchTerm = fullSearchTerm;
         if (this.modelType === 'prompt' && this.searchType === 'custom_words' && !this.activeCommand) {
-            searchTerm = this._getLastSpaceToken(fullSearchTerm);
+            // Check if the selectedItem exists and its tag_name matches the full search term
+            // when converted to underscore format (Danbooru convention)
+            const selectedItem = this.selectedIndex >= 0 ? this.items[this.selectedIndex] : null;
+            const selectedTagName = selectedItem && typeof selectedItem === 'object' && 'tag_name' 
+                ? selectedItem.tag_name 
+                : null;
+            
+            // Convert full search term to underscore format and check if it matches selected tag
+            // Normalize multiple spaces to single underscore for matching (e.g., "looking  to   the side" -> "looking_to_the_side")
+            const underscoreVersion = fullSearchTerm.replace(/ +/g, '_').toLowerCase();
+            const selectedTagLower = selectedTagName?.toLowerCase() ?? '';
+            
+            // If multi-word search term is a prefix or suffix of the selected tag,
+            // replace the entire phrase. This handles cases where user types partial tag name.
+            // Examples:
+            // - "looking to the" -> "looking_to_the_side" (prefix match)
+            // - "to the side" -> "looking_to_the_side" (suffix match)
+            // - "looking to the side" -> "looking_to_the_side" (exact match)
+            if (fullSearchTerm.includes(' ') && (
+                selectedTagLower.startsWith(underscoreVersion) ||
+                selectedTagLower.endsWith(underscoreVersion) ||
+                underscoreVersion === selectedTagLower
+            )) {
+                searchTerm = fullSearchTerm;
+                replaceStartPos = activeRange.trimmedStart;
+            } else {
+                searchTerm = this._getLastSpaceToken(fullSearchTerm);
+                replaceStartPos = searchTerm === fullSearchTerm
+                    ? activeRange.trimmedStart
+                    : caretPos - searchTerm.length;
+            }
         }
 
-        const searchStartPos = caretPos - searchTerm.length;
-
         // Only replace the search term, not everything after the last comma
-        const newValue = currentValue.substring(0, searchStartPos) + insertText + currentValue.substring(caretPos);
-        const newCaretPos = searchStartPos + insertText.length;
+        const newValue = currentValue.substring(0, replaceStartPos) + insertText + currentValue.substring(caretPos);
+        const newCaretPos = replaceStartPos + insertText.length;
 
         this.inputElement.value = newValue;
+        this._storeLastAcceptedBoundary({
+            start: replaceStartPos,
+            end: newCaretPos,
+            insertedText: insertText,
+            textSnapshot: newValue.substring(0, newCaretPos),
+        });
 
         // Trigger input event to notify about the change
         const event = new Event('input', { bubbles: true });
@@ -1829,7 +2220,7 @@ class AutoComplete {
         if (!trimmed) {
             return '';
         }
-        return `${trimmed}, `;
+        return formatAutocompleteInsertion(trimmed);
     }
 
     /**
@@ -1908,12 +2299,9 @@ class AutoComplete {
      */
     _clearCurrentToken() {
         const currentValue = this.inputElement.value;
-        const caretPos = this.inputElement.selectionStart;
-
-        // Find the command text before cursor
-        const beforeCursor = currentValue.substring(0, caretPos);
-        const segments = beforeCursor.split(/[,\>]+/);
-        const lastSegment = segments[segments.length - 1] || '';
+        const activeRange = this.getActiveSearchRange(currentValue);
+        const caretPos = activeRange.end;
+        const lastSegment = activeRange.rawText;
         
         // Find the command start position, preserving leading spaces
         // lastSegment includes leading spaces (e.g., " /ac"), find where command actually starts
@@ -1922,7 +2310,7 @@ class AutoComplete {
             // commandMatch[1] is leading spaces, commandMatch[2] is the command
             const leadingSpaces = commandMatch[1].length;
             // Keep the spaces by starting after them
-            const commandStartPos = caretPos - lastSegment.length + leadingSpaces;
+            const commandStartPos = activeRange.start + leadingSpaces;
             
             // Skip trailing spaces when deleting
             let endPos = caretPos;
@@ -1944,7 +2332,7 @@ class AutoComplete {
             this.inputElement.setSelectionRange(newCaretPos, newCaretPos);
         } else {
             // Fallback: delete the whole last segment (original behavior)
-            const commandStartPos = caretPos - lastSegment.length;
+            const commandStartPos = activeRange.start;
             
             let endPos = caretPos;
             while (endPos < currentValue.length && currentValue[endPos] === ' ') {

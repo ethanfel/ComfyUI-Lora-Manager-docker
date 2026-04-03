@@ -10,12 +10,16 @@ import uuid
 from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 from ..utils.models import LoraMetadata, CheckpointMetadata, EmbeddingMetadata
-from ..utils.constants import CARD_PREVIEW_WIDTH, DIFFUSION_MODEL_BASE_MODELS, VALID_LORA_TYPES
+from ..utils.constants import (
+    CARD_PREVIEW_WIDTH,
+    DIFFUSION_MODEL_BASE_MODELS,
+    SUPPORTED_DOWNLOAD_SKIP_BASE_MODELS,
+    VALID_LORA_TYPES,
+)
 from ..utils.civitai_utils import rewrite_preview_url
-from ..utils.preview_selection import select_preview_media
+from ..utils.preview_selection import resolve_mature_threshold, select_preview_media
 from ..utils.utils import sanitize_folder_name
 from ..utils.exif_utils import ExifUtils
-from ..utils.file_utils import calculate_sha256
 from ..utils.metadata_manager import MetadataManager
 from .service_registry import ServiceRegistry
 from .settings_manager import get_settings_manager
@@ -225,7 +229,9 @@ class DownloadManager:
                     # Update status based on result
                     if task_id in self._active_downloads:
                         self._active_downloads[task_id]["status"] = (
-                            "completed" if result["success"] else "failed"
+                            result.get("status", "completed")
+                            if result["success"]
+                            else "failed"
                         )
                         if not result["success"]:
                             self._active_downloads[task_id]["error"] = result.get(
@@ -349,13 +355,59 @@ class DownloadManager:
                     "error": f'Model type "{model_type_from_info}" is not supported for download',
                 }
 
+            excluded_base_models = get_settings_manager().get_download_skip_base_models()
+            base_model_value = version_info.get("baseModel", "")
+            if (
+                isinstance(base_model_value, str)
+                and base_model_value in SUPPORTED_DOWNLOAD_SKIP_BASE_MODELS
+                and base_model_value in excluded_base_models
+            ):
+                file_name = ""
+                files = version_info.get("files")
+                if isinstance(files, list):
+                    primary_file = next(
+                        (
+                            file_info
+                            for file_info in files
+                            if isinstance(file_info, dict) and file_info.get("primary")
+                        ),
+                        None,
+                    )
+                    selected_file = primary_file
+                    if selected_file is None:
+                        selected_file = next(
+                            (file_info for file_info in files if isinstance(file_info, dict)),
+                            None,
+                        )
+                    if isinstance(selected_file, dict):
+                        raw_file_name = selected_file.get("name", "")
+                        if isinstance(raw_file_name, str):
+                            file_name = raw_file_name.strip()
+
+                message = (
+                    f"Skipped download for '{file_name or version_info.get('name') or f'model_version:{model_version_id or model_id}'}' "
+                    f"because base model '{base_model_value}' is excluded in settings"
+                )
+                logger.info(message)
+                return {
+                    "success": True,
+                    "skipped": True,
+                    "status": "skipped",
+                    "reason": "base_model_excluded",
+                    "message": message,
+                    "base_model": base_model_value,
+                    "file_name": file_name,
+                    "download_id": download_id,
+                }
+
             # Check if this checkpoint should be treated as a diffusion model based on baseModel
             is_diffusion_model = False
             if model_type == "checkpoint":
-                base_model_value = version_info.get('baseModel', '')
                 if base_model_value in DIFFUSION_MODEL_BASE_MODELS:
                     is_diffusion_model = True
-                    logger.info(f"baseModel '{base_model_value}' is a known diffusion model, routing to unet folder")
+                    logger.info(
+                        f"baseModel '{base_model_value}' is a known diffusion model, routing to unet folder"
+                    )
 
             # Case 2: model_version_id was None, check after getting version_info
             if model_version_id is None:
@@ -464,7 +516,7 @@ class DownloadManager:
             # 2. Get file information
             files = version_info.get("files", [])
             file_info = None
-            
+
             # If file_params is provided, try to find matching file
             if file_params and model_version_id:
                 target_type = file_params.get("type", "Model")
@@ -472,23 +524,28 @@ class DownloadManager:
                 target_size = file_params.get("size", "full")
                 target_fp = file_params.get("fp")
                 is_primary = file_params.get("isPrimary", False)
-                
+
                 if is_primary:
                     # Find primary file
                     file_info = next(
-                        (f for f in files if f.get("primary") and f.get("type") in ("Model", "Negative")),
-                        None
+                        (
+                            f
+                            for f in files
+                            if f.get("primary")
+                            and f.get("type") in ("Model", "Negative")
+                        ),
+                        None,
                     )
                 else:
                     # Match by metadata
                     for f in files:
                         f_type = f.get("type", "")
                         f_meta = f.get("metadata", {})
-                        
+
                         # Check type match
                         if f_type != target_type:
                             continue
-                        
+
                         # Check metadata match
                         if f_meta.get("format") != target_format:
                             continue
@@ -496,10 +553,10 @@ class DownloadManager:
                             continue
                         if target_fp and f_meta.get("fp") != target_fp:
                             continue
-                        
+
                         file_info = f
                         break
-            
+
             # Fallback to primary file if no match found
             if not file_info:
                 file_info = next(
@@ -510,7 +567,7 @@ class DownloadManager:
                     ),
                     None,
                 )
-            
+
             if not file_info:
                 return {"success": False, "error": "No suitable file found in metadata"}
             mirrors = file_info.get("mirrors") or []
@@ -836,9 +893,13 @@ class DownloadManager:
                 blur_mature_content = bool(
                     settings_manager.get("blur_mature_content", True)
                 )
+                mature_threshold = resolve_mature_threshold(
+                    {"mature_blur_level": settings_manager.get("mature_blur_level", "R")}
+                )
                 selected_image, nsfw_level = select_preview_media(
                     images,
                     blur_mature_content=blur_mature_content,
+                    mature_threshold=mature_threshold,
                 )
 
                 preview_url = selected_image.get("url") if selected_image else None
@@ -954,11 +1015,12 @@ class DownloadManager:
             for download_url in download_urls:
                 use_auth = download_url.startswith("https://civitai.com/api/download/")
                 download_kwargs = {
-                    "progress_callback": lambda progress,
-                    snapshot=None: self._handle_download_progress(
-                        progress,
-                        progress_callback,
-                        snapshot,
+                    "progress_callback": lambda progress, snapshot=None: (
+                        self._handle_download_progress(
+                            progress,
+                            progress_callback,
+                            snapshot,
+                        )
                     ),
                     "use_auth": use_auth,  # Only use authentication for Civitai downloads
                 }
@@ -1220,8 +1282,15 @@ class DownloadManager:
         entries: List = []
         for index, file_path in enumerate(file_paths):
             entry = base_metadata if index == 0 else copy.deepcopy(base_metadata)
-            entry.update_file_info(file_path)
-            entry.sha256 = await calculate_sha256(file_path)
+            # Update file paths without modifying size and modified timestamps
+            # modified should remain as the download start time (import time)
+            # size will be updated below to reflect actual downloaded file size
+            entry.file_path = file_path.replace(os.sep, "/")
+            entry.file_name = os.path.splitext(os.path.basename(file_path))[0]
+            # Update size to actual downloaded file size
+            entry.size = os.path.getsize(file_path)
+            # Use SHA256 from API metadata (already set in from_civitai_info)
+            # Do not recalculate to avoid blocking during ComfyUI execution
             entries.append(entry)
 
         return entries

@@ -31,10 +31,27 @@ def temp_db_path():
 @pytest.fixture
 def temp_csv_path():
     """Create a temporary CSV file with test data."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f:
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".csv", delete=False, encoding="utf-8"
+    ) as f:
         # Write test data in the same format as danbooru_e621_merged.csv
         # Format: tag_name,category,post_count,aliases
+        # Include multiple tags starting with "1" to test popularity-based ranking
         f.write('1girl,0,6008644,"1girls,sole_female"\n')
+        f.write('1boy,0,1405457,"1boys,sole_male"\n')
+        f.write('1:1,14,377032,""\n')
+        f.write('16:9,14,152866,""\n')
+        f.write('1other,0,70962,""\n')
+        f.write('16:10,14,14739,""\n')
+        f.write('1990s_(style),0,9369,""\n')
+        f.write('1_eye,0,7179,""\n')
+        f.write('1:2,14,5865,""\n')
+        f.write('1980s_(style),0,5665,""\n')
+        f.write('1koma,0,4384,""\n')
+        f.write('1_horn,0,2122,""\n')
+        f.write('101_dalmatian_street,3,1933,""\n')
+        f.write('1upgobbo,3,1731,""\n')
+        f.write('14:9,14,1038,""\n')
         f.write('highres,5,5256195,"high_res,high_resolution,hires"\n')
         f.write('solo,0,5000954,"alone,female_solo,single"\n')
         f.write('hatsune_miku,4,500000,"miku"\n')
@@ -86,7 +103,7 @@ class TestTagFTSIndexBuild:
         fts.build_index()
 
         assert fts.is_ready() is True
-        assert fts.get_indexed_count() == 10
+        assert fts.get_indexed_count() == 24
 
     def test_build_index_nonexistent_csv(self, temp_db_path):
         """Test that build_index handles missing CSV gracefully."""
@@ -187,6 +204,110 @@ class TestTagFTSIndexSearch:
         results = populated_fts.search("girl", limit=1)
         assert len(results) <= 1
 
+    def test_search_tag_name_prefix_match_priority(self, populated_fts):
+        """Test that tag_name prefix matches rank higher than alias matches."""
+        results = populated_fts.search("1", limit=20)
+
+        assert len(results) > 0, "Should return results for '1'"
+
+        # Find first alias match (if any)
+        first_alias_idx = None
+        for i, result in enumerate(results):
+            if result.get("matched_alias"):
+                first_alias_idx = i
+                break
+
+        # All tag_name prefix matches should come before alias matches
+        if first_alias_idx is not None:
+            for i in range(first_alias_idx):
+                assert results[i]["tag_name"].lower().startswith("1"), (
+                    f"Tag at index {i} should start with '1' before alias matches"
+                )
+
+    def test_search_ranks_popular_tags_higher(self, populated_fts):
+        """Test that tags with higher post_count rank higher among prefix matches."""
+        results = populated_fts.search("1", limit=20)
+
+        # Filter to only tag_name prefix matches
+        prefix_matches = [r for r in results if r["tag_name"].lower().startswith("1")]
+
+        assert len(prefix_matches) > 1, "Should have multiple prefix matches"
+
+        # Verify descending post_count order among prefix matches
+        for i in range(len(prefix_matches) - 1):
+            assert (
+                prefix_matches[i]["post_count"] >= prefix_matches[i + 1]["post_count"]
+            ), (
+                f"Tags should be sorted by post_count: {prefix_matches[i]['tag_name']} ({prefix_matches[i]['post_count']}) >= {prefix_matches[i + 1]['tag_name']} ({prefix_matches[i + 1]['post_count']})"
+            )
+
+    def test_search_pagination_ordering_consistency(self, populated_fts):
+        """Test that pagination maintains consistent ordering by post_count."""
+        page1 = populated_fts.search("1", limit=10, offset=0)
+        page2 = populated_fts.search("1", limit=10, offset=10)
+
+        assert len(page1) > 0, "Page 1 should have results"
+        assert len(page2) > 0, "Page 2 should have results"
+
+        # Page 2 max post_count should be <= Page 1 min post_count
+        page1_min_posts = min(r["post_count"] for r in page1)
+        page2_max_posts = max(r["post_count"] for r in page2)
+
+        assert page2_max_posts <= page1_min_posts, (
+            f"Page 2 max post_count ({page2_max_posts}) should be <= Page 1 min post_count ({page1_min_posts})"
+        )
+
+    def test_search_returns_popular_tags_higher(self, populated_fts):
+        """Test that search returns popular tags (higher post_count) first."""
+        results = populated_fts.search("1", limit=5)
+
+        assert len(results) >= 2, "Need at least 2 results to compare"
+
+        # 1girl has 6M posts, should be ranked first
+        girl_result = next((r for r in results if r["tag_name"] == "1girl"), None)
+        assert girl_result is not None, "1girl should be in results"
+        assert results[0]["tag_name"] == "1girl", (
+            "1girl should be first due to highest post_count"
+        )
+
+        # Find a tag with significantly fewer posts
+        low_post_result = next((r for r in results if r["post_count"] < 10000), None)
+        if low_post_result:
+            assert girl_result["post_count"] > low_post_result["post_count"], (
+                f"1girl (6M posts) should have higher post_count than {low_post_result['tag_name']} ({low_post_result['post_count']} posts)"
+            )
+
+    def test_search_popularity_ordering(self, populated_fts):
+        """Test that results are ordered by post_count (popularity)."""
+        results = populated_fts.search("1", limit=20)
+
+        # Get 1girl and 1boy results for comparison
+        girl_result = next((r for r in results if r["tag_name"] == "1girl"), None)
+        boy_result = next((r for r in results if r["tag_name"] == "1boy"), None)
+
+        assert girl_result is not None, "1girl should be in results"
+        assert boy_result is not None, "1boy should be in results"
+
+        # 1girl: 6M posts, 1boy: 1.4M posts
+        assert girl_result["post_count"] == 6008644, "1girl should have 6M posts"
+        assert boy_result["post_count"] == 1405457, "1boy should have 1.4M posts"
+
+        # 1girl should rank higher due to higher post_count
+        girl_rank = results.index(girl_result)
+        boy_rank = results.index(boy_result)
+        assert girl_rank < boy_rank, (
+            f"1girl should rank higher than 1boy due to higher post_count "
+            f"(girl rank: {girl_rank}, boy rank: {boy_rank})"
+        )
+
+        # Verify results are sorted by post_count descending
+        for i in range(len(results) - 1):
+            assert results[i]["post_count"] >= results[i + 1]["post_count"], (
+                f"Results should be sorted by post_count descending: "
+                f"{results[i]['tag_name']} ({results[i]['post_count']}) >= "
+                f"{results[i + 1]['tag_name']} ({results[i + 1]['post_count']})"
+            )
+
 
 class TestAliasSearch:
     """Tests for alias search functionality."""
@@ -204,7 +325,9 @@ class TestAliasSearch:
         results = populated_fts.search("miku")
 
         assert len(results) >= 1
-        hatsune_result = next((r for r in results if r["tag_name"] == "hatsune_miku"), None)
+        hatsune_result = next(
+            (r for r in results if r["tag_name"] == "hatsune_miku"), None
+        )
         assert hatsune_result is not None
         assert hatsune_result["matched_alias"] == "miku"
 
@@ -214,7 +337,9 @@ class TestAliasSearch:
         results = populated_fts.search("hatsune")
 
         assert len(results) >= 1
-        hatsune_result = next((r for r in results if r["tag_name"] == "hatsune_miku"), None)
+        hatsune_result = next(
+            (r for r in results if r["tag_name"] == "hatsune_miku"), None
+        )
         assert hatsune_result is not None
         assert "matched_alias" not in hatsune_result
 
@@ -301,7 +426,9 @@ class TestSlashPrefixAliases:
     @pytest.fixture
     def fts_with_slash_aliases(self, temp_db_path):
         """Create an FTS index with slash-prefixed aliases."""
-        with tempfile.NamedTemporaryFile(mode="w", suffix=".csv", delete=False, encoding="utf-8") as f:
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".csv", delete=False, encoding="utf-8"
+        ) as f:
             # Format: tag_name,category,post_count,aliases
             f.write('long_hair,0,4350743,"/lh,longhair,very_long_hair"\n')
             f.write('breasts,0,3439214,"/b,boobs,oppai"\n')
@@ -380,7 +507,15 @@ class TestCategoryMappings:
 
     def test_category_name_to_ids_complete(self):
         """Test that CATEGORY_NAME_TO_IDS includes all expected names."""
-        expected_names = ["general", "artist", "copyright", "character", "meta", "species", "lore"]
+        expected_names = [
+            "general",
+            "artist",
+            "copyright",
+            "character",
+            "meta",
+            "species",
+            "lore",
+        ]
         for name in expected_names:
             assert name in CATEGORY_NAME_TO_IDS
             assert isinstance(CATEGORY_NAME_TO_IDS[name], list)

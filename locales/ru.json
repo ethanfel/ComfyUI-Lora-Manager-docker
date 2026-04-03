@@ -14,7 +14,8 @@
             "backToTop": "Наверх",
             "settings": "Настройки",
             "help": "Справка",
-            "add": "Добавить"
+            "add": "Добавить",
+            "close": "Закрыть"
         },
         "status": {
             "loading": "Загрузка...",
@@ -290,7 +291,15 @@
             "blurNsfwContent": "Размывать NSFW контент",
             "blurNsfwContentHelp": "Размывать превью изображений контента для взрослых (NSFW)",
             "showOnlySfw": "Показывать только SFW результаты",
-            "showOnlySfwHelp": "Фильтровать весь NSFW контент при просмотре и поиске"
+            "showOnlySfwHelp": "Фильтровать весь NSFW контент при просмотре и поиске",
+            "matureBlurThreshold": "Порог размытия взрослого контента",
+            "matureBlurThresholdHelp": "Установить, с какого уровня рейтинга начинается размытие при включенном размытии NSFW.",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 и выше",
+                "r": "R и выше (по умолчанию)",
+                "x": "X и выше",
+                "xxx": "Только XXX"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "Автовоспроизведение видео при наведении",
@@ -312,6 +321,24 @@
             "validation": {
                 "noPaths": "Введите хотя бы один путь, разделённый запятыми.",
                 "saveFailed": "Не удалось сохранить пути для пропуска: {message}"
+            }
+        },
+        "downloadSkipBaseModels": {
+            "label": "Пропускать загрузки для базовых моделей",
+            "help": "Применяется ко всем сценариям загрузки. Здесь можно выбрать только поддерживаемые базовые модели.",
+            "searchPlaceholder": "Фильтровать базовые модели...",
+            "empty": "Нет базовых моделей, соответствующих текущему поиску.",
+            "summary": {
+                "none": "Ничего не выбрано",
+                "count": "Выбрано: {count}"
+            },
+            "actions": {
+                "edit": "Изменить",
+                "collapse": "Свернуть",
+                "clear": "Очистить"
+            },
+            "validation": {
+                "saveFailed": "Не удалось сохранить исключённые базовые модели: {message}"
             }
         },
         "layoutSettings": {
@@ -366,8 +393,8 @@
         },
         "extraFolderPaths": {
             "title": "Дополнительные пути к папкам",
-            "help": "Добавьте дополнительные папки моделей за пределами стандартных путей ComfyUI. Эти пути хранятся отдельно и сканируются вместе с папками по умолчанию.",
-            "description": "Настройте дополнительные папки для сканирования моделей. Эти пути специфичны для LoRA Manager и будут объединены с путями по умолчанию ComfyUI.",
+            "description": "Дополнительные корневые пути моделей, эксклюзивные для LoRA Manager. Загружайте модели из расположений за пределами стандартных папок ComfyUI — идеально подходит для больших библиотек, которые иначе замедлили бы ComfyUI.",
+            "restartRequired": "Requires restart to take effect",
             "modelTypes": {
                 "lora": "Пути LoRA",
                 "checkpoint": "Пути Checkpoint",
@@ -375,7 +402,7 @@
                 "embedding": "Пути Embedding"
             },
             "pathPlaceholder": "/путь/к/дополнительным/моделям",
-            "saveSuccess": "Дополнительные пути к папкам обновлены.",
+            "saveSuccess": "Дополнительные пути к папкам обновлены. Требуется перезапуск для применения изменений.",
             "saveError": "Не удалось обновить дополнительные пути к папкам: {message}",
             "validation": {
                 "duplicatePath": "Этот путь уже настроен"
@@ -574,6 +601,7 @@
             "skipMetadataRefresh": "Пропустить обновление метаданных для выбранных",
             "resumeMetadataRefresh": "Возобновить обновление метаданных для выбранных",
             "deleteAll": "Удалить все модели",
+            "downloadMissingLoras": "Скачать отсутствующие LoRAs",
             "clear": "Очистить выбор",
             "skipMetadataRefreshCount": "Пропустить（{count} моделей）",
             "resumeMetadataRefreshCount": "Возобновить（{count} моделей）",
@@ -644,6 +672,8 @@
                 "root": "Корень",
                 "browseFolders": "Обзор папок:",
                 "downloadAndSaveRecipe": "Скачать и сохранить рецепт",
+                "importRecipeOnly": "Импортировать только рецепт",
+                "importAndDownload": "Импорт и скачивание",
                 "downloadMissingLoras": "Скачать отсутствующие LoRAs",
                 "saveRecipe": "Сохранить рецепт",
                 "loraCountInfo": "({existing}/{total} в библиотеке)",
@@ -729,6 +759,64 @@
                 "failed": "Не удалось восстановить рецепт: {message}",
                 "missingId": "Не удалось восстановить рецепт: отсутствует ID рецепта"
             }
+        },
+        "batchImport": {
+            "title": "Batch Import Recipes",
+            "action": "Batch Import",
+            "urlList": "URL List",
+            "directory": "Directory",
+            "urlDescription": "Enter image URLs or local file paths (one per line). Each will be imported as a recipe.",
+            "directoryDescription": "Enter a directory path to import all images from that folder.",
+            "urlsLabel": "Image URLs or Local Paths",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "Enter one URL or path per line",
+            "directoryPath": "Directory Path",
+            "directoryPlaceholder": "/path/to/images/folder",
+            "browse": "Browse",
+            "recursive": "Include subdirectories",
+            "tagsOptional": "Tags (optional, applied to all recipes)",
+            "tagsPlaceholder": "Enter tags separated by commas",
+            "tagsHint": "Tags will be added to all imported recipes",
+            "skipNoMetadata": "Skip images without metadata",
+            "skipNoMetadataHelp": "Images without LoRA metadata will be skipped automatically.",
+            "start": "Start Import",
+            "startImport": "Start Import",
+            "importing": "Importing...",
+            "progress": "Progress",
+            "total": "Total",
+            "success": "Success",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "current": "Current",
+            "currentItem": "Current",
+            "preparing": "Preparing...",
+            "cancel": "Cancel",
+            "cancelImport": "Cancel",
+            "cancelled": "Import cancelled",
+            "completed": "Import completed",
+            "completedWithErrors": "Completed with errors",
+            "completedSuccess": "Successfully imported {count} recipe(s)",
+            "successCount": "Successful",
+            "failedCount": "Failed",
+            "skippedCount": "Skipped",
+            "totalProcessed": "Total processed",
+            "viewDetails": "View Details",
+            "newImport": "New Import",
+            "manualPathEntry": "Please enter the directory path manually. File browser is not available in this browser.",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "batchImportManualEntryRequired": "File browser not available. Please enter the directory path manually.",
+            "backToParent": "Back to parent directory",
+            "folders": "Folders",
+            "folderCount": "{count} folders",
+            "imageFiles": "Image Files",
+            "images": "images",
+            "imageCount": "{count} images",
+            "selectFolder": "Select This Folder",
+            "errors": {
+                "enterUrls": "Please enter at least one URL or path",
+                "enterDirectory": "Please enter a directory path",
+                "startFailed": "Failed to start import: {message}"
+            }
         }
     },
     "checkpoints": {
@@ -738,7 +826,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "Переместить в папку {otherType}"
+            "moveToOtherTypeFolder": "Переместить в папку {otherType}",
+            "sendToWorkflow": "[TODO: Translate] Send to Workflow"
         }
     },
     "embeddings": {
@@ -751,8 +840,8 @@
         "unpinSidebar": "Открепить боковую панель",
         "switchToListView": "Переключить на вид списка",
         "switchToTreeView": "Переключить на древовидный вид",
-        "recursiveOn": "Искать во вложенных папках",
-        "recursiveOff": "Искать только в текущей папке",
+        "recursiveOn": "Включать вложенные папки",
+        "recursiveOff": "Только текущая папка",
         "recursiveUnavailable": "Рекурсивный поиск доступен только в режиме дерева",
         "collapseAllDisabled": "Недоступно в виде списка",
         "dragDrop": {
@@ -922,6 +1011,14 @@
             "save": "Обновить базовую модель",
             "cancel": "Отмена"
         },
+        "bulkDownloadMissingLoras": {
+            "title": "Скачать отсутствующие LoRAs",
+            "message": "Найдено {uniqueCount} уникальных отсутствующих LoRAs (из {totalCount} всего в выбранных рецептах).",
+            "previewTitle": "LoRAs для скачивания:",
+            "moreItems": "...и еще {count}",
+            "note": "Файлы будут скачаны с использованием шаблонов путей по умолчанию. Это может занять некоторое время в зависимости от количества LoRAs.",
+            "downloadButton": "Скачать {count} LoRA(s)"
+        },
         "exampleAccess": {
             "title": "Локальные примеры изображений",
             "message": "Локальные примеры изображений для этой модели не найдены. Варианты просмотра:",
@@ -973,13 +1070,18 @@
                 "viewOnCivitai": "Посмотреть на Civitai",
                 "viewOnCivitaiText": "Посмотреть на Civitai",
                 "viewCreatorProfile": "Посмотреть профиль создателя",
-                "openFileLocation": "Открыть расположение файла"
+                "openFileLocation": "Открыть расположение файла",
+                "sendToWorkflow": "Отправить в ComfyUI",
+                "sendToWorkflowText": "Отправить в ComfyUI"
             },
             "openFileLocation": {
                 "success": "Расположение файла успешно открыто",
                 "failed": "Не удалось открыть расположение файла",
                 "copied": "Путь скопирован в буфер обмена: {{path}}",
                 "clipboardFallback": "Путь: {{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "Невозможно отправить в ComfyUI: путь к файлу недоступен"
             },
             "metadata": {
                 "version": "Версия",
@@ -1238,7 +1340,9 @@
             "recipeReplaced": "Рецепт заменён в workflow",
             "recipeFailedToSend": "Не удалось отправить рецепт в workflow",
             "noMatchingNodes": "В текущем workflow нет совместимых узлов",
-            "noTargetNodeSelected": "Целевой узел не выбран"
+            "noTargetNodeSelected": "Целевой узел не выбран",
+            "modelUpdated": "Модель обновлена в workflow",
+            "modelFailed": "Не удалось обновить узел модели"
         },
         "nodeSelector": {
             "recipe": "Рецепт",
@@ -1389,6 +1493,7 @@
             "pleaseSelectVersion": "Пожалуйста, выберите версию",
             "versionExists": "Эта версия уже существует в вашей библиотеке",
             "downloadCompleted": "Загрузка успешно завершена",
+            "downloadSkippedByBaseModel": "Загрузка пропущена, потому что базовая модель {baseModel} исключена",
             "autoOrganizeSuccess": "Автоматическая организация успешно завершена для {count} {type}",
             "autoOrganizePartialSuccess": "Автоматическая организация завершена: перемещено {success}, не удалось {failures} из {total} моделей",
             "autoOrganizeFailed": "Ошибка автоматической организации: {error}",
@@ -1408,7 +1513,11 @@
             "nameUpdated": "Название рецепта успешно обновлено",
             "tagsUpdated": "Теги рецепта успешно обновлены",
             "sourceUrlUpdated": "Исходный URL успешно обновлен",
+            "promptUpdated": "Промпт успешно обновлён",
+            "negativePromptUpdated": "Негативный промпт успешно обновлён",
+            "promptEditorHint": "Нажмите Enter для сохранения, Shift+Enter для новой строки",
             "noRecipeId": "ID рецепта недоступен",
+            "sendToWorkflowFailed": "Не удалось отправить рецепт в рабочий процесс: {message}",
             "copyFailed": "Ошибка копирования синтаксиса рецепта: {message}",
             "noMissingLoras": "Нет отсутствующих LoRAs для загрузки",
             "missingLorasInfoFailed": "Не удалось получить информацию для отсутствующих LoRAs",
@@ -1436,9 +1545,20 @@
             "processingError": "Ошибка обработки: {message}",
             "folderBrowserError": "Ошибка загрузки браузера папок: {message}",
             "recipeSaveFailed": "Не удалось сохранить рецепт: {error}",
+            "recipeSaved": "Recipe saved successfully",
             "importFailed": "Импорт не удался: {message}",
             "folderTreeFailed": "Не удалось загрузить дерево папок",
-            "folderTreeError": "Ошибка загрузки дерева папок"
+            "folderTreeError": "Ошибка загрузки дерева папок",
+            "batchImportFailed": "Failed to start batch import: {message}",
+            "batchImportCancelling": "Cancelling batch import...",
+            "batchImportCancelFailed": "Failed to cancel batch import: {message}",
+            "batchImportNoUrls": "Please enter at least one URL or file path",
+            "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportBrowseFailed": "Failed to browse directory: {message}",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "noRecipesSelected": "Рецепты не выбраны",
+            "noMissingLorasInSelection": "В выбранных рецептах не найдены отсутствующие LoRAs",
+            "noLoraRootConfigured": "Корневой каталог LoRA не настроен. Пожалуйста, установите корневой каталог LoRA по умолчанию в настройках."
         },
         "models": {
             "noModelsSelected": "Модели не выбраны",

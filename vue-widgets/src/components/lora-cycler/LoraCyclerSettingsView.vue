@@ -13,7 +13,9 @@
           @click="handleOpenSelector"
         >
           <span class="progress-label">{{ isWorkflowExecuting ? 'Using LoRA:' : 'Next LoRA:' }}</span>
-          <span class="progress-name clickable" :class="{ disabled: isPauseDisabled }" :title="currentLoraFilename">
+          <span class="progress-name clickable" 
+                :class="{ disabled: isPauseDisabled, 'no-lora': isNoLora }" 
+                :title="currentLoraFilename">
             {{ currentLoraName || 'None' }}
             <svg class="selector-icon" viewBox="0 0 24 24" fill="currentColor">
               <path d="M7 10l5 5 5-5z"/>
@@ -129,6 +131,38 @@
       </div>
     </div>
 
+    <!-- Preset Strength Scale -->
+    <div class="setting-section">
+      <div class="section-header-with-toggle">
+        <label class="setting-label">
+          Preset Strength Scale
+        </label>
+        <button
+          type="button"
+          class="toggle-switch"
+          :class="{ 'toggle-switch--active': usePresetStrength }"
+          @click="$emit('update:usePresetStrength', !usePresetStrength)"
+          role="switch"
+          :aria-checked="usePresetStrength"
+          title="Use scaled preset strength when enabled"
+        >
+          <span class="toggle-switch__track"></span>
+          <span class="toggle-switch__thumb"></span>
+        </button>
+      </div>
+      <div class="slider-container" :class="{ 'slider-container--disabled': !usePresetStrength }">
+        <SingleSlider
+          :min="0"
+          :max="2"
+          :value="presetStrengthScale"
+          :step="0.1"
+          :default-range="{ min: 0.5, max: 1.0 }"
+          :disabled="!usePresetStrength"
+          @update:value="$emit('update:presetStrengthScale', $event)"
+        />
+      </div>
+    </div>
+
     <!-- Clip Strength -->
     <div class="setting-section">
       <div class="section-header-with-toggle">
@@ -160,6 +194,27 @@
         />
       </div>
     </div>
+
+    <!-- Include No LoRA Toggle -->
+    <div class="setting-section">
+      <div class="section-header-with-toggle">
+        <label class="setting-label">
+          Add "No LoRA" step
+        </label>
+        <button
+          type="button"
+          class="toggle-switch"
+          :class="{ 'toggle-switch--active': includeNoLora }"
+          @click="$emit('update:includeNoLora', !includeNoLora)"
+          role="switch"
+          :aria-checked="includeNoLora"
+          title="Add an iteration without LoRA for comparison"
+        >
+          <span class="toggle-switch__track"></span>
+          <span class="toggle-switch__thumb"></span>
+        </button>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -175,6 +230,8 @@ const props = defineProps<{
   modelStrength: number
   clipStrength: number
   useCustomClipRange: boolean
+  usePresetStrength: boolean
+  presetStrengthScale: number
   isClipStrengthDisabled: boolean
   repeatCount: number
   repeatUsed: number
@@ -182,6 +239,8 @@ const props = defineProps<{
   isPauseDisabled: boolean
   isWorkflowExecuting: boolean
   executingRepeatStep: number
+  includeNoLora: boolean
+  isNoLora?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -189,7 +248,10 @@ const emit = defineEmits<{
   'update:modelStrength': [value: number]
   'update:clipStrength': [value: number]
   'update:useCustomClipRange': [value: boolean]
+  'update:usePresetStrength': [value: boolean]
+  'update:presetStrengthScale': [value: number]
   'update:repeatCount': [value: number]
+  'update:includeNoLora': [value: boolean]
   'toggle-pause': []
   'reset-index': []
   'open-lora-selector': []
@@ -344,6 +406,16 @@ const onRepeatBlur = (event: Event) => {
 .progress-name.clickable:hover:not(.disabled) {
   background: rgba(66, 153, 225, 0.2);
   color: rgba(191, 219, 254, 1);
+}
+
+.progress-name.no-lora {
+  font-style: italic;
+  color: rgba(226, 232, 240, 0.6);
+}
+
+.progress-name.clickable.no-lora:hover:not(.disabled) {
+  background: rgba(160, 174, 192, 0.2);
+  color: rgba(226, 232, 240, 0.8);
 }
 
 .progress-name.clickable.disabled {

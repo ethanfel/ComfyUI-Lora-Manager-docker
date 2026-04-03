@@ -25,6 +25,31 @@ standalone_mode = (
 logger = logging.getLogger(__name__)
 
 
+def _resolve_valid_default_root(
+    current: str, primary_paths: List[str], name: str
+) -> str:
+    """Return a valid default root from the current primary path set."""
+
+    valid_paths = [path for path in primary_paths if isinstance(path, str) and path.strip()]
+    if not valid_paths:
+        return ""
+
+    if current in valid_paths:
+        return current
+
+    if current:
+        logger.info(
+            "Repaired stale %s from '%s' to '%s'",
+            name,
+            current,
+            valid_paths[0],
+        )
+    else:
+        logger.info("Auto-setting %s to '%s'", name, valid_paths[0])
+
+    return valid_paths[0]
+
+
 def _normalize_folder_paths_for_comparison(
     folder_paths: Mapping[str, Iterable[str]],
 ) -> Dict[str, Set[str]]:
@@ -197,25 +222,23 @@ class Config:
                         "Failed to rename legacy 'default' library: %s", rename_error
                     )
 
-            default_lora_root = comfy_library.get("default_lora_root", "")
-            if not default_lora_root and len(self.loras_roots) == 1:
-                default_lora_root = self.loras_roots[0]
+            default_lora_root = _resolve_valid_default_root(
+                comfy_library.get("default_lora_root", ""),
+                list(self.loras_roots or []),
+                "default_lora_root",
+            )
 
-            default_checkpoint_root = comfy_library.get("default_checkpoint_root", "")
-            if (
-                not default_checkpoint_root
-                and self.checkpoints_roots
-                and len(self.checkpoints_roots) == 1
-            ):
-                default_checkpoint_root = self.checkpoints_roots[0]
+            default_checkpoint_root = _resolve_valid_default_root(
+                comfy_library.get("default_checkpoint_root", ""),
+                list(self.checkpoints_roots or []),
+                "default_checkpoint_root",
+            )
 
-            default_embedding_root = comfy_library.get("default_embedding_root", "")
-            if (
-                not default_embedding_root
-                and self.embeddings_roots
-                and len(self.embeddings_roots) == 1
-            ):
-                default_embedding_root = self.embeddings_roots[0]
+            default_embedding_root = _resolve_valid_default_root(
+                comfy_library.get("default_embedding_root", ""),
+                list(self.embeddings_roots or []),
+                "default_embedding_root",
+            )
 
             metadata = dict(comfy_library.get("metadata", {}))
             metadata.setdefault("display_name", "ComfyUI")
@@ -714,9 +737,131 @@ class Config:
 
         return unique_paths
 
+    @staticmethod
+    def _normalize_path_for_comparison(
+        path: str, *, resolve_realpath: bool = False
+    ) -> str:
+        """Normalize a path for equality checks across platforms."""
+        candidate = os.path.realpath(path) if resolve_realpath else path
+        return os.path.normcase(os.path.normpath(candidate)).replace(os.sep, "/")
+
+    def _filter_overlapping_extra_lora_paths(
+        self,
+        primary_paths: Iterable[str],
+        extra_paths: Iterable[str],
+    ) -> List[str]:
+        """Drop extra LoRA paths that resolve to the same physical location as primary roots."""
+
+        primary_map = {
+            self._normalize_path_for_comparison(path, resolve_realpath=True): path
+            for path in primary_paths
+            if isinstance(path, str) and path.strip() and os.path.exists(path)
+        }
+        primary_symlink_map = self._collect_first_level_symlink_targets(primary_paths)
+        filtered: List[str] = []
+
+        for original_path in extra_paths:
+            if not isinstance(original_path, str):
+                continue
+
+            stripped = original_path.strip()
+            if not stripped:
+                continue
+            if not os.path.exists(stripped):
+                continue
+
+            real_path = self._normalize_path_for_comparison(
+                stripped,
+                resolve_realpath=True,
+            )
+            normalized_path = os.path.normpath(stripped).replace(os.sep, "/")
+            primary_path = primary_map.get(real_path)
+            if primary_path:
+                # Config loading should stay tolerant of existing invalid state and warn.
+                logger.warning(
+                    "Detected the same LoRA folder in both ComfyUI model paths and "
+                    "LoRA Manager Extra Folder Paths. This can cause duplicate items or "
+                    "other unexpected behavior, and it usually means the path setup is "
+                    "not doing what you intended. LoRA Manager will keep the ComfyUI "
+                    "path and ignore this Extra Folder Paths entry: '%s'. Please review "
+                    "your path settings and remove the duplicate entry.",
+                    normalized_path,
+                )
+                continue
+
+            symlink_path = primary_symlink_map.get(real_path)
+            if symlink_path:
+                # Config loading should stay tolerant of existing invalid state and warn.
+                logger.warning(
+                    "Detected the same LoRA folder in both ComfyUI model paths and "
+                    "LoRA Manager Extra Folder Paths. This can cause duplicate items or "
+                    "other unexpected behavior, and it usually means the path setup is "
+                    "not doing what you intended. LoRA Manager will keep the ComfyUI "
+                    "path and ignore this Extra Folder Paths entry: '%s'. Please review "
+                    "your path settings and remove the duplicate entry.",
+                    normalized_path,
+                )
+                continue
+
+            filtered.append(stripped)
+
+        return filtered
+
+    def _collect_first_level_symlink_targets(
+        self, roots: Iterable[str]
+    ) -> Dict[str, str]:
+        """Return real-path -> link-path mappings for first-level symlinks under the given roots."""
+
+        targets: Dict[str, str] = {}
+        for root in roots:
+            if not isinstance(root, str):
+                continue
+            stripped_root = root.strip()
+            if not stripped_root or not os.path.isdir(stripped_root):
+                continue
+
+            try:
+                with os.scandir(stripped_root) as iterator:
+                    for entry in iterator:
+                        try:
+                            if not self._entry_is_symlink(entry):
+                                continue
+                            target_path = os.path.realpath(entry.path)
+                            if not os.path.isdir(target_path):
+                                continue
+
+                            normalized_target = self._normalize_path_for_comparison(
+                                target_path,
+                                resolve_realpath=True,
+                            )
+                            normalized_link = os.path.normpath(entry.path).replace(
+                                os.sep, "/"
+                            )
+                            targets.setdefault(normalized_target, normalized_link)
+                        except Exception as inner_exc:
+                            logger.debug(
+                                "Error collecting LoRA symlink target for %s: %s",
+                                entry.path,
+                                inner_exc,
+                            )
+            except Exception as exc:
+                logger.debug(
+                    "Error scanning first-level LoRA symlinks in %s: %s",
+                    stripped_root,
+                    exc,
+                )
+
+        return targets
+
     def _prepare_checkpoint_paths(
         self, checkpoint_paths: Iterable[str], unet_paths: Iterable[str]
-    ) -> List[str]:
+    ) -> Tuple[List[str], List[str], List[str]]:
+        """Prepare checkpoint paths and return (all_roots, checkpoint_roots, unet_roots).
+
+        Returns:
+            Tuple of (all_unique_paths, checkpoint_only_paths, unet_only_paths)
+            This method does NOT modify instance variables - callers must set them.
+        """
         checkpoint_map = self._dedupe_existing_paths(checkpoint_paths)
         unet_map = self._dedupe_existing_paths(unet_paths)
 
@@ -746,8 +891,8 @@ class Config:
 
         checkpoint_values = set(checkpoint_map.values())
         unet_values = set(unet_map.values())
-        self.checkpoints_roots = [p for p in unique_paths if p in checkpoint_values]
-        self.unet_roots = [p for p in unique_paths if p in unet_values]
+        checkpoint_roots = [p for p in unique_paths if p in checkpoint_values]
+        unet_roots = [p for p in unique_paths if p in unet_values]
 
         for original_path in unique_paths:
             real_path = os.path.normpath(os.path.realpath(original_path)).replace(
@@ -756,7 +901,7 @@ class Config:
             if real_path != original_path:
                 self.add_path_mapping(original_path, real_path)
 
-        return unique_paths
+        return unique_paths, checkpoint_roots, unet_roots
 
     def _prepare_embedding_paths(self, raw_paths: Iterable[str]) -> List[str]:
         path_map = self._dedupe_existing_paths(raw_paths)
@@ -785,9 +930,11 @@ class Config:
         embedding_paths = folder_paths.get("embeddings", []) or []
 
         self.loras_roots = self._prepare_lora_paths(lora_paths)
-        self.base_models_roots = self._prepare_checkpoint_paths(
-            checkpoint_paths, unet_paths
-        )
+        (
+            self.base_models_roots,
+            self.checkpoints_roots,
+            self.unet_roots,
+        ) = self._prepare_checkpoint_paths(checkpoint_paths, unet_paths)
         self.embeddings_roots = self._prepare_embedding_paths(embedding_paths)
 
         # Process extra paths (only for LoRA Manager, not shared with ComfyUI)
@@ -797,19 +944,16 @@ class Config:
         extra_unet_paths = extra_paths.get("unet", []) or []
         extra_embedding_paths = extra_paths.get("embeddings", []) or []
 
-        self.extra_loras_roots = self._prepare_lora_paths(extra_lora_paths)
-        # Save main paths before processing extra paths ( _prepare_checkpoint_paths overwrites them)
-        saved_checkpoints_roots = self.checkpoints_roots
-        saved_unet_roots = self.unet_roots
-        self.extra_checkpoints_roots = self._prepare_checkpoint_paths(
-            extra_checkpoint_paths, extra_unet_paths
+        filtered_extra_lora_paths = self._filter_overlapping_extra_lora_paths(
+            self.loras_roots,
+            extra_lora_paths,
         )
-        self.extra_unet_roots = (
-            self.unet_roots if self.unet_roots is not None else []
-        )  # unet_roots was set by _prepare_checkpoint_paths
-        # Restore main paths
-        self.checkpoints_roots = saved_checkpoints_roots
-        self.unet_roots = saved_unet_roots
+        self.extra_loras_roots = self._prepare_lora_paths(filtered_extra_lora_paths)
+        (
+            _,
+            self.extra_checkpoints_roots,
+            self.extra_unet_roots,
+        ) = self._prepare_checkpoint_paths(extra_checkpoint_paths, extra_unet_paths)
         self.extra_embeddings_roots = self._prepare_embedding_paths(
             extra_embedding_paths
         )
@@ -866,9 +1010,11 @@ class Config:
         try:
             raw_checkpoint_paths = folder_paths.get_folder_paths("checkpoints")
             raw_unet_paths = folder_paths.get_folder_paths("unet")
-            unique_paths = self._prepare_checkpoint_paths(
-                raw_checkpoint_paths, raw_unet_paths
-            )
+            (
+                unique_paths,
+                self.checkpoints_roots,
+                self.unet_roots,
+            ) = self._prepare_checkpoint_paths(raw_checkpoint_paths, raw_unet_paths)
 
             logger.info(
                 "Found checkpoint roots:"

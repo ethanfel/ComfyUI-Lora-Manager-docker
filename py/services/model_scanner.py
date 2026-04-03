@@ -14,7 +14,6 @@ from ..utils.metadata_manager import MetadataManager
 from ..utils.civitai_utils import resolve_license_info
 from .model_cache import ModelCache
 from .model_hash_index import ModelHashIndex
-from ..utils.constants import PREVIEW_EXTENSIONS
 from .model_lifecycle_service import delete_model_artifacts
 from .service_registry import ServiceRegistry
 from .websocket_manager import ws_manager
@@ -733,18 +732,23 @@ class ModelScanner:
             # Get current cached file paths
             cached_paths = {item['file_path'] for item in self._cache.raw_data}
             path_to_item = {item['file_path']: item for item in self._cache.raw_data}
+            cached_real_paths = {}
+            for cached_path in cached_paths:
+                try:
+                    cached_real_paths.setdefault(os.path.realpath(cached_path), cached_path)
+                except Exception:
+                    continue
             
             # Track found files and new files
             found_paths = set()
             new_files = []
+            visited_real_paths = set()
+            discovered_real_files = set()
             
             # Scan all model roots
             for root_path in self.get_model_roots():
                 if not os.path.exists(root_path):
                     continue
-                    
-                # Track visited real paths to avoid symlink loops
-                visited_real_paths = set()
                 
                 # Recursively scan directory
                 for root, _, files in os.walk(root_path, followlinks=True):
@@ -758,10 +762,16 @@ class ModelScanner:
                         if ext in self.file_extensions:
                             # Construct paths exactly as they would be in cache
                             file_path = os.path.join(root, file).replace(os.sep, '/')
+                            real_file_path = os.path.realpath(os.path.join(root, file))
                             
                             # Check if this file is already in cache
                             if file_path in cached_paths:
                                 found_paths.add(file_path)
+                                continue
+
+                            cached_real_match = cached_real_paths.get(real_file_path)
+                            if cached_real_match:
+                                found_paths.add(cached_real_match)
                                 continue
 
                             if file_path in self._excluded_models:
@@ -779,6 +789,10 @@ class ModelScanner:
                                 if matched:
                                     continue
                                 
+                            if real_file_path in discovered_real_files:
+                                continue
+
+                            discovered_real_files.add(real_file_path)
                             # This is a new file to process
                             new_files.append(file_path)
                     
@@ -1100,6 +1114,8 @@ class ModelScanner:
         tags_count: Dict[str, int] = {}
         excluded_models: List[str] = []
         processed_files = 0
+        processed_real_files: Set[str] = set()
+        visited_real_dirs: Set[str] = set()
 
         async def handle_progress() -> None:
             if progress_callback is None:
@@ -1116,9 +1132,10 @@ class ModelScanner:
 
             try:
                 real_path = os.path.realpath(current_path)
-                if real_path in visited_paths:
+                if real_path in visited_paths or real_path in visited_real_dirs:
                     return
                 visited_paths.add(real_path)
+                visited_real_dirs.add(real_path)
 
                 with os.scandir(current_path) as iterator:
                     entries = list(iterator)
@@ -1131,6 +1148,11 @@ class ModelScanner:
                                 continue
 
                             file_path = entry.path.replace(os.sep, "/")
+                            real_file_path = os.path.realpath(entry.path)
+                            if real_file_path in processed_real_files:
+                                continue
+
+                            processed_real_files.add(real_file_path)
                             result = await self._process_model_file(
                                 file_path,
                                 root_path,
@@ -1442,14 +1464,13 @@ class ModelScanner:
         file_path = self._hash_index.get_path(sha256.lower())
         if not file_path:
             return None
-            
-        base_name = os.path.splitext(file_path)[0]
-        
-        for ext in PREVIEW_EXTENSIONS:
-            preview_path = f"{base_name}{ext}"
-            if os.path.exists(preview_path):
-                return config.get_preview_static_url(preview_path)
-        
+
+        dir_path = os.path.dirname(file_path)
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        preview_path = find_preview_file(base_name, dir_path)
+        if preview_path:
+            return config.get_preview_static_url(preview_path)
+
         return None
         
     async def get_top_tags(self, limit: int = 20) -> List[Dict[str, any]]:

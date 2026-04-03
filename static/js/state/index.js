@@ -24,6 +24,7 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     optimize_example_images: true,
     auto_download_example_images: false,
     blur_mature_content: true,
+    mature_blur_level: 'R',
     autoplay_on_hover: false,
     display_density: 'default',
     card_info_display: 'always',
@@ -37,6 +38,7 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     hide_early_access_updates: false,
     auto_organize_exclusions: [],
     metadata_refresh_skip_paths: [],
+    download_skip_base_models: [],
 });
 
 export function createDefaultSettings() {

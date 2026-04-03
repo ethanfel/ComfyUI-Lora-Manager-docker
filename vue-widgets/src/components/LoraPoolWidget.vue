@@ -1,5 +1,5 @@
 <template>
-  <div class="lora-pool-widget">
+  <div class="lora-pool-widget" @wheel="onWheel">
     <!-- Summary View -->
     <LoraPoolSummaryView
       :selected-base-models="state.selectedBaseModels.value"
@@ -8,6 +8,9 @@
       :exclude-tags="state.excludeTags.value"
       :include-folders="state.includeFolders.value"
       :exclude-folders="state.excludeFolders.value"
+      :include-patterns="state.includePatterns.value"
+      :exclude-patterns="state.excludePatterns.value"
+      :use-regex="state.useRegex.value"
       :no-credit-required="state.noCreditRequired.value"
       :allow-selling="state.allowSelling.value"
       :preview-items="state.previewItems.value"
@@ -16,6 +19,9 @@
       @open-modal="openModal"
       @update:include-folders="state.includeFolders.value = $event"
       @update:exclude-folders="state.excludeFolders.value = $event"
+      @update:include-patterns="state.includePatterns.value = $event"
+      @update:exclude-patterns="state.excludePatterns.value = $event"
+      @update:use-regex="state.useRegex.value = $event"
       @update:no-credit-required="state.noCreditRequired.value = $event"
       @update:allow-selling="state.allowSelling.value = $event"
       @refresh="state.refreshPreview"
@@ -91,6 +97,53 @@ const modalState = useModalState()
 // Modal handling
 const openModal = (modal: ModalType) => {
   modalState.openModal(modal)
+}
+
+/**
+ * Handle mouse wheel events on the widget.
+ * Forwards the event to the ComfyUI canvas for zooming when appropriate.
+ */
+const onWheel = (event: WheelEvent) => {
+  // Check if the event originated from a slider component
+  // Sliders have data-capture-wheel="true" attribute
+  const target = event.target as HTMLElement
+  if (target?.closest('[data-capture-wheel="true"]')) {
+    // Event is from a slider, slider already handled it
+    // Just stop propagation to prevent canvas zoom
+    event.stopPropagation()
+    return
+  }
+
+  // Access ComfyUI app from global window
+  const app = (window as any).app
+  if (!app || !app.canvas || typeof app.canvas.processMouseWheel !== 'function') {
+    return
+  }
+
+  const deltaX = event.deltaX
+  const deltaY = event.deltaY
+  const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY)
+
+  // 1. Handle pinch-to-zoom (ctrlKey is true for pinch-to-zoom on most browsers)
+  if (event.ctrlKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    app.canvas.processMouseWheel(event)
+    return
+  }
+
+  // 2. Horizontal scroll: pass to canvas (widgets usually don't scroll horizontally)
+  if (isHorizontal) {
+    event.preventDefault()
+    event.stopPropagation()
+    app.canvas.processMouseWheel(event)
+    return
+  }
+
+  // 3. Vertical scrolling: forward to canvas
+  event.preventDefault()
+  event.stopPropagation()
+  app.canvas.processMouseWheel(event)
 }
 
 // Lifecycle

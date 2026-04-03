@@ -2,13 +2,22 @@ import { modalManager } from './ModalManager.js';
 import { showToast } from '../utils/uiHelpers.js';
 import { state, createDefaultSettings } from '../state/index.js';
 import { resetAndReload } from '../api/modelApiFactory.js';
-import { DOWNLOAD_PATH_TEMPLATES, MAPPABLE_BASE_MODELS, PATH_TEMPLATE_PLACEHOLDERS, DEFAULT_PATH_TEMPLATES, DEFAULT_PRIORITY_TAG_CONFIG } from '../utils/constants.js';
+import { 
+    DOWNLOAD_PATH_TEMPLATES, 
+    MAPPABLE_BASE_MODELS, 
+    PATH_TEMPLATE_PLACEHOLDERS, 
+    DEFAULT_PATH_TEMPLATES, 
+    DEFAULT_PRIORITY_TAG_CONFIG,
+    getMappableBaseModelsDynamic
+} from '../utils/constants.js';
 import { translate } from '../utils/i18nHelpers.js';
 import { i18n } from '../i18n/index.js';
 import { configureModelCardVideo } from '../components/shared/ModelCard.js';
 import { validatePriorityTagString, getPriorityTagSuggestionsMap, invalidatePriorityTagSuggestionsCache } from '../utils/priorityTagHelpers.js';
 import { bannerService } from './BannerService.js';
 import { sidebarManager } from '../components/SidebarManager.js';
+
+const VALID_MATURE_BLUR_LEVELS = new Set(['PG13', 'R', 'X', 'XXX']);
 
 export class SettingsManager {
     constructor() {
@@ -137,9 +146,27 @@ export class SettingsManager {
             backendSettings?.metadata_refresh_skip_paths ?? defaults.metadata_refresh_skip_paths
         );
 
+        merged.download_skip_base_models = this.normalizeDownloadSkipBaseModels(
+            backendSettings?.download_skip_base_models ?? defaults.download_skip_base_models
+        );
+
+        merged.mature_blur_level = this.normalizeMatureBlurLevel(
+            backendSettings?.mature_blur_level ?? defaults.mature_blur_level
+        );
+
         Object.keys(merged).forEach(key => this.backendSettingKeys.add(key));
 
         return merged;
+    }
+
+    normalizeMatureBlurLevel(value) {
+        if (typeof value === 'string') {
+            const normalized = value.trim().toUpperCase();
+            if (VALID_MATURE_BLUR_LEVELS.has(normalized)) {
+                return normalized;
+            }
+        }
+        return 'R';
     }
 
     normalizePatternList(value) {
@@ -161,6 +188,17 @@ export class SettingsManager {
         }
 
         return [];
+    }
+
+    getAvailableDownloadSkipBaseModels() {
+        // Use dynamic base models if available, fallback to hardcoded
+        const models = getMappableBaseModelsDynamic();
+        return models.filter(model => model !== 'Other');
+    }
+
+    normalizeDownloadSkipBaseModels(value) {
+        const allowed = new Set(this.getAvailableDownloadSkipBaseModels());
+        return this.normalizePatternList(value).filter(model => allowed.has(model));
     }
 
     registerStartupMessages(messages = []) {
@@ -360,6 +398,36 @@ export class SettingsManager {
                     event.preventDefault();
                     this.saveMetadataRefreshSkipPaths();
                 }
+            });
+        }
+
+        const downloadSkipBaseModelsContainer = document.getElementById('downloadSkipBaseModelsContainer');
+        if (downloadSkipBaseModelsContainer) {
+            downloadSkipBaseModelsContainer.addEventListener('change', (event) => {
+                if (event.target instanceof HTMLInputElement && event.target.name === 'downloadSkipBaseModel') {
+                    this.saveDownloadSkipBaseModels();
+                }
+            });
+        }
+
+        const downloadSkipBaseModelsToggle = document.getElementById('downloadSkipBaseModelsToggle');
+        if (downloadSkipBaseModelsToggle) {
+            downloadSkipBaseModelsToggle.addEventListener('click', () => {
+                this.toggleDownloadSkipBaseModelsPanel();
+            });
+        }
+
+        const downloadSkipBaseModelsSearch = document.getElementById('downloadSkipBaseModelsSearch');
+        if (downloadSkipBaseModelsSearch) {
+            downloadSkipBaseModelsSearch.addEventListener('input', () => {
+                this.renderDownloadSkipBaseModels();
+            });
+        }
+
+        const downloadSkipBaseModelsClear = document.getElementById('downloadSkipBaseModelsClear');
+        if (downloadSkipBaseModelsClear) {
+            downloadSkipBaseModelsClear.addEventListener('click', () => {
+                this.clearDownloadSkipBaseModels();
             });
         }
 
@@ -682,6 +750,13 @@ export class SettingsManager {
             showOnlySFWCheckbox.checked = state.global.settings.show_only_sfw ?? false;
         }
 
+        const matureBlurLevelSelect = document.getElementById('matureBlurLevel');
+        if (matureBlurLevelSelect) {
+            matureBlurLevelSelect.value = this.normalizeMatureBlurLevel(
+                state.global.settings.mature_blur_level
+            );
+        }
+
         const usePortableCheckbox = document.getElementById('usePortableSettings');
         if (usePortableCheckbox) {
             usePortableCheckbox.checked = !!state.global.settings.use_portable_settings;
@@ -706,6 +781,13 @@ export class SettingsManager {
         if (metadataRefreshSkipPathsError) {
             metadataRefreshSkipPathsError.textContent = '';
         }
+
+        this.renderDownloadSkipBaseModels();
+        const downloadSkipBaseModelsError = document.getElementById('downloadSkipBaseModelsError');
+        if (downloadSkipBaseModelsError) {
+            downloadSkipBaseModelsError.textContent = '';
+        }
+        this.setDownloadSkipBaseModelsPanelOpen(false);
 
         // Set video autoplay on hover setting
         const autoplayOnHoverCheckbox = document.getElementById('autoplayOnHover');
@@ -1164,10 +1246,7 @@ export class SettingsManager {
                 throw new Error('No LoRA roots found');
             }
 
-            // Clear existing options except the first one (No Default)
-            const noDefaultOption = defaultLoraRootSelect.querySelector('option[value=""]');
             defaultLoraRootSelect.innerHTML = '';
-            defaultLoraRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1177,9 +1256,8 @@ export class SettingsManager {
                 defaultLoraRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_lora_root || '';
-            defaultLoraRootSelect.value = defaultRoot;
+            defaultLoraRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading LoRA roots:', error);
@@ -1203,10 +1281,7 @@ export class SettingsManager {
                 throw new Error('No checkpoint roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultCheckpointRootSelect.querySelector('option[value=""]');
             defaultCheckpointRootSelect.innerHTML = '';
-            defaultCheckpointRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1216,9 +1291,8 @@ export class SettingsManager {
                 defaultCheckpointRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_checkpoint_root || '';
-            defaultCheckpointRootSelect.value = defaultRoot;
+            defaultCheckpointRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading checkpoint roots:', error);
@@ -1242,10 +1316,7 @@ export class SettingsManager {
                 throw new Error('No diffusion model roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultUnetRootSelect.querySelector('option[value=""]');
             defaultUnetRootSelect.innerHTML = '';
-            defaultUnetRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1255,9 +1326,8 @@ export class SettingsManager {
                 defaultUnetRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_unet_root || '';
-            defaultUnetRootSelect.value = defaultRoot;
+            defaultUnetRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading diffusion model roots:', error);
@@ -1281,10 +1351,7 @@ export class SettingsManager {
                 throw new Error('No embedding roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultEmbeddingRootSelect.querySelector('option[value=""]');
             defaultEmbeddingRootSelect.innerHTML = '';
-            defaultEmbeddingRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1294,9 +1361,8 @@ export class SettingsManager {
                 defaultEmbeddingRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_embedding_root || '';
-            defaultEmbeddingRootSelect.value = defaultRoot;
+            defaultEmbeddingRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading embedding roots:', error);
@@ -1395,7 +1461,7 @@ export class SettingsManager {
         try {
             // Save to backend - this triggers path validation
             await this.saveSetting('extra_folder_paths', extraFolderPaths);
-            showToast('toast.settings.settingsUpdated', { setting: 'Extra Folder Paths' }, 'success');
+            showToast('settings.extraFolderPaths.saveSuccess', {}, 'success');
 
             // Add empty row if no valid paths exist for the changed type
             const container = document.getElementById(`extraFolderPaths-${changedModelType}`);
@@ -1444,7 +1510,7 @@ export class SettingsManager {
         const row = document.createElement('div');
         row.className = 'mapping-row';
 
-        const availableModels = MAPPABLE_BASE_MODELS.filter(model => {
+        const availableModels = getMappableBaseModelsDynamic().filter(model => {
             const existingMappings = state.global.settings.base_model_path_mappings || {};
             return !existingMappings.hasOwnProperty(model) || model === baseModel;
         });
@@ -1546,7 +1612,7 @@ export class SettingsManager {
             const currentValue = select.value;
 
             // Get available models (not already mapped, except current)
-            const availableModels = MAPPABLE_BASE_MODELS.filter(model =>
+            const availableModels = getMappableBaseModelsDynamic().filter(model =>
                 !existingMappings.hasOwnProperty(model) || model === currentValue
             );
 
@@ -1811,7 +1877,9 @@ export class SettingsManager {
         const element = document.getElementById(elementId);
         if (!element) return;
 
-        const value = element.value;
+        const value = settingKey === 'mature_blur_level'
+            ? this.normalizeMatureBlurLevel(element.value)
+            : element.value;
 
         try {
             // Update frontend state with mapped keys
@@ -1834,7 +1902,12 @@ export class SettingsManager {
 
             showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
 
-            if (settingKey === 'model_name_display' || settingKey === 'model_card_footer_action' || settingKey === 'update_flag_strategy') {
+            if (
+                settingKey === 'model_name_display'
+                || settingKey === 'model_card_footer_action'
+                || settingKey === 'update_flag_strategy'
+                || settingKey === 'mature_blur_level'
+            ) {
                 this.reloadContent();
             }
         } catch (error) {
@@ -2134,6 +2207,190 @@ export class SettingsManager {
                     'settings.autoOrganizeExclusions.validation.saveFailed',
                     { message: error.message },
                     `Unable to save exclusions: ${error.message}`
+                );
+            }
+            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+        }
+    }
+
+    renderDownloadSkipBaseModels() {
+        const container = document.getElementById('downloadSkipBaseModelsContainer');
+        const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+        const emptyState = document.getElementById('downloadSkipBaseModelsEmpty');
+        if (!container) {
+            return;
+        }
+
+        const selectedValues = this.normalizeDownloadSkipBaseModels(
+            state.global.settings.download_skip_base_models
+        );
+        const selected = new Set(selectedValues);
+        const options = this.getAvailableDownloadSkipBaseModels();
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        const filteredOptions = query
+            ? options.filter((baseModel) => baseModel.toLowerCase().includes(query))
+            : options;
+
+        container.innerHTML = filteredOptions.map((baseModel) => `
+            <label class="base-model-skip-option">
+                <input
+                    type="checkbox"
+                    name="downloadSkipBaseModel"
+                    value="${baseModel}"
+                    ${selected.has(baseModel) ? 'checked' : ''}
+                >
+                <span>${baseModel}</span>
+            </label>
+        `).join('');
+
+        if (emptyState) {
+            emptyState.hidden = filteredOptions.length > 0;
+        }
+
+        this.renderDownloadSkipBaseModelsSummary(selectedValues);
+    }
+
+    renderDownloadSkipBaseModelsSummary(selectedValues = null) {
+        const summaryElement = document.getElementById('downloadSkipBaseModelsSummary');
+        if (!summaryElement) {
+            return;
+        }
+
+        const values = Array.isArray(selectedValues)
+            ? selectedValues
+            : this.normalizeDownloadSkipBaseModels(state.global.settings.download_skip_base_models);
+
+        if (values.length === 0) {
+            summaryElement.textContent = translate(
+                'settings.downloadSkipBaseModels.summary.none',
+                {},
+                'None selected'
+            );
+            return;
+        }
+
+        if (values.length <= 2) {
+            summaryElement.textContent = values.join(', ');
+            return;
+        }
+
+        summaryElement.textContent = translate(
+            'settings.downloadSkipBaseModels.summary.count',
+            { count: values.length },
+            `${values.length} selected`
+        );
+    }
+
+    setDownloadSkipBaseModelsPanelOpen(isOpen) {
+        const panel = document.getElementById('downloadSkipBaseModelsPanel');
+        const toggle = document.getElementById('downloadSkipBaseModelsToggle');
+        const toggleLabel = toggle?.querySelector('.base-model-skip-toggle-label');
+        if (!panel || !toggle) {
+            return;
+        }
+
+        panel.hidden = !isOpen;
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (toggleLabel) {
+            toggleLabel.textContent = isOpen
+                ? translate('settings.downloadSkipBaseModels.actions.collapse', {}, 'Collapse')
+                : translate('settings.downloadSkipBaseModels.actions.edit', {}, 'Edit');
+        }
+
+        if (isOpen) {
+            const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+            searchInput?.focus();
+        }
+    }
+
+    toggleDownloadSkipBaseModelsPanel() {
+        const panel = document.getElementById('downloadSkipBaseModelsPanel');
+        if (!panel) {
+            return;
+        }
+        this.setDownloadSkipBaseModelsPanelOpen(panel.hidden);
+    }
+
+    async saveDownloadSkipBaseModels() {
+        const container = document.getElementById('downloadSkipBaseModelsContainer');
+        const errorElement = document.getElementById('downloadSkipBaseModelsError');
+        if (!container) return;
+
+        const selected = Array.from(
+            container.querySelectorAll('input[name="downloadSkipBaseModel"]:checked')
+        ).map((input) => input.value);
+        const normalized = this.normalizeDownloadSkipBaseModels(selected);
+        const current = this.normalizeDownloadSkipBaseModels(state.global.settings.download_skip_base_models);
+
+        if (normalized.join('|') === current.join('|')) {
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+            return;
+        }
+
+        try {
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+
+            await this.saveSetting('download_skip_base_models', normalized);
+            this.renderDownloadSkipBaseModels();
+
+            showToast(
+                'toast.settings.settingsUpdated',
+                { setting: translate('settings.downloadSkipBaseModels.label') },
+                'success'
+            );
+        } catch (error) {
+            console.error('Failed to save download skip base models:', error);
+            if (errorElement) {
+                errorElement.textContent = translate(
+                    'settings.downloadSkipBaseModels.validation.saveFailed',
+                    { message: error.message },
+                    `Unable to save excluded base models: ${error.message}`
+                );
+            }
+            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+        }
+    }
+
+    async clearDownloadSkipBaseModels() {
+        const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        const current = this.normalizeDownloadSkipBaseModels(
+            state.global.settings.download_skip_base_models
+        );
+        if (current.length === 0) {
+            this.renderDownloadSkipBaseModels();
+            return;
+        }
+
+        try {
+            const errorElement = document.getElementById('downloadSkipBaseModelsError');
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+
+            await this.saveSetting('download_skip_base_models', []);
+            this.renderDownloadSkipBaseModels();
+
+            showToast(
+                'toast.settings.settingsUpdated',
+                { setting: translate('settings.downloadSkipBaseModels.label') },
+                'success'
+            );
+        } catch (error) {
+            const errorElement = document.getElementById('downloadSkipBaseModelsError');
+            console.error('Failed to clear download skip base models:', error);
+            if (errorElement) {
+                errorElement.textContent = translate(
+                    'settings.downloadSkipBaseModels.validation.saveFailed',
+                    { message: error.message },
+                    `Unable to save excluded base models: ${error.message}`
                 );
             }
             showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
