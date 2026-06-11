@@ -52,6 +52,19 @@ export async function initializeLoraPage() {
     const loraPage = new LoraPageManager();
     await loraPage.initialize();
 
+    // Deep link: pre-fill search from URL query param
+    const params = new URLSearchParams(location.search);
+    const searchQuery = params.get('search');
+    if (searchQuery) {
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.value = searchQuery;
+            searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+            // Clean URL without reloading
+            history.replaceState(null, '', location.pathname);
+        }
+    }
+
     return loraPage;
 }
 

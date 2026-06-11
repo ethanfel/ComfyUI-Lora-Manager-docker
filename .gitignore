@@ -7,6 +7,7 @@ py/run_test.py
 .vscode/
 cache/
 civitai/
+civitai_stats.db
 node_modules/
 coverage/
 .coverage
@@ -32,3 +33,4 @@ vue-widgets/dist/
 
 # Hypothesis test cache
 .hypothesis/
+.worktrees/

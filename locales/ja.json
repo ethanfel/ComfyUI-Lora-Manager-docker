@@ -190,7 +190,8 @@
             "recipes": "レシピ",
             "checkpoints": "Checkpoint",
             "embeddings": "Embedding",
-            "statistics": "統計"
+            "statistics": "統計",
+            "community": "[TODO: Translate] Community"
         },
         "search": {
             "placeholder": "検索...",
@@ -239,6 +240,8 @@
             "noTags": "タグなし",
             "autoTags": "自動タグ",
             "noBaseModelMatches": "現在の検索に一致するベースモデルはありません。",
+            "other": "[TODO: Translate] Other",
+            "hasWorkflow": "[TODO: Translate] With Workflow",
             "clearAll": "すべてのフィルタをクリア",
             "any": "いずれか",
             "all": "すべて",

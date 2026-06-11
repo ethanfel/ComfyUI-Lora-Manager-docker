@@ -190,7 +190,8 @@
             "recipes": "Рецепты",
             "checkpoints": "Checkpoints",
             "embeddings": "Embeddings",
-            "statistics": "Статистика"
+            "statistics": "Статистика",
+            "community": "[TODO: Translate] Community"
         },
         "search": {
             "placeholder": "Поиск...",
@@ -239,6 +240,8 @@
             "noTags": "Без тегов",
             "autoTags": "Авто-теги",
             "noBaseModelMatches": "Нет базовых моделей, соответствующих текущему поиску.",
+            "other": "[TODO: Translate] Other",
+            "hasWorkflow": "[TODO: Translate] With Workflow",
             "clearAll": "Очистить все фильтры",
             "any": "Любой",
             "all": "Все",

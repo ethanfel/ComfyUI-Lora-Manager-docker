@@ -190,7 +190,8 @@
             "recipes": "מתכונים",
             "checkpoints": "Checkpoints",
             "embeddings": "Embeddings",
-            "statistics": "סטטיסטיקה"
+            "statistics": "סטטיסטיקה",
+            "community": "[TODO: Translate] Community"
         },
         "search": {
             "placeholder": "חפש...",
@@ -239,6 +240,8 @@
             "noTags": "ללא תגיות",
             "autoTags": "תגיות אוטומטיות",
             "noBaseModelMatches": "אין מודלי בסיס התואמים לחיפוש הנוכחי.",
+            "other": "[TODO: Translate] Other",
+            "hasWorkflow": "[TODO: Translate] With Workflow",
             "clearAll": "נקה את כל המסננים",
             "any": "כלשהו",
             "all": "כל התגים",

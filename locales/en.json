@@ -190,7 +190,8 @@
             "recipes": "Recipes",
             "checkpoints": "Checkpoints",
             "embeddings": "Embeddings",
-            "statistics": "Stats"
+            "statistics": "Stats",
+            "community": "Community"
         },
         "search": {
             "placeholder": "Search...",
@@ -239,6 +240,8 @@
             "noTags": "No tags",
             "autoTags": "Auto Tags",
             "noBaseModelMatches": "No base models match the current search.",
+            "other": "Other",
+            "hasWorkflow": "With Workflow",
             "clearAll": "Clear All Filters",
             "any": "Any",
             "all": "All",

@@ -19,6 +19,10 @@ _CHUNK_SIZE = 256 * 1024  # 256 KB
 # to avoid IOCP/ProactorEventLoop crashes during client disconnect.
 _VIDEO_EXTENSIONS = frozenset({".mp4", ".webm", ".mov", ".avi", ".mkv"})
 
+# Ensure common media types are registered (Docker/minimal envs may miss them)
+mimetypes.add_type("image/webp", ".webp")
+mimetypes.add_type("video/mp4", ".mp4")
+
 
 class PreviewHandler:
     """Serve preview assets for the active library at request time."""
@@ -63,8 +67,17 @@ class PreviewHandler:
         if suffix in _VIDEO_EXTENSIONS:
             return await self._stream_file(request, resolved)
 
-        # aiohttp's FileResponse handles range requests and content headers for us.
-        return web.FileResponse(path=resolved, chunk_size=_CHUNK_SIZE)
+        # Explicitly set content type — aiohttp's FileResponse uses its own
+        # MimeTypes instance which may not know .webp in minimal environments.
+        # Cache aggressively: preview assets are immutable for a resolved path.
+        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
+        return web.FileResponse(
+            path=resolved, chunk_size=_CHUNK_SIZE,
+            headers={
+                "Content-Type": content_type,
+                "Cache-Control": "public, max-age=86400, immutable",
+            },
+        )
 
     async def _stream_file(
         self, request: web.Request, path: Path
@@ -82,6 +95,7 @@ class PreviewHandler:
         resp = web.StreamResponse()
         resp.content_type = content_type
         resp.content_length = file_size
+        resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
 
         await resp.prepare(request)
 

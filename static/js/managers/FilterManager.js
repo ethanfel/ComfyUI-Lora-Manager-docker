@@ -67,6 +67,9 @@ export class FilterManager {
             this.initializeLicenseFilters();
         }
 
+        // Add click handler for workflow filter
+        this.initializeWorkflowFilter();
+
         // Initialize tag logic toggle
         this.initializeTagLogicToggle();
 
@@ -310,6 +313,28 @@ export class FilterManager {
 
         // Update selections based on stored filters
         this.updateLicenseSelections();
+    }
+
+    initializeWorkflowFilter() {
+        const workflowTag = document.querySelector('.workflow-tag');
+        if (!workflowTag) return;
+
+        workflowTag.addEventListener('click', async () => {
+            this.filters.hasWorkflow = !this.filters.hasWorkflow;
+            workflowTag.classList.toggle('active', this.filters.hasWorkflow);
+            // Keep toolbar button in sync
+            const toolbarBtn = document.getElementById('workflowFilterBtn');
+            if (toolbarBtn) toolbarBtn.classList.toggle('active', this.filters.hasWorkflow);
+            this.updateActiveFiltersCount();
+            await this.applyFilters(false);
+        });
+
+        // Restore state
+        if (this.filters.hasWorkflow) {
+            workflowTag.classList.add('active');
+            const toolbarBtn = document.getElementById('workflowFilterBtn');
+            if (toolbarBtn) toolbarBtn.classList.add('active');
+        }
     }
 
     updateLicenseSelections() {
@@ -623,7 +648,8 @@ export class FilterManager {
         const modelTypeFilterCount = this.filters.modelTypes.length;
         // Exclude EMPTY_WILDCARD_MARKER from base model count
         const baseModelCount = this.filters.baseModel.filter(m => m !== EMPTY_WILDCARD_MARKER).length;
-        const totalActiveFilters = baseModelCount + tagFilterCount + autoTagFilterCount + licenseFilterCount + modelTypeFilterCount;
+        const workflowFilterCount = this.filters.hasWorkflow ? 1 : 0;
+        const totalActiveFilters = baseModelCount + tagFilterCount + autoTagFilterCount + licenseFilterCount + modelTypeFilterCount + workflowFilterCount;
 
         if (this.activeFiltersCount) {
             if (totalActiveFilters > 0) {
@@ -718,8 +744,13 @@ export class FilterManager {
             autoTags: {},
             license: {},
             modelTypes: [],
-            tagLogic: 'any'
+            tagLogic: 'any',
+            hasWorkflow: false,
         });
+
+        // Reset workflow tag UI
+        const workflowTag = document.querySelector('.workflow-tag');
+        if (workflowTag) workflowTag.classList.remove('active');
 
         // Update tag logic toggle UI
         this.updateTagLogicToggleUI();
@@ -795,7 +826,8 @@ export class FilterManager {
             tagCount > 0 ||
             autoTagCount > 0 ||
             licenseCount > 0 ||
-            modelTypeCount > 0
+            modelTypeCount > 0 ||
+            !!this.filters.hasWorkflow
         );
     }
 
@@ -808,7 +840,8 @@ export class FilterManager {
             autoTags: this.normalizeTagFilters(source.autoTags),
             license: this.shouldShowLicenseFilters() ? this.normalizeLicenseFilters(source.license) : {},
             modelTypes: this.normalizeModelTypeFilters(source.modelTypes),
-            tagLogic: source.tagLogic || 'any'
+            tagLogic: source.tagLogic || 'any',
+            hasWorkflow: !!source.hasWorkflow,
         };
     }
 
@@ -892,7 +925,8 @@ export class FilterManager {
             autoTags: { ...(this.filters.autoTags || {}) },
             license: { ...(this.filters.license || {}) },
             modelTypes: [...(this.filters.modelTypes || [])],
-            tagLogic: this.filters.tagLogic || 'any'
+            tagLogic: this.filters.tagLogic || 'any',
+            hasWorkflow: !!this.filters.hasWorkflow,
         };
     }
 

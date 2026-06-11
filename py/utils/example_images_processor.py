@@ -1,9 +1,12 @@
+import io
+import json
 import logging
 import os
 import re
 import random
 import string
 from aiohttp import web
+from PIL import Image
 from ..utils.constants import SUPPORTED_MEDIA_EXTENSIONS
 from ..services.service_registry import ServiceRegistry
 from ..services.settings_manager import get_settings_manager
@@ -31,17 +34,180 @@ class ExampleImagesProcessor:
         return ''.join(random.choice(chars) for _ in range(length))
     
     @staticmethod
-    def get_civitai_optimized_url(media_url):
-        """Convert Civitai media URL (image or video) to its optimized version"""
+    def get_civitai_optimized_url(media_url, media_type=None):
+        """Convert Civitai media URL (image or video) to its optimized version."""
         base_pattern = r'(https://image\.civitai\.com/[^/]+/[^/]+)'
         match = re.match(base_pattern, media_url)
-        
+
         if match:
             base_url = match.group(1)
+            if (media_type or "").lower() == "video":
+                return f"{base_url}/transcode=true,optimized=true"
             return f"{base_url}/optimized=true"
-        
+
         return media_url
-    
+
+    @staticmethod
+    def _parse_workflow_from_image(img):
+        """Extract workflow/prompt metadata from a PIL Image's info dict.
+
+        Returns a dict with parsed JSON data, or None if no metadata found.
+        PNG tEXt chunks store these as JSON strings, so we parse them.
+        """
+        if not hasattr(img, "info") or not isinstance(img.info, dict):
+            return None
+        workflow_data = {}
+        for key in ("workflow", "prompt"):
+            if key in img.info:
+                raw = img.info[key]
+                try:
+                    workflow_data[key] = json.loads(raw) if isinstance(raw, str) else raw
+                except (json.JSONDecodeError, TypeError):
+                    workflow_data[key] = raw
+        return workflow_data or None
+
+    @staticmethod
+    def _extract_workflow(content, save_path):
+        """Extract ComfyUI workflow from image content and save as sidecar JSON.
+
+        Returns True if a workflow was found and saved.
+        """
+        try:
+            img = Image.open(io.BytesIO(content))
+            try:
+                workflow_data = ExampleImagesProcessor._parse_workflow_from_image(img)
+            finally:
+                img.close()
+            if not workflow_data:
+                return False
+            workflow_path = os.path.splitext(save_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(workflow_data, f)
+            return True
+        except Exception:
+            logger.debug("Failed to extract workflow for %s", save_path, exc_info=True)
+            return False
+
+    @staticmethod
+    def _extract_workflow_from_api_meta(image_meta, save_path):
+        """Extract ComfyUI workflow from CivitAI API image metadata.
+
+        Checks for 'comfy' key in the image's meta dict. Used as fallback
+        when file-based extraction isn't possible (e.g. videos).
+        Returns True if a workflow was found and saved.
+        """
+        if not image_meta or not isinstance(image_meta, dict):
+            return False
+        comfy_raw = image_meta.get("comfy")
+        if not comfy_raw:
+            return False
+        try:
+            parsed = json.loads(comfy_raw) if isinstance(comfy_raw, str) else comfy_raw
+            if not isinstance(parsed, dict):
+                return False
+            workflow_path = os.path.splitext(save_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(parsed, f)
+            return True
+        except (json.JSONDecodeError, TypeError):
+            return False
+        except Exception:
+            logger.debug("Failed to extract workflow from API meta for %s", save_path, exc_info=True)
+            return False
+
+    @staticmethod
+    def _extract_workflow_from_file(file_path):
+        """Extract ComfyUI workflow from an existing PNG file on disk.
+
+        Returns True if a workflow was found and saved as a sidecar JSON.
+        """
+        try:
+            img = Image.open(file_path)
+            try:
+                workflow_data = ExampleImagesProcessor._parse_workflow_from_image(img)
+            finally:
+                img.close()
+            if not workflow_data:
+                return False
+            workflow_path = os.path.splitext(file_path)[0] + ".workflow.json"
+            with open(workflow_path, "w", encoding="utf-8") as f:
+                json.dump(workflow_data, f)
+            return True
+        except Exception:
+            logger.debug("Failed to extract workflow from %s", file_path, exc_info=True)
+            return False
+
+    @staticmethod
+    def scan_existing_workflows(example_images_root):
+        """Scan all existing PNG example images and extract embedded workflows.
+
+        Walks all model hash folders under example_images_root, finds PNG files
+        that don't already have a .workflow.json sidecar, and extracts any
+        embedded ComfyUI workflow/prompt metadata.
+
+        Returns dict with scanned/found/error counts.
+        """
+        scanned = 0
+        found = 0
+        errors = 0
+
+        if not example_images_root or not os.path.isdir(example_images_root):
+            return {"scanned": scanned, "found": found, "errors": errors}
+
+        for root, dirs, files in os.walk(example_images_root):
+            for filename in files:
+                if not filename.lower().endswith(".png"):
+                    continue
+                file_path = os.path.join(root, filename)
+                # Skip if sidecar already exists
+                sidecar = os.path.splitext(file_path)[0] + ".workflow.json"
+                if os.path.exists(sidecar):
+                    continue
+                scanned += 1
+                try:
+                    if ExampleImagesProcessor._extract_workflow_from_file(file_path):
+                        found += 1
+                        logger.info("Extracted workflow from %s", file_path)
+                except Exception:
+                    errors += 1
+                    logger.error("Error scanning %s", file_path, exc_info=True)
+
+        return {"scanned": scanned, "found": found, "errors": errors}
+
+    @staticmethod
+    def collect_files_needing_metadata_workflow(example_images_root):
+        """Find non-PNG media files without workflow sidecars, grouped by model hash.
+
+        Returns dict mapping model_hash -> list of (file_path, filename) tuples.
+        These files can't have embedded workflows (not PNG), so workflow data
+        must come from CivitAI API metadata.
+        """
+        result: dict[str, list[tuple[str, str]]] = {}
+
+        if not example_images_root or not os.path.isdir(example_images_root):
+            return result
+
+        all_media_exts = (
+            set(SUPPORTED_MEDIA_EXTENSIONS['images'])
+            | set(SUPPORTED_MEDIA_EXTENSIONS['videos'])
+        )
+
+        for root_dir, dirs, files in os.walk(example_images_root):
+            for filename in files:
+                file_ext = os.path.splitext(filename)[1].lower()
+                # Skip PNGs (handled by scan_existing_workflows) and non-media
+                if file_ext == '.png' or file_ext not in all_media_exts:
+                    continue
+                file_path = os.path.join(root_dir, filename)
+                sidecar = os.path.splitext(file_path)[0] + ".workflow.json"
+                if os.path.exists(sidecar):
+                    continue
+                # Extract model hash from folder name
+                model_hash = os.path.basename(root_dir)
+                result.setdefault(model_hash, []).append((file_path, filename))
+
+        return result
+
     @staticmethod
     def _get_file_extension_from_content_or_headers(content, headers, fallback_url=None, media_type_hint=None):
         """Determine file extension from content magic bytes or headers
@@ -131,7 +297,7 @@ class ExampleImagesProcessor:
             # Apply optimization for Civitai URLs if enabled
             original_url = image_url
             if optimize and 'civitai.com' in image_url:
-                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url)
+                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url, image.get("type"))
             
             # Download the file first to determine the actual file type
             try:
@@ -170,7 +336,14 @@ class ExampleImagesProcessor:
                     # Save the file
                     with open(save_path, 'wb') as f:
                         f.write(content)
-                    
+
+                    # Extract workflow from PNG metadata, fallback to API meta
+                    if is_image and media_ext == '.png':
+                        if not ExampleImagesProcessor._extract_workflow(content, save_path):
+                            ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+                    else:
+                        ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
                     logger.warning(error_msg)
@@ -185,7 +358,7 @@ class ExampleImagesProcessor:
                 error_msg = f"Error downloading file {image_url}: {str(e)}"
                 logger.error(error_msg)
                 model_success = False  # Mark the model as failed
-        
+
         return model_success, False  # (success, is_metadata_stale)
     
     @staticmethod
@@ -214,7 +387,7 @@ class ExampleImagesProcessor:
             # Apply optimization for Civitai URLs if enabled
             original_url = image_url
             if optimize and 'civitai.com' in image_url:
-                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url)
+                image_url = ExampleImagesProcessor.get_civitai_optimized_url(image_url, image.get("type"))
             
             # Download the file first to determine the actual file type
             try:
@@ -253,7 +426,14 @@ class ExampleImagesProcessor:
                     # Save the file
                     with open(save_path, 'wb') as f:
                         f.write(content)
-                    
+
+                    # Extract workflow from PNG metadata, fallback to API meta
+                    if is_image and media_ext == '.png':
+                        if not ExampleImagesProcessor._extract_workflow(content, save_path):
+                            ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+                    else:
+                        ExampleImagesProcessor._extract_workflow_from_api_meta(image.get("meta"), save_path)
+
                 elif ExampleImagesProcessor._is_not_found_error(content):
                     error_msg = f"Failed to download file: {image_url}, status code: 404 - Model metadata might be stale"
                     logger.warning(error_msg)
@@ -271,7 +451,7 @@ class ExampleImagesProcessor:
                 logger.error(error_msg)
                 model_success = False  # Mark the model as failed
                 failed_images.append(image_url)  # Track failed URL
-        
+
         return model_success, False, failed_images  # (success, is_metadata_stale, failed_images)
     
     @staticmethod

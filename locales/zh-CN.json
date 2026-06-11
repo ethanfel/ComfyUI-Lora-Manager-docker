@@ -190,7 +190,8 @@
             "recipes": "配方",
             "checkpoints": "Checkpoint",
             "embeddings": "Embedding",
-            "statistics": "统计"
+            "statistics": "统计",
+            "community": "[TODO: Translate] Community"
         },
         "search": {
             "placeholder": "搜索...",
@@ -239,6 +240,8 @@
             "noTags": "无标签",
             "autoTags": "自动标签",
             "noBaseModelMatches": "没有基础模型符合当前搜索。",
+            "other": "[TODO: Translate] Other",
+            "hasWorkflow": "[TODO: Translate] With Workflow",
             "clearAll": "清除所有筛选",
             "any": "任一",
             "all": "全部",

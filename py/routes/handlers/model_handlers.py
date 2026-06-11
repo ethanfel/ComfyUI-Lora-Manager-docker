@@ -358,6 +358,12 @@ class ModelListingHandler:
         else:
             allow_selling_generated_content = None  # None means no filter applied
 
+        has_workflow = request.query.get("has_workflow")
+        if has_workflow is not None:
+            has_workflow = has_workflow.lower() not in ("false", "0", "")
+        else:
+            has_workflow = None
+
         # Name pattern filters for LoRA Pool
         name_pattern_include = request.query.getall("name_pattern_include", [])
         name_pattern_exclude = request.query.getall("name_pattern_exclude", [])
@@ -385,6 +391,7 @@ class ModelListingHandler:
             "credit_required": credit_required,
             "allow_selling_generated_content": allow_selling_generated_content,
             "model_types": model_types,
+            "has_workflow": has_workflow,
             "name_pattern_include": name_pattern_include,
             "name_pattern_exclude": name_pattern_exclude,
             "name_pattern_use_regex": name_pattern_use_regex,

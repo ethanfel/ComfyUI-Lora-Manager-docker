@@ -190,7 +190,8 @@
             "recipes": "Rezepte",
             "checkpoints": "Checkpoints",
             "embeddings": "Embeddings",
-            "statistics": "Statistiken"
+            "statistics": "Statistiken",
+            "community": "[TODO: Translate] Community"
         },
         "search": {
             "placeholder": "Suchen...",
@@ -239,6 +240,8 @@
             "noTags": "Keine Tags",
             "autoTags": "Auto-Tags",
             "noBaseModelMatches": "Keine Basismodelle entsprechen der aktuellen Suche.",
+            "other": "[TODO: Translate] Other",
+            "hasWorkflow": "[TODO: Translate] With Workflow",
             "clearAll": "Alle Filter löschen",
             "any": "Beliebig",
             "all": "Alle",
