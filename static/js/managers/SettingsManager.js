@@ -2,13 +2,22 @@ import { modalManager } from './ModalManager.js';
 import { showToast } from '../utils/uiHelpers.js';
 import { state, createDefaultSettings } from '../state/index.js';
 import { resetAndReload } from '../api/modelApiFactory.js';
-import { DOWNLOAD_PATH_TEMPLATES, MAPPABLE_BASE_MODELS, PATH_TEMPLATE_PLACEHOLDERS, DEFAULT_PATH_TEMPLATES, DEFAULT_PRIORITY_TAG_CONFIG } from '../utils/constants.js';
+import { 
+    DOWNLOAD_PATH_TEMPLATES, 
+    MAPPABLE_BASE_MODELS, 
+    PATH_TEMPLATE_PLACEHOLDERS, 
+    DEFAULT_PATH_TEMPLATES, 
+    DEFAULT_PRIORITY_TAG_CONFIG,
+    getMappableBaseModelsDynamic
+} from '../utils/constants.js';
 import { translate } from '../utils/i18nHelpers.js';
 import { i18n } from '../i18n/index.js';
 import { configureModelCardVideo } from '../components/shared/ModelCard.js';
 import { validatePriorityTagString, getPriorityTagSuggestionsMap, invalidatePriorityTagSuggestionsCache } from '../utils/priorityTagHelpers.js';
 import { bannerService } from './BannerService.js';
 import { sidebarManager } from '../components/SidebarManager.js';
+
+const VALID_MATURE_BLUR_LEVELS = new Set(['PG13', 'R', 'X', 'XXX']);
 
 export class SettingsManager {
     constructor() {
@@ -137,9 +146,31 @@ export class SettingsManager {
             backendSettings?.metadata_refresh_skip_paths ?? defaults.metadata_refresh_skip_paths
         );
 
+        merged.skip_previously_downloaded_model_versions =
+            backendSettings?.skip_previously_downloaded_model_versions
+            ?? defaults.skip_previously_downloaded_model_versions;
+
+        merged.download_skip_base_models = this.normalizeDownloadSkipBaseModels(
+            backendSettings?.download_skip_base_models ?? defaults.download_skip_base_models
+        );
+
+        merged.mature_blur_level = this.normalizeMatureBlurLevel(
+            backendSettings?.mature_blur_level ?? defaults.mature_blur_level
+        );
+
         Object.keys(merged).forEach(key => this.backendSettingKeys.add(key));
 
         return merged;
+    }
+
+    normalizeMatureBlurLevel(value) {
+        if (typeof value === 'string') {
+            const normalized = value.trim().toUpperCase();
+            if (VALID_MATURE_BLUR_LEVELS.has(normalized)) {
+                return normalized;
+            }
+        }
+        return 'R';
     }
 
     normalizePatternList(value) {
@@ -161,6 +192,17 @@ export class SettingsManager {
         }
 
         return [];
+    }
+
+    getAvailableDownloadSkipBaseModels() {
+        // Use dynamic base models if available, fallback to hardcoded
+        const models = getMappableBaseModelsDynamic();
+        return models.filter(model => model !== 'Other');
+    }
+
+    normalizeDownloadSkipBaseModels(value) {
+        const allowed = new Set(this.getAvailableDownloadSkipBaseModels());
+        return this.normalizePatternList(value).filter(model => allowed.has(model));
     }
 
     registerStartupMessages(messages = []) {
@@ -253,6 +295,13 @@ export class SettingsManager {
         // Update state
         state.global.settings[settingKey] = value;
 
+        if (settingKey === 'lora_syntax_format') {
+            try {
+                localStorage.setItem('lm:lora-syntax-format-changed', Date.now().toString());
+            } catch (_) {
+            }
+        }
+
         if (!this.isBackendSetting(settingKey)) {
             return;
         }
@@ -319,6 +368,13 @@ export class SettingsManager {
             });
         }
 
+        const openBackupLocationButton = document.getElementById('backupOpenLocationBtn');
+        if (openBackupLocationButton) {
+            openBackupLocationButton.addEventListener('click', () => {
+                this.openBackupLocation();
+            });
+        }
+
         ['lora', 'checkpoint', 'embedding'].forEach(modelType => {
             const customInput = document.getElementById(`${modelType}CustomTemplate`);
             if (customInput) {
@@ -360,6 +416,36 @@ export class SettingsManager {
                     event.preventDefault();
                     this.saveMetadataRefreshSkipPaths();
                 }
+            });
+        }
+
+        const downloadSkipBaseModelsContainer = document.getElementById('downloadSkipBaseModelsContainer');
+        if (downloadSkipBaseModelsContainer) {
+            downloadSkipBaseModelsContainer.addEventListener('change', (event) => {
+                if (event.target instanceof HTMLInputElement && event.target.name === 'downloadSkipBaseModel') {
+                    this.saveDownloadSkipBaseModels();
+                }
+            });
+        }
+
+        const downloadSkipBaseModelsToggle = document.getElementById('downloadSkipBaseModelsToggle');
+        if (downloadSkipBaseModelsToggle) {
+            downloadSkipBaseModelsToggle.addEventListener('click', () => {
+                this.toggleDownloadSkipBaseModelsPanel();
+            });
+        }
+
+        const downloadSkipBaseModelsSearch = document.getElementById('downloadSkipBaseModelsSearch');
+        if (downloadSkipBaseModelsSearch) {
+            downloadSkipBaseModelsSearch.addEventListener('input', () => {
+                this.renderDownloadSkipBaseModels();
+            });
+        }
+
+        const downloadSkipBaseModelsClear = document.getElementById('downloadSkipBaseModelsClear');
+        if (downloadSkipBaseModelsClear) {
+            downloadSkipBaseModelsClear.addEventListener('click', () => {
+                this.clearDownloadSkipBaseModels();
             });
         }
 
@@ -670,6 +756,35 @@ export class SettingsManager {
         }
     }
 
+    async openBackupLocation() {
+        try {
+            const response = await fetch('/api/lm/backup/open-location', {
+                method: 'POST'
+            });
+
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            const data = await response.json();
+
+            if (data.mode === 'clipboard' && data.path) {
+                try {
+                    await navigator.clipboard.writeText(data.path);
+                    showToast('settings.backup.locationCopied', { path: data.path }, 'success');
+                } catch (clipboardErr) {
+                    console.warn('Clipboard API not available:', clipboardErr);
+                    showToast('settings.backup.locationClipboardFallback', { path: data.path }, 'info');
+                }
+            } else {
+                showToast('settings.backup.openFolderSuccess', {}, 'success');
+            }
+        } catch (error) {
+            console.error('Failed to open backup folder:', error);
+            showToast('settings.backup.openFolderFailed', {}, 'error');
+        }
+    }
+
     async loadSettingsToUI() {
         // Set frontend settings from state
         const blurMatureContentCheckbox = document.getElementById('blurMatureContent');
@@ -682,9 +797,36 @@ export class SettingsManager {
             showOnlySFWCheckbox.checked = state.global.settings.show_only_sfw ?? false;
         }
 
+        const matureBlurLevelSelect = document.getElementById('matureBlurLevel');
+        if (matureBlurLevelSelect) {
+            matureBlurLevelSelect.value = this.normalizeMatureBlurLevel(
+                state.global.settings.mature_blur_level
+            );
+        }
+
         const usePortableCheckbox = document.getElementById('usePortableSettings');
         if (usePortableCheckbox) {
             usePortableCheckbox.checked = !!state.global.settings.use_portable_settings;
+        }
+
+        const civitaiHostSelect = document.getElementById('civitaiHost');
+        if (civitaiHostSelect) {
+            civitaiHostSelect.value = state.global.settings.civitai_host || 'civitai.com';
+        }
+
+        const downloadBackendSelect = document.getElementById('downloadBackend');
+        if (downloadBackendSelect) {
+            downloadBackendSelect.value = state.global.settings.download_backend || 'python';
+        }
+
+        const aria2cPathInput = document.getElementById('aria2cPath');
+        if (aria2cPathInput) {
+            aria2cPathInput.value = state.global.settings.aria2c_path || '';
+        }
+
+        const recipesPathInput = document.getElementById('recipesPath');
+        if (recipesPathInput) {
+            recipesPathInput.value = state.global.settings.recipes_path || '';
         }
 
         const autoOrganizeExclusionsInput = document.getElementById('autoOrganizeExclusions');
@@ -706,6 +848,13 @@ export class SettingsManager {
         if (metadataRefreshSkipPathsError) {
             metadataRefreshSkipPathsError.textContent = '';
         }
+
+        this.renderDownloadSkipBaseModels();
+        const downloadSkipBaseModelsError = document.getElementById('downloadSkipBaseModelsError');
+        if (downloadSkipBaseModelsError) {
+            downloadSkipBaseModelsError.textContent = '';
+        }
+        this.setDownloadSkipBaseModelsPanelOpen(false);
 
         // Set video autoplay on hover setting
         const autoplayOnHoverCheckbox = document.getElementById('autoplayOnHover');
@@ -737,6 +886,12 @@ export class SettingsManager {
             modelCardFooterActionSelect.value = state.global.settings.model_card_footer_action || 'example_images';
         }
 
+        // Set show version on card
+        const showVersionOnCardCheckbox = document.getElementById('showVersionOnCard');
+        if (showVersionOnCardCheckbox) {
+            showVersionOnCardCheckbox.checked = state.global.settings.show_version_on_card !== false;
+        }
+
         // Set model name display setting
         const modelNameDisplaySelect = document.getElementById('modelNameDisplay');
         if (modelNameDisplaySelect) {
@@ -754,6 +909,12 @@ export class SettingsManager {
             hideEarlyAccessUpdatesCheckbox.checked = state.global.settings.hide_early_access_updates || false;
         }
 
+        const skipPreviouslyDownloadedModelVersionsCheckbox = document.getElementById('skipPreviouslyDownloadedModelVersions');
+        if (skipPreviouslyDownloadedModelVersionsCheckbox) {
+            skipPreviouslyDownloadedModelVersionsCheckbox.checked =
+                state.global.settings.skip_previously_downloaded_model_versions || false;
+        }
+
         // Set optimize example images setting
         const optimizeExampleImagesCheckbox = document.getElementById('optimizeExampleImages');
         if (optimizeExampleImagesCheckbox) {
@@ -765,6 +926,23 @@ export class SettingsManager {
         if (autoDownloadExampleImagesCheckbox) {
             autoDownloadExampleImagesCheckbox.checked = state.global.settings.auto_download_example_images || false;
         }
+
+        const exampleImagesOpenModeSelect = document.getElementById('exampleImagesOpenMode');
+        if (exampleImagesOpenModeSelect) {
+            exampleImagesOpenModeSelect.value = state.global.settings.example_images_open_mode || 'system';
+        }
+
+        const exampleImagesLocalRootInput = document.getElementById('exampleImagesLocalRoot');
+        if (exampleImagesLocalRootInput) {
+            exampleImagesLocalRootInput.value = state.global.settings.example_images_local_root || '';
+        }
+
+        const exampleImagesOpenUriTemplateInput = document.getElementById('exampleImagesOpenUriTemplate');
+        if (exampleImagesOpenUriTemplateInput) {
+            exampleImagesOpenUriTemplateInput.value = state.global.settings.example_images_open_uri_template || '';
+        }
+
+        this.updateExampleImagesOpenSettingsVisibility();
 
         // Load download path templates
         this.loadDownloadPathTemplates();
@@ -778,8 +956,17 @@ export class SettingsManager {
             includeTriggerWordsCheckbox.checked = state.global.settings.include_trigger_words || false;
         }
 
+        // Set lora syntax format
+        const loraSyntaxFormatSelect = document.getElementById('loraSyntaxFormat');
+        if (loraSyntaxFormatSelect) {
+            loraSyntaxFormatSelect.value = state.global.settings.lora_syntax_format || 'legacy';
+        }
+
         // Load metadata archive settings
         await this.loadMetadataArchiveSettings();
+
+        // Load backup settings
+        await this.loadBackupSettings();
 
         // Load base model path mappings
         this.loadBaseModelMappings();
@@ -809,7 +996,34 @@ export class SettingsManager {
             languageSelect.value = currentLanguage;
         }
 
+        this.loadDownloadBackendSettings();
         this.loadProxySettings();
+    }
+
+    loadDownloadBackendSettings() {
+        const downloadBackendSelect = document.getElementById('downloadBackend');
+        const aria2PathSetting = document.getElementById('aria2PathSetting');
+        const updateVisibility = () => {
+            if (!aria2PathSetting || !downloadBackendSelect) {
+                return;
+            }
+            aria2PathSetting.style.display = downloadBackendSelect.value === 'aria2' ? 'block' : 'none';
+        };
+
+        if (downloadBackendSelect) {
+            downloadBackendSelect.value = state.global.settings.download_backend || 'python';
+            downloadBackendSelect.onchange = () => {
+                updateVisibility();
+                this.saveSelectSetting('downloadBackend', 'download_backend');
+            };
+        }
+
+        const aria2cPathInput = document.getElementById('aria2cPath');
+        if (aria2cPathInput) {
+            aria2cPathInput.value = state.global.settings.aria2c_path || '';
+        }
+
+        updateVisibility();
     }
 
     setupPriorityTagInputs() {
@@ -1164,10 +1378,7 @@ export class SettingsManager {
                 throw new Error('No LoRA roots found');
             }
 
-            // Clear existing options except the first one (No Default)
-            const noDefaultOption = defaultLoraRootSelect.querySelector('option[value=""]');
             defaultLoraRootSelect.innerHTML = '';
-            defaultLoraRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1177,9 +1388,8 @@ export class SettingsManager {
                 defaultLoraRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_lora_root || '';
-            defaultLoraRootSelect.value = defaultRoot;
+            defaultLoraRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading LoRA roots:', error);
@@ -1203,10 +1413,7 @@ export class SettingsManager {
                 throw new Error('No checkpoint roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultCheckpointRootSelect.querySelector('option[value=""]');
             defaultCheckpointRootSelect.innerHTML = '';
-            defaultCheckpointRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1216,9 +1423,8 @@ export class SettingsManager {
                 defaultCheckpointRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_checkpoint_root || '';
-            defaultCheckpointRootSelect.value = defaultRoot;
+            defaultCheckpointRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading checkpoint roots:', error);
@@ -1242,10 +1448,7 @@ export class SettingsManager {
                 throw new Error('No diffusion model roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultUnetRootSelect.querySelector('option[value=""]');
             defaultUnetRootSelect.innerHTML = '';
-            defaultUnetRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1255,9 +1458,8 @@ export class SettingsManager {
                 defaultUnetRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_unet_root || '';
-            defaultUnetRootSelect.value = defaultRoot;
+            defaultUnetRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading diffusion model roots:', error);
@@ -1281,10 +1483,7 @@ export class SettingsManager {
                 throw new Error('No embedding roots found');
             }
 
-            // Clear existing options except first one (No Default)
-            const noDefaultOption = defaultEmbeddingRootSelect.querySelector('option[value=""]');
             defaultEmbeddingRootSelect.innerHTML = '';
-            defaultEmbeddingRootSelect.appendChild(noDefaultOption);
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1294,9 +1493,8 @@ export class SettingsManager {
                 defaultEmbeddingRootSelect.appendChild(option);
             });
 
-            // Set selected value from settings
             const defaultRoot = state.global.settings.default_embedding_root || '';
-            defaultEmbeddingRootSelect.value = defaultRoot;
+            defaultEmbeddingRootSelect.value = data.roots.includes(defaultRoot) ? defaultRoot : data.roots[0];
 
         } catch (error) {
             console.error('Error loading embedding roots:', error);
@@ -1323,12 +1521,12 @@ export class SettingsManager {
 
             // Add empty row for new path if no paths exist
             if (paths.length === 0) {
-                this.addExtraFolderPathRow(modelType, '');
+                this.addExtraFolderPathRow(modelType, '', false);
             }
         });
     }
 
-    addExtraFolderPathRow(modelType, path = '') {
+    addExtraFolderPathRow(modelType, path = '', shouldFocus = true) {
         const container = document.getElementById(`extraFolderPaths-${modelType}`);
         if (!container) return;
 
@@ -1352,7 +1550,7 @@ export class SettingsManager {
         container.appendChild(row);
 
         // Focus the input if it's empty (new row)
-        if (!path) {
+        if (!path && shouldFocus) {
             const input = row.querySelector('.extra-folder-path-input');
             if (input) {
                 setTimeout(() => input.focus(), 0);
@@ -1395,7 +1593,7 @@ export class SettingsManager {
         try {
             // Save to backend - this triggers path validation
             await this.saveSetting('extra_folder_paths', extraFolderPaths);
-            showToast('toast.settings.settingsUpdated', { setting: 'Extra Folder Paths' }, 'success');
+            showToast('settings.extraFolderPaths.saveSuccess', {}, 'success');
 
             // Add empty row if no valid paths exist for the changed type
             const container = document.getElementById(`extraFolderPaths-${changedModelType}`);
@@ -1444,7 +1642,7 @@ export class SettingsManager {
         const row = document.createElement('div');
         row.className = 'mapping-row';
 
-        const availableModels = MAPPABLE_BASE_MODELS.filter(model => {
+        const availableModels = getMappableBaseModelsDynamic().filter(model => {
             const existingMappings = state.global.settings.base_model_path_mappings || {};
             return !existingMappings.hasOwnProperty(model) || model === baseModel;
         });
@@ -1546,7 +1744,7 @@ export class SettingsManager {
             const currentValue = select.value;
 
             // Get available models (not already mapped, except current)
-            const availableModels = MAPPABLE_BASE_MODELS.filter(model =>
+            const availableModels = getMappableBaseModelsDynamic().filter(model =>
                 !existingMappings.hasOwnProperty(model) || model === currentValue
             );
 
@@ -1776,6 +1974,10 @@ export class SettingsManager {
                 await this.updateMetadataArchiveStatus();
             }
 
+            if (settingKey === 'backup_auto_enabled') {
+                await this.updateBackupStatus();
+            }
+
             showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
 
             // Apply frontend settings immediately
@@ -1811,7 +2013,9 @@ export class SettingsManager {
         const element = document.getElementById(elementId);
         if (!element) return;
 
-        const value = element.value;
+        const value = settingKey === 'mature_blur_level'
+            ? this.normalizeMatureBlurLevel(element.value)
+            : element.value;
 
         try {
             // Update frontend state with mapped keys
@@ -1834,12 +2038,36 @@ export class SettingsManager {
 
             showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
 
-            if (settingKey === 'model_name_display' || settingKey === 'model_card_footer_action' || settingKey === 'update_flag_strategy') {
+            if (
+                settingKey === 'model_name_display'
+                || settingKey === 'model_card_footer_action'
+                || settingKey === 'update_flag_strategy'
+                || settingKey === 'mature_blur_level'
+            ) {
                 this.reloadContent();
             }
         } catch (error) {
             showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
         }
+    }
+
+    updateExampleImagesOpenSettingsVisibility() {
+        const openMode = state.global.settings.example_images_open_mode || 'system';
+        const localRootSetting = document.getElementById('exampleImagesLocalRootSetting');
+        const uriTemplateSetting = document.getElementById('exampleImagesUriTemplateSetting');
+
+        if (localRootSetting) {
+            localRootSetting.style.display = openMode === 'system' ? 'none' : 'block';
+        }
+
+        if (uriTemplateSetting) {
+            uriTemplateSetting.style.display = openMode === 'uri_template' ? 'block' : 'none';
+        }
+    }
+
+    async handleExampleImagesOpenModeChange() {
+        await this.saveSelectSetting('exampleImagesOpenMode', 'example_images_open_mode');
+        this.updateExampleImagesOpenSettingsVisibility();
     }
 
     async loadMetadataArchiveSettings() {
@@ -1854,6 +2082,163 @@ export class SettingsManager {
             await this.updateMetadataArchiveStatus();
         } catch (error) {
             console.error('Error loading metadata archive settings:', error);
+        }
+    }
+
+    async loadBackupSettings() {
+        const backupAutoEnabledCheckbox = document.getElementById('backupAutoEnabled');
+        if (backupAutoEnabledCheckbox) {
+            backupAutoEnabledCheckbox.checked = state.global.settings.backup_auto_enabled ?? true;
+        }
+
+        const backupRetentionCountInput = document.getElementById('backupRetentionCount');
+        if (backupRetentionCountInput) {
+            backupRetentionCountInput.value = state.global.settings.backup_retention_count ?? 5;
+        }
+
+        await this.updateBackupStatus();
+    }
+
+    async updateBackupStatus() {
+        try {
+            const response = await fetch('/api/lm/backup/status');
+            const data = await response.json();
+
+            const statusContainer = document.getElementById('backupStatus');
+            if (!statusContainer || !data.success) {
+                return;
+            }
+
+            const status = data.status || {};
+            const latestAutoSnapshot = status.latestAutoSnapshot;
+            const retentionCount = status.retentionCount ?? state.global.settings.backup_retention_count ?? 5;
+            const enabled = status.enabled ?? state.global.settings.backup_auto_enabled ?? true;
+            const backupDir = status.backupDir || '';
+            const backupLocationPath = document.getElementById('backupLocationPath');
+            if (backupLocationPath) {
+                backupLocationPath.textContent = backupDir;
+                backupLocationPath.title = backupDir;
+            }
+
+            const formatTimestamp = (timestamp) => {
+                if (!timestamp) {
+                    return translate('common.status.unknown', {}, 'Unknown');
+                }
+                return new Date(timestamp * 1000).toLocaleString();
+            };
+
+            const renderSnapshotDetail = (snapshot) => {
+                if (!snapshot) {
+                    return translate('settings.backup.noneAvailable', {}, 'No snapshots yet');
+                }
+
+                const size = typeof snapshot.size === 'number' ? ` (${this.formatFileSize(snapshot.size)})` : '';
+                return `${snapshot.name}${size}`;
+            };
+
+            statusContainer.innerHTML = `
+                <div class="backup-summary-grid">
+                    <div class="backup-summary-card">
+                        <div class="backup-summary-label">${translate('settings.backup.autoEnabled', {}, 'Automatic snapshots')}</div>
+                        <div class="backup-summary-value status-${enabled ? 'enabled' : 'disabled'}">
+                            ${enabled ? translate('common.status.enabled') : translate('common.status.disabled')}
+                        </div>
+                    </div>
+                    <div class="backup-summary-card">
+                        <div class="backup-summary-label">${translate('settings.backup.retention', {}, 'Retention')}</div>
+                        <div class="backup-summary-value">${retentionCount}</div>
+                    </div>
+                    <div class="backup-summary-card">
+                        <div class="backup-summary-label">${translate('settings.backup.snapshotCount', {}, 'Saved snapshots')}</div>
+                        <div class="backup-summary-value">${status.snapshotCount ?? 0}</div>
+                    </div>
+                </div>
+                <div class="backup-status-list">
+                    <div class="backup-status-row">
+                        <div class="backup-status-label">${translate('settings.backup.latestAutoSnapshot', {}, 'Latest auto snapshot')}</div>
+                        <div class="backup-status-content">
+                            <div class="backup-status-primary">${formatTimestamp(latestAutoSnapshot?.mtime)}</div>
+                            <div class="backup-status-secondary">${renderSnapshotDetail(latestAutoSnapshot)}</div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        } catch (error) {
+            console.error('Error updating backup status:', error);
+        }
+    }
+
+    async exportBackup() {
+        try {
+            const response = await fetch('/api/lm/backup/export', {
+                method: 'POST',
+            });
+
+            if (!response.ok) {
+                throw new Error(`Request failed with status ${response.status}`);
+            }
+
+            const blob = await response.blob();
+            const contentDisposition = response.headers.get('Content-Disposition') || '';
+            const match = contentDisposition.match(/filename="([^"]+)"/);
+            const filename = match?.[1] || `lora-manager-backup-${Date.now()}.zip`;
+
+            const url = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+            window.URL.revokeObjectURL(url);
+
+            showToast('settings.backup.exportSuccess', {}, 'success');
+        } catch (error) {
+            console.error('Failed to export backup:', error);
+            showToast('settings.backup.exportFailed', { message: error.message }, 'error');
+        }
+    }
+
+    triggerBackupImport() {
+        const input = document.getElementById('backupImportInput');
+        input?.click();
+    }
+
+    async handleBackupImportFile(input) {
+        if (!(input instanceof HTMLInputElement)) {
+            return;
+        }
+
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file) {
+            return;
+        }
+
+        if (!confirm(translate('settings.backup.importConfirm', {}, 'Import this backup and overwrite local user state?'))) {
+            return;
+        }
+
+        try {
+            const formData = new FormData();
+            formData.append('archive', file);
+
+            const response = await fetch('/api/lm/backup/import', {
+                method: 'POST',
+                body: formData,
+            });
+
+            const data = await response.json();
+            if (!response.ok || data.success === false) {
+                throw new Error(data.error || `Request failed with status ${response.status}`);
+            }
+
+            showToast('settings.backup.importSuccess', {}, 'success');
+            await this.updateBackupStatus();
+            window.location.reload();
+        } catch (error) {
+            console.error('Failed to import backup:', error);
+            showToast('settings.backup.importFailed', { message: error.message }, 'error');
         }
     }
 
@@ -2140,6 +2525,190 @@ export class SettingsManager {
         }
     }
 
+    renderDownloadSkipBaseModels() {
+        const container = document.getElementById('downloadSkipBaseModelsContainer');
+        const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+        const emptyState = document.getElementById('downloadSkipBaseModelsEmpty');
+        if (!container) {
+            return;
+        }
+
+        const selectedValues = this.normalizeDownloadSkipBaseModels(
+            state.global.settings.download_skip_base_models
+        );
+        const selected = new Set(selectedValues);
+        const options = this.getAvailableDownloadSkipBaseModels();
+        const query = (searchInput?.value || '').trim().toLowerCase();
+        const filteredOptions = query
+            ? options.filter((baseModel) => baseModel.toLowerCase().includes(query))
+            : options;
+
+        container.innerHTML = filteredOptions.map((baseModel) => `
+            <label class="base-model-skip-option">
+                <input
+                    type="checkbox"
+                    name="downloadSkipBaseModel"
+                    value="${baseModel}"
+                    ${selected.has(baseModel) ? 'checked' : ''}
+                >
+                <span>${baseModel}</span>
+            </label>
+        `).join('');
+
+        if (emptyState) {
+            emptyState.hidden = filteredOptions.length > 0;
+        }
+
+        this.renderDownloadSkipBaseModelsSummary(selectedValues);
+    }
+
+    renderDownloadSkipBaseModelsSummary(selectedValues = null) {
+        const summaryElement = document.getElementById('downloadSkipBaseModelsSummary');
+        if (!summaryElement) {
+            return;
+        }
+
+        const values = Array.isArray(selectedValues)
+            ? selectedValues
+            : this.normalizeDownloadSkipBaseModels(state.global.settings.download_skip_base_models);
+
+        if (values.length === 0) {
+            summaryElement.textContent = translate(
+                'settings.downloadSkipBaseModels.summary.none',
+                {},
+                'None selected'
+            );
+            return;
+        }
+
+        if (values.length <= 2) {
+            summaryElement.textContent = values.join(', ');
+            return;
+        }
+
+        summaryElement.textContent = translate(
+            'settings.downloadSkipBaseModels.summary.count',
+            { count: values.length },
+            `${values.length} selected`
+        );
+    }
+
+    setDownloadSkipBaseModelsPanelOpen(isOpen) {
+        const panel = document.getElementById('downloadSkipBaseModelsPanel');
+        const toggle = document.getElementById('downloadSkipBaseModelsToggle');
+        const toggleLabel = toggle?.querySelector('.base-model-skip-toggle-label');
+        if (!panel || !toggle) {
+            return;
+        }
+
+        panel.hidden = !isOpen;
+        toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        if (toggleLabel) {
+            toggleLabel.textContent = isOpen
+                ? translate('settings.downloadSkipBaseModels.actions.collapse', {}, 'Collapse')
+                : translate('settings.downloadSkipBaseModels.actions.edit', {}, 'Edit');
+        }
+
+        if (isOpen) {
+            const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+            searchInput?.focus();
+        }
+    }
+
+    toggleDownloadSkipBaseModelsPanel() {
+        const panel = document.getElementById('downloadSkipBaseModelsPanel');
+        if (!panel) {
+            return;
+        }
+        this.setDownloadSkipBaseModelsPanelOpen(panel.hidden);
+    }
+
+    async saveDownloadSkipBaseModels() {
+        const container = document.getElementById('downloadSkipBaseModelsContainer');
+        const errorElement = document.getElementById('downloadSkipBaseModelsError');
+        if (!container) return;
+
+        const selected = Array.from(
+            container.querySelectorAll('input[name="downloadSkipBaseModel"]:checked')
+        ).map((input) => input.value);
+        const normalized = this.normalizeDownloadSkipBaseModels(selected);
+        const current = this.normalizeDownloadSkipBaseModels(state.global.settings.download_skip_base_models);
+
+        if (normalized.join('|') === current.join('|')) {
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+            return;
+        }
+
+        try {
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+
+            await this.saveSetting('download_skip_base_models', normalized);
+            this.renderDownloadSkipBaseModels();
+
+            showToast(
+                'toast.settings.settingsUpdated',
+                { setting: translate('settings.downloadSkipBaseModels.label') },
+                'success'
+            );
+        } catch (error) {
+            console.error('Failed to save download skip base models:', error);
+            if (errorElement) {
+                errorElement.textContent = translate(
+                    'settings.downloadSkipBaseModels.validation.saveFailed',
+                    { message: error.message },
+                    `Unable to save excluded base models: ${error.message}`
+                );
+            }
+            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+        }
+    }
+
+    async clearDownloadSkipBaseModels() {
+        const searchInput = document.getElementById('downloadSkipBaseModelsSearch');
+        if (searchInput) {
+            searchInput.value = '';
+        }
+
+        const current = this.normalizeDownloadSkipBaseModels(
+            state.global.settings.download_skip_base_models
+        );
+        if (current.length === 0) {
+            this.renderDownloadSkipBaseModels();
+            return;
+        }
+
+        try {
+            const errorElement = document.getElementById('downloadSkipBaseModelsError');
+            if (errorElement) {
+                errorElement.textContent = '';
+            }
+
+            await this.saveSetting('download_skip_base_models', []);
+            this.renderDownloadSkipBaseModels();
+
+            showToast(
+                'toast.settings.settingsUpdated',
+                { setting: translate('settings.downloadSkipBaseModels.label') },
+                'success'
+            );
+        } catch (error) {
+            const errorElement = document.getElementById('downloadSkipBaseModelsError');
+            console.error('Failed to clear download skip base models:', error);
+            if (errorElement) {
+                errorElement.textContent = translate(
+                    'settings.downloadSkipBaseModels.validation.saveFailed',
+                    { message: error.message },
+                    `Unable to save excluded base models: ${error.message}`
+                );
+            }
+            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+        }
+    }
+
     async saveMetadataRefreshSkipPaths() {
         const input = document.getElementById('metadataRefreshSkipPaths');
         const errorElement = document.getElementById('metadataRefreshSkipPathsError');
@@ -2197,12 +2766,22 @@ export class SettingsManager {
         if (!element) return;
 
         const value = element.value.trim(); // Trim whitespace
+        const shouldShowLoading = settingKey === 'recipes_path';
 
         try {
             // Check if value has changed from existing value
-            const currentValue = state.global.settings[settingKey] || '';
-            if (value === currentValue) {
+            const currentValue = state.global.settings[settingKey];
+            const normalizedCurrentValue = currentValue === undefined || currentValue === null
+                ? ''
+                : String(currentValue).trim();
+            if (value === normalizedCurrentValue) {
                 return; // No change, exit early
+            }
+
+            if (shouldShowLoading) {
+                state.loadingManager?.showSimpleLoading(
+                    translate('settings.folderSettings.recipesPathMigrating', {}, 'Migrating recipes...')
+                );
             }
 
             // For username and password, handle empty values specially
@@ -2230,10 +2809,28 @@ export class SettingsManager {
                 await this.saveSetting(settingKey, value);
             }
 
-            showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
+            if (shouldShowLoading) {
+                state.loadingManager?.hide();
+            }
+
+            if (settingKey === 'recipes_path') {
+                showToast('toast.settings.recipesPathUpdated', {}, 'success');
+            } else if (settingKey === 'backup_retention_count') {
+                await this.updateBackupStatus();
+                showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
+            } else {
+                showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
+            }
 
         } catch (error) {
-            showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+            if (shouldShowLoading) {
+                state.loadingManager?.hide();
+            }
+            if (settingKey === 'recipes_path') {
+                showToast('toast.settings.recipesPathSaveFailed', { message: error.message }, 'error');
+            } else {
+                showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
+            }
         }
     }
 
@@ -2279,7 +2876,7 @@ export class SettingsManager {
             await resetAndReload(false);
         } else if (this.currentPage === 'recipes') {
             // Reload the recipes without updating folders
-            await window.recipeManager.loadRecipes();
+            await window.recipeManager.loadRecipes(true);
         } else if (this.currentPage === 'checkpoints') {
             // Reload the checkpoints without updating folders
             await resetAndReload(false);
@@ -2311,6 +2908,10 @@ export class SettingsManager {
         // Apply card info display setting
         const cardInfoDisplay = state.global.settings.card_info_display || 'always';
         document.body.classList.toggle('hover-reveal', cardInfoDisplay === 'hover');
+
+        // Apply show version on card setting
+        const showVersionOnCard = state.global.settings.show_version_on_card !== false;
+        document.body.classList.toggle('hide-card-version', !showVersionOnCard);
 
         const shouldShowSidebar = state.global.settings.show_folder_sidebar !== false;
         if (sidebarManager && typeof sidebarManager.setSidebarEnabled === 'function') {

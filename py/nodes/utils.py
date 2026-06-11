@@ -44,11 +44,29 @@ import folder_paths  # type: ignore
 logger = logging.getLogger(__name__)
 
 
+def get_lora_syntax_format():
+    try:
+        from ..services.settings_manager import get_settings_manager
+        return get_settings_manager().get("lora_syntax_format", "legacy")
+    except Exception:
+        return "legacy"
+
+
+def apply_lora_syntax_format(name):
+    fmt = get_lora_syntax_format()
+    if fmt == "legacy":
+        return name.replace("\\", "/").rstrip("/").split("/")[-1]
+    return name
+
+
 def extract_lora_name(lora_path):
-    """Extract the lora name from a lora path (e.g., 'IL\\aorunIllstrious.safetensors' -> 'aorunIllstrious')"""
-    # Get the basename without extension
-    basename = os.path.basename(lora_path)
-    return os.path.splitext(basename)[0]
+    normalized = lora_path.replace("\\", "/")
+    basename = os.path.basename(normalized)
+    name_no_ext = os.path.splitext(basename)[0]
+    dirname = os.path.dirname(normalized)
+    if dirname and dirname not in (".", "/") and not normalized.startswith("/"):
+        return apply_lora_syntax_format(f"{dirname}/{name_no_ext}")
+    return apply_lora_syntax_format(name_no_ext)
 
 
 def get_loras_list(kwargs):
@@ -158,3 +176,24 @@ def nunchaku_load_lora(model, lora_name, lora_strength):
             ret_model.model.model_config.unet_config["in_channels"] = new_in_channels
 
     return ret_model
+
+
+def detect_nunchaku_model_kind(model):
+    """Return the supported Nunchaku model kind for a Comfy model, if any."""
+    try:
+        model_wrapper = model.model.diffusion_model
+    except (AttributeError, TypeError):
+        return None
+
+    wrapper_name = model_wrapper.__class__.__name__
+    if wrapper_name == "ComfyFluxWrapper":
+        return "flux"
+
+    inner_model = getattr(model_wrapper, "model", None)
+    inner_name = inner_model.__class__.__name__ if inner_model is not None else ""
+    if wrapper_name.endswith("NunchakuQwenImageTransformer2DModel"):
+        return "qwen_image"
+    if inner_name.endswith("NunchakuQwenImageTransformer2DModel"):
+        return "qwen_image"
+
+    return None

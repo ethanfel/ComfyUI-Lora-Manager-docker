@@ -6,6 +6,9 @@ const initializePageFeaturesMock = vi.fn();
 const getCurrentPageStateMock = vi.fn();
 const getSessionItemMock = vi.fn();
 const removeSessionItemMock = vi.fn();
+const getStorageItemMock = vi.fn();
+const setStorageItemMock = vi.fn();
+const removeStorageItemMock = vi.fn();
 const RecipeContextMenuMock = vi.fn();
 const refreshVirtualScrollMock = vi.fn();
 const refreshRecipesMock = vi.fn();
@@ -51,6 +54,9 @@ vi.mock('../../../static/js/state/index.js', () => ({
 vi.mock('../../../static/js/utils/storageHelpers.js', () => ({
   getSessionItem: getSessionItemMock,
   removeSessionItem: removeSessionItemMock,
+  getStorageItem: getStorageItemMock,
+  setStorageItem: setStorageItemMock,
+  removeStorageItem: removeStorageItemMock,
 }));
 
 vi.mock('../../../static/js/components/ContextMenu/index.js', () => ({
@@ -117,11 +123,14 @@ describe('RecipeManager', () => {
       const map = {
         lora_to_recipe_filterLoraName: 'Flux Dream',
         lora_to_recipe_filterLoraHash: 'abc123',
+        checkpoint_to_recipe_filterCheckpointName: null,
+        checkpoint_to_recipe_filterCheckpointHash: null,
         viewRecipeId: '42',
       };
       return map[key] ?? null;
     });
     removeSessionItemMock.mockImplementation(() => { });
+    getStorageItemMock.mockImplementation((_, defaultValue = null) => defaultValue);
 
     renderRecipesPage();
 
@@ -166,6 +175,8 @@ describe('RecipeManager', () => {
       active: true,
       loraName: 'Flux Dream',
       loraHash: 'abc123',
+      checkpointName: null,
+      checkpointHash: null,
       recipeId: '42',
     });
 
@@ -177,6 +188,8 @@ describe('RecipeManager', () => {
 
     expect(removeSessionItemMock).toHaveBeenCalledWith('lora_to_recipe_filterLoraName');
     expect(removeSessionItemMock).toHaveBeenCalledWith('lora_to_recipe_filterLoraHash');
+    expect(removeSessionItemMock).toHaveBeenCalledWith('checkpoint_to_recipe_filterCheckpointName');
+    expect(removeSessionItemMock).toHaveBeenCalledWith('checkpoint_to_recipe_filterCheckpointHash');
     expect(removeSessionItemMock).toHaveBeenCalledWith('viewRecipeId');
     expect(pageState.customFilter.active).toBe(false);
     expect(indicator.classList.contains('hidden')).toBe(true);
@@ -203,6 +216,19 @@ describe('RecipeManager', () => {
     expect(refreshVirtualScrollMock).toHaveBeenCalledTimes(1);
   });
 
+  it('supports preserve-scroll options while keeping boolean compatibility', async () => {
+    const manager = new RecipeManager();
+
+    await manager.loadRecipes({ preserveScroll: true });
+    expect(refreshVirtualScrollMock).toHaveBeenNthCalledWith(1, { preserveScroll: true });
+
+    await manager.loadRecipes(false);
+    expect(refreshVirtualScrollMock).toHaveBeenCalledTimes(1);
+
+    await manager.loadRecipes({ resetPage: true, preserveScroll: false });
+    expect(refreshVirtualScrollMock).toHaveBeenNthCalledWith(2, { preserveScroll: false });
+  });
+
   it('proxies duplicate management and refresh helpers', async () => {
     const manager = new RecipeManager();
 
@@ -226,5 +252,37 @@ describe('RecipeManager', () => {
 
     await manager.refreshRecipes();
     expect(refreshRecipesMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('restores checkpoint recipe filter state and indicator text', async () => {
+    getSessionItemMock.mockImplementation((key) => {
+      const map = {
+        lora_to_recipe_filterLoraName: null,
+        lora_to_recipe_filterLoraHash: null,
+        checkpoint_to_recipe_filterCheckpointName: 'Flux Base',
+        checkpoint_to_recipe_filterCheckpointHash: 'ckpt123',
+        viewRecipeId: null,
+      };
+      return map[key] ?? null;
+    });
+
+    const manager = new RecipeManager();
+    await manager.initialize();
+
+    expect(pageState.customFilter).toEqual({
+      active: true,
+      loraName: null,
+      loraHash: null,
+      checkpointName: 'Flux Base',
+      checkpointHash: 'ckpt123',
+      recipeId: null,
+    });
+
+    const indicator = document.getElementById('customFilterIndicator');
+    const filterText = indicator.querySelector('#customFilterText');
+
+    expect(filterText.innerHTML).toContain('Recipes using checkpoint:');
+    expect(filterText.innerHTML).toContain('Flux Base');
+    expect(filterText.getAttribute('title')).toBe('Flux Base');
   });
 });

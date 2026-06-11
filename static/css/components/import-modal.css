@@ -687,7 +687,7 @@
     padding: 12px 16px;
     background: oklch(var(--lora-warning) / 0.1);
     border: 1px solid var(--lora-warning);
-    border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+    border-radius: var(--border-radius-sm);
     color: var(--text-color);
 }
 
@@ -757,7 +757,7 @@
     position: relative;
     border-radius: var(--border-radius-sm);
     overflow: hidden;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     transition: transform 0.2s ease;
 }
 

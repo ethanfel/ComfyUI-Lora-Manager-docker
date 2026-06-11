@@ -21,6 +21,27 @@
     font-size: 0.9em;
 }
 
+.downloaded-badge {
+    display: inline-flex;
+    align-items: center;
+    background: color-mix(in oklch, var(--badge-update-bg, #4a90e2) 22%, transparent);
+    color: var(--badge-update-bg, #4a90e2);
+    border: 1px solid color-mix(in oklch, var(--badge-update-bg, #4a90e2) 50%, transparent);
+    padding: 4px 8px;
+    border-radius: var(--border-radius-xs);
+    font-size: 0.8em;
+    font-weight: 500;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transform: translateZ(0);
+    will-change: transform;
+}
+
+.downloaded-badge i {
+    margin-right: 4px;
+    font-size: 0.9em;
+}
+
 /* Early Access Badge */
 .early-access-badge {
     display: inline-flex;
@@ -46,7 +67,6 @@
 
 .early-access-info {
     display: none;
-    position: absolute;
     top: 100%;
     right: 0;
     background: var(--card-bg);
@@ -58,7 +78,7 @@
     color: var(--text-color);
     white-space: normal;
     word-break: break-all;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-header);
     z-index: 100; /* Higher z-index to ensure it's above other elements */
     min-width: 300px;
     max-width: 300px;
@@ -76,7 +96,6 @@
 
 .local-path {
     display: none;
-    position: absolute;
     top: 100%;
     right: 0;
     background: var(--card-bg);
@@ -88,7 +107,7 @@
     color: var(--text-color);
     white-space: normal;
     word-break: break-all;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-header);
     z-index: 100; /* Higher z-index to ensure it's above other elements */
     min-width: 200px;
     max-width: 300px;

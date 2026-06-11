@@ -5,6 +5,9 @@ import { DEFAULT_PATH_TEMPLATES, DEFAULT_PRIORITY_TAG_CONFIG } from '../utils/co
 
 const DEFAULT_SETTINGS_BASE = Object.freeze({
     civitai_api_key: '',
+    civitai_host: 'civitai.com',
+    download_backend: 'python',
+    aria2c_path: '',
     use_portable_settings: false,
     language: 'en',
     show_only_sfw: false,
@@ -18,18 +21,25 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     default_lora_root: '',
     default_checkpoint_root: '',
     default_embedding_root: '',
+    recipes_path: '',
     base_model_path_mappings: {},
     download_path_templates: {},
     example_images_path: '',
+    example_images_open_mode: 'system',
+    example_images_local_root: '',
+    example_images_open_uri_template: '',
     optimize_example_images: true,
     auto_download_example_images: false,
     blur_mature_content: true,
+    mature_blur_level: 'R',
     autoplay_on_hover: false,
     display_density: 'default',
     card_info_display: 'always',
     show_folder_sidebar: true,
     model_name_display: 'model_name',
+    lora_syntax_format: 'legacy',
     model_card_footer_action: 'example_images',
+    show_version_on_card: true,
     include_trigger_words: false,
     compact_mode: false,
     priority_tags: { ...DEFAULT_PRIORITY_TAG_CONFIG },
@@ -37,6 +47,11 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     hide_early_access_updates: false,
     auto_organize_exclusions: [],
     metadata_refresh_skip_paths: [],
+    skip_previously_downloaded_model_versions: false,
+    download_skip_base_models: [],
+    backup_auto_enabled: true,
+    backup_retention_count: 5,
+    strip_lora_on_copy: false,
 });
 
 export function createDefaultSettings() {
@@ -83,7 +98,9 @@ export const state = {
                 baseModel: [],
                 tags: {},
                 license: {},
-                modelTypes: []
+                modelTypes: [],
+                search: '',
+                tagLogic: 'any',
             },
             bulkMode: false,
             selectedLoras: new Set(),
@@ -91,6 +108,12 @@ export const state = {
             showFavoritesOnly: false,
             showUpdateAvailableOnly: false,
             duplicatesMode: false,
+            viewMode: 'active',
+            excludedViewState: {
+                sortBy: 'name:asc',
+                search: '',
+            },
+            activeViewSnapshot: null,
         },
 
         recipes: {
@@ -140,7 +163,9 @@ export const state = {
                 baseModel: [],
                 tags: {},
                 license: {},
-                modelTypes: []
+                modelTypes: [],
+                search: '',
+                tagLogic: 'any',
             },
             modelType: 'checkpoint', // 'checkpoint' or 'diffusion_model'
             bulkMode: false,
@@ -149,6 +174,12 @@ export const state = {
             showFavoritesOnly: false,
             showUpdateAvailableOnly: false,
             duplicatesMode: false,
+            viewMode: 'active',
+            excludedViewState: {
+                sortBy: 'name:asc',
+                search: '',
+            },
+            activeViewSnapshot: null,
         },
 
         [MODEL_TYPES.EMBEDDING]: {
@@ -171,7 +202,9 @@ export const state = {
                 baseModel: [],
                 tags: {},
                 license: {},
-                modelTypes: []
+                modelTypes: [],
+                search: '',
+                tagLogic: 'any',
             },
             bulkMode: false,
             selectedModels: new Set(),
@@ -179,6 +212,12 @@ export const state = {
             showFavoritesOnly: false,
             showUpdateAvailableOnly: false,
             duplicatesMode: false,
+            viewMode: 'active',
+            excludedViewState: {
+                sortBy: 'name:asc',
+                search: '',
+            },
+            activeViewSnapshot: null,
         }
     },
 

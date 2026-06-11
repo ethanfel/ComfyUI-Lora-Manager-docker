@@ -1,11 +1,11 @@
 import logging
 import json
-import re
 import os
 from typing import Any, Dict, Optional
 from .merger import GenParamsMerger
 from .base import RecipeMetadataParser
 from ..services.metadata_service import get_default_metadata_provider
+from ..utils.civitai_utils import extract_civitai_image_id
 
 logger = logging.getLogger(__name__)
 
@@ -16,54 +16,65 @@ class RecipeEnricher:
     async def enrich_recipe(
         recipe: Dict[str, Any],
         civitai_client: Any,
-        request_params: Optional[Dict[str, Any]] = None
+        request_params: Optional[Dict[str, Any]] = None,
+        prefetched_civitai_meta_raw: Optional[Dict[str, Any]] = None,
+        prefetched_model_version_id: Optional[int] = None,
     ) -> bool:
         """
         Enrich a recipe dictionary in-place with metadata from Civitai and embedded params.
-        
+
         Args:
             recipe: The recipe dictionary to enrich. Must have 'gen_params' initialized.
             civitai_client: Authenticated Civitai client instance.
             request_params: (Optional) Parameters from a user request (e.g. import).
-            
+            prefetched_civitai_meta_raw: (Optional) Pre-fetched raw meta from Civitai
+                get_image_info, avoiding a duplicate API call.
+            prefetched_model_version_id: (Optional) Pre-fetched model version ID.
+
         Returns:
             bool: True if the recipe was modified, False otherwise.
         """
         updated = False
         gen_params = recipe.get("gen_params", {})
-        
-        # 1. Fetch Civitai Info if available
+
+        # 1. Obtain Civitai metadata
         civitai_meta = None
-        model_version_id = None
-        
-        source_url = recipe.get("source_url") or recipe.get("source_path", "")
-        
-        # Check if it's a Civitai image URL
-        image_id_match = re.search(r'civitai\.com/images/(\d+)', str(source_url))
-        if image_id_match:
-            image_id = image_id_match.group(1)
-            try:
-                image_info = await civitai_client.get_image_info(image_id)
-                if image_info:
-                    # Handle nested meta often found in Civitai API responses
-                    raw_meta = image_info.get("meta")
-                    if isinstance(raw_meta, dict):
-                        if "meta" in raw_meta and isinstance(raw_meta["meta"], dict):
-                            civitai_meta = raw_meta["meta"]
-                        else:
-                            civitai_meta = raw_meta
-                    
-                    model_version_id = image_info.get("modelVersionId")
-                    
-                    # If not at top level, check resources in meta
-                    if not model_version_id and civitai_meta:
-                        resources = civitai_meta.get("civitaiResources", [])
-                        for res in resources:
-                            if res.get("type") == "checkpoint":
-                                model_version_id = res.get("modelVersionId")
-                                break
-            except Exception as e:
-                logger.warning(f"Failed to fetch Civitai image info: {e}")
+        model_version_id = prefetched_model_version_id
+
+        source_path = recipe.get("source_path", "")
+
+        if prefetched_civitai_meta_raw is not None:
+            raw_meta = prefetched_civitai_meta_raw
+            if isinstance(raw_meta, dict):
+                if "meta" in raw_meta and isinstance(raw_meta["meta"], dict):
+                    civitai_meta = raw_meta["meta"]
+                else:
+                    civitai_meta = raw_meta
+        else:
+            image_id = extract_civitai_image_id(str(source_path))
+            if image_id:
+                try:
+                    image_info = await civitai_client.get_image_info(
+                        image_id, source_url=str(source_path)
+                    )
+                    if image_info:
+                        raw_meta = image_info.get("meta")
+                        if isinstance(raw_meta, dict):
+                            if "meta" in raw_meta and isinstance(raw_meta["meta"], dict):
+                                civitai_meta = raw_meta["meta"]
+                            else:
+                                civitai_meta = raw_meta
+
+                        model_version_id = image_info.get("modelVersionId")
+                except Exception as e:
+                    logger.warning(f"Failed to fetch Civitai image info: {e}")
+
+        if not model_version_id and civitai_meta:
+            resources = civitai_meta.get("civitaiResources", [])
+            for res in resources:
+                if res.get("type") == "checkpoint":
+                    model_version_id = res.get("modelVersionId")
+                    break
 
         # 2. Merge Parameters
         # Priority: request_params > civitai_meta > embedded (existing gen_params)
@@ -179,27 +190,42 @@ class RecipeEnricher:
             existing_cp = recipe.get("checkpoint")
             if existing_cp is None:
                 existing_cp = {}
+
+            # Extract baseModel from raw civitai_info before populate_checkpoint_from_civitai
+            # (populate may reject non-checkpoint types and lose this data)
+            base_model_from_civitai: str = ""
+            if isinstance(civitai_info, dict):
+                base_model_from_civitai = civitai_info.get("baseModel", "") or ""
+            elif isinstance(civitai_info, tuple) and len(civitai_info) > 0 and isinstance(civitai_info[0], dict):
+                base_model_from_civitai = civitai_info[0].get("baseModel", "") or ""
+
             checkpoint_data = await RecipeMetadataParser.populate_checkpoint_from_civitai(existing_cp, civitai_info)
-            # 1. First, resolve base_model using full data before we format it away
+
+            # 1. Resolve base_model from checkpoint_data first, then fall back to raw civitai_info
             current_base_model = recipe.get("base_model")
-            resolved_base_model = checkpoint_data.get("baseModel")
+            resolved_base_model = checkpoint_data.get("baseModel") or base_model_from_civitai
             if resolved_base_model:
-                # Update if empty OR if it matches our generic prefix but is less specific
                 is_generic = not current_base_model or current_base_model.lower() in ["flux", "sdxl", "sd15"]
                 if is_generic and resolved_base_model != current_base_model:
                     recipe["base_model"] = resolved_base_model
-            
-            # 2. Format according to requirements: type, modelId, modelVersionId, modelName, modelVersionName
-            formatted_checkpoint = {
-                "type": "checkpoint",
-                "modelId": checkpoint_data.get("modelId"),
-                "modelVersionId": checkpoint_data.get("id") or checkpoint_data.get("modelVersionId"),
-                "modelName": checkpoint_data.get("name"), # In base.py, 'name' is populated from civitai_data['model']['name']
-                "modelVersionName": checkpoint_data.get("version") # In base.py, 'version' is populated from civitai_data['name']
-            }
-            # Remove None values
-            recipe["checkpoint"] = {k: v for k, v in formatted_checkpoint.items() if v is not None}
-            
+
+            # 2. Only format and save checkpoint if it has real data (not just type after type rejection)
+            has_checkpoint_data = any([
+                checkpoint_data.get("modelId"),
+                checkpoint_data.get("id") or checkpoint_data.get("modelVersionId"),
+                checkpoint_data.get("name"),
+                checkpoint_data.get("version"),
+            ])
+            if has_checkpoint_data:
+                formatted_checkpoint = {
+                    "type": "checkpoint",
+                    "modelId": checkpoint_data.get("modelId"),
+                    "modelVersionId": checkpoint_data.get("id") or checkpoint_data.get("modelVersionId"),
+                    "modelName": checkpoint_data.get("name"),
+                    "modelVersionName": checkpoint_data.get("version"),
+                }
+                recipe["checkpoint"] = {k: v for k, v in formatted_checkpoint.items() if v is not None}
+
             return True
         else:
             # Fallback to name extraction if we don't already have one

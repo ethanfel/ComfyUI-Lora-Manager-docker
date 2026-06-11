@@ -98,6 +98,576 @@ def test_metadata_processor_extracts_generation_params(populated_registry, monke
             assert isinstance(value, str)
 
 
+def test_attention_bias_clip_text_encode_prompts_are_collected(metadata_registry, monkeypatch):
+    import types
+
+    prompt_graph = {
+        "encode_pos": {
+            "class_type": "CLIPTextEncodeAttentionBias",
+            "inputs": {"text": "A <big dog=1.25> on a hill", "clip": ["clip", 0]},
+        },
+        "encode_neg": {
+            "class_type": "CLIPTextEncodeAttentionBias",
+            "inputs": {"text": "low quality", "clip": ["clip", 0]},
+        },
+        "sampler": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": types.SimpleNamespace(seed=123),
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "Euler",
+                "scheduler": "karras",
+                "denoise": 1.0,
+                "positive": ["encode_pos", 0],
+                "negative": ["encode_neg", 0],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+            },
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    pos_conditioning = object()
+    neg_conditioning = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-attention")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "encode_pos",
+        "CLIPTextEncodeAttentionBias",
+        {"text": "A <big dog=1.25> on a hill"},
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "encode_pos", "CLIPTextEncodeAttentionBias", [(pos_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "encode_neg",
+        "CLIPTextEncodeAttentionBias",
+        {"text": "low quality"},
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "encode_neg", "CLIPTextEncodeAttentionBias", [(neg_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "KSampler",
+        {
+            "seed": types.SimpleNamespace(seed=123),
+            "positive": pos_conditioning,
+            "negative": neg_conditioning,
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-attention")
+    sampler_data = metadata[SAMPLING]["sampler"]
+    prompt_results = MetadataProcessor.match_conditioning_to_prompts(metadata, "sampler")
+
+    assert metadata[PROMPTS]["encode_pos"]["text"] == "A <big dog=1.25> on a hill"
+    assert metadata[PROMPTS]["encode_neg"]["text"] == "low quality"
+    assert sampler_data["node_id"] == "sampler"
+    assert sampler_data["is_sampler"] is True
+    assert prompt_results["prompt"] == "A <big dog=1.25> on a hill"
+    assert prompt_results["negative_prompt"] == "low quality"
+
+
+def test_myoriginalwaifu_text_provider_uses_processed_prompt_outputs(
+    metadata_registry, monkeypatch
+):
+    prompt_graph = {
+        "text_provider": {
+            "class_type": "TextProvider",
+            "inputs": {
+                "positive": "raw positive",
+                "negative": "raw negative",
+            },
+        },
+        "encode_pos": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": ["text_provider", 0], "clip": ["clip", 0]},
+        },
+        "encode_neg": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": ["text_provider", 1], "clip": ["clip", 0]},
+        },
+        "sampler": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": 123,
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "Euler",
+                "scheduler": "karras",
+                "denoise": 1.0,
+                "positive": ["encode_pos", 0],
+                "negative": ["encode_neg", 0],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+            },
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    pos_conditioning = object()
+    neg_conditioning = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-myoriginalwaifu-text")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "text_provider",
+        "TextProvider",
+        {"positive": "raw positive", "negative": "raw negative"},
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "text_provider",
+        "TextProvider",
+        [("processed positive", "processed negative")],
+    )
+    metadata_registry.record_node_execution(
+        "encode_pos", "CLIPTextEncode", {"text": "processed positive"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_pos", "CLIPTextEncode", [(pos_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "encode_neg", "CLIPTextEncode", {"text": "processed negative"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_neg", "CLIPTextEncode", [(neg_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "KSampler",
+        {
+            "seed": 123,
+            "steps": 20,
+            "cfg": 7.0,
+            "sampler_name": "Euler",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "positive": pos_conditioning,
+            "negative": neg_conditioning,
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-myoriginalwaifu-text")
+    params = MetadataProcessor.extract_generation_params(metadata)
+
+    assert metadata[PROMPTS]["text_provider"]["positive_text"] == "processed positive"
+    assert metadata[PROMPTS]["text_provider"]["negative_text"] == "processed negative"
+    assert params["prompt"] == "processed positive"
+    assert params["negative_prompt"] == "processed negative"
+
+
+def test_myoriginalwaifu_clip_provider_prompts_are_collected_without_clip_text_encode(
+    metadata_registry, monkeypatch
+):
+    prompt_graph = {
+        "clip_provider": {
+            "class_type": "ClipProvider",
+            "inputs": {
+                "positive": "direct positive",
+                "negative": "direct negative",
+                "clip": ["clip", 0],
+            },
+        },
+        "sampler": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": 123,
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "Euler",
+                "scheduler": "karras",
+                "denoise": 1.0,
+                "positive": ["clip_provider", 0],
+                "negative": ["clip_provider", 1],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+            },
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    pos_conditioning = object()
+    neg_conditioning = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-myoriginalwaifu-clip")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "clip_provider",
+        "ClipProvider",
+        {"positive": "direct positive", "negative": "direct negative"},
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "clip_provider", "ClipProvider", [(pos_conditioning, neg_conditioning)]
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "KSampler",
+        {
+            "seed": 123,
+            "steps": 20,
+            "cfg": 7.0,
+            "sampler_name": "Euler",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "positive": pos_conditioning,
+            "negative": neg_conditioning,
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-myoriginalwaifu-clip")
+    params = MetadataProcessor.extract_generation_params(metadata)
+
+    assert params["prompt"] == "direct positive"
+    assert params["negative_prompt"] == "direct negative"
+
+
+def test_conditioning_provenance_recovers_combined_controlnet_prompts(
+    metadata_registry, monkeypatch
+):
+    import types
+
+    prompt_graph = {
+        "encode_wd": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "wd14 tags", "clip": ["clip", 0]},
+        },
+        "encode_manual": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "manual tags", "clip": ["clip", 0]},
+        },
+        "encode_neg": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "low quality", "clip": ["clip", 0]},
+        },
+        "combine": {
+            "class_type": "ConditioningCombine",
+            "inputs": {
+                "conditioning_1": ["encode_wd", 0],
+                "conditioning_2": ["encode_manual", 0],
+            },
+        },
+        "controlnet": {
+            "class_type": "ControlNetApplyAdvanced",
+            "inputs": {
+                "positive": ["combine", 0],
+                "negative": ["encode_neg", 0],
+            },
+        },
+        "sampler": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": 123,
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "Euler",
+                "scheduler": "karras",
+                "denoise": 1.0,
+                "positive": ["controlnet", 0],
+                "negative": ["controlnet", 1],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+            },
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    wd_conditioning = object()
+    manual_conditioning = object()
+    negative_conditioning = object()
+    combined_conditioning = object()
+    controlnet_positive = object()
+    controlnet_negative = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-provenance")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "encode_wd", "CLIPTextEncode", {"text": "wd14 tags"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_wd", "CLIPTextEncode", [(wd_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "encode_manual", "CLIPTextEncode", {"text": "manual tags"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_manual", "CLIPTextEncode", [(manual_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "encode_neg", "CLIPTextEncode", {"text": "low quality"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_neg", "CLIPTextEncode", [(negative_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "combine",
+        "ConditioningCombine",
+        {
+            "conditioning_1": wd_conditioning,
+            "conditioning_2": manual_conditioning,
+        },
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "combine", "ConditioningCombine", [(combined_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "controlnet",
+        "ControlNetApplyAdvanced",
+        {
+            "positive": combined_conditioning,
+            "negative": negative_conditioning,
+        },
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "controlnet",
+        "ControlNetApplyAdvanced",
+        [(controlnet_positive, controlnet_negative)],
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "KSampler",
+        {
+            "seed": 123,
+            "steps": 20,
+            "cfg": 7.0,
+            "sampler_name": "Euler",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "positive": controlnet_positive,
+            "negative": controlnet_negative,
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-provenance")
+    params = MetadataProcessor.extract_generation_params(metadata)
+
+    assert params["prompt"] == "wd14 tags, manual tags"
+    assert params["negative_prompt"] == "low quality"
+
+
+def test_conditioning_provenance_recovers_kj_set_get_prompts(
+    metadata_registry, monkeypatch
+):
+    import types
+
+    prompt_graph = {
+        "encode_pos": {
+            "class_type": "CLIPTextEncode",
+            "inputs": {"text": "from set node", "clip": ["clip", 0]},
+        },
+        "set_positive": {
+            "class_type": "SetNode",
+            "inputs": {"CONDITIONING": ["encode_pos", 0], "name": "positive"},
+        },
+        "get_positive": {
+            "class_type": "GetNode",
+            "inputs": {"name": "positive"},
+        },
+        "sampler": {
+            "class_type": "KSampler",
+            "inputs": {
+                "seed": 123,
+                "steps": 20,
+                "cfg": 7.0,
+                "sampler_name": "Euler",
+                "scheduler": "karras",
+                "denoise": 1.0,
+                "positive": ["get_positive", 0],
+                "negative": ["encode_pos", 0],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+            },
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    original_conditioning = object()
+    get_conditioning = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-kj-get")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "encode_pos", "CLIPTextEncode", {"text": "from set node"}, None
+    )
+    metadata_registry.update_node_execution(
+        "encode_pos", "CLIPTextEncode", [(original_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "set_positive",
+        "SetNode",
+        {"CONDITIONING": original_conditioning, "name": "positive"},
+        None,
+    )
+    metadata_registry.record_node_execution(
+        "get_positive", "GetNode", {"name": "positive"}, None
+    )
+    metadata_registry.update_node_execution(
+        "get_positive", "GetNode", [(get_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "KSampler",
+        {
+            "seed": 123,
+            "steps": 20,
+            "cfg": 7.0,
+            "sampler_name": "Euler",
+            "scheduler": "karras",
+            "denoise": 1.0,
+            "positive": get_conditioning,
+            "negative": original_conditioning,
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 16, 16))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-kj-get")
+    params = MetadataProcessor.extract_generation_params(metadata)
+
+    assert params["prompt"] == "from set node"
+    assert params["negative_prompt"] == "from set node"
+
+
+def test_sampler_custom_advanced_recovers_prompt_text_through_guidance_nodes(metadata_registry, monkeypatch):
+    import types
+
+    prompt_graph = {
+        "encode_pos": {
+            "class_type": "CLIPTextEncodeAttentionBias",
+            "inputs": {
+                "text": "A low-angle, medium close-up portrait of her.",
+                "clip": ["clip", 0],
+            },
+        },
+        "encode_neg": {
+            "class_type": "CLIPTextEncodeAttentionBias",
+            "inputs": {
+                "text": " This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom. It has a toony aesthetic with bold outlines and flat colors. ",
+                "clip": ["clip", 0],
+            },
+        },
+        "scheduled_cfg_guidance": {
+            "class_type": "ScheduledCFGGuidance",
+            "inputs": {
+                "model": ["model", 0],
+                "positive": ["encode_pos", 0],
+                "negative": ["encode_neg", 0],
+                "cfg": 2.6,
+                "start_percent": 0.0,
+                "end_percent": 0.62,
+            },
+        },
+        "sampler": {
+            "class_type": "SamplerCustomAdvanced",
+            "inputs": {
+                "noise": types.SimpleNamespace(seed=174),
+                "guider": ["scheduled_cfg_guidance", 0],
+                "sampler": ["sampler_select", 0],
+                "sigmas": ["scheduler", 0],
+                "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 128, 128))},
+            },
+        },
+        "sampler_select": {
+            "class_type": "KSamplerSelect",
+            "inputs": {"sampler_name": "multistep/deis_2m"},
+        },
+        "scheduler": {
+            "class_type": "BasicScheduler",
+            "inputs": {"steps": 20, "scheduler": "power_shift", "denoise": 1.0},
+        },
+    }
+    prompt = SimpleNamespace(original_prompt=prompt_graph)
+
+    pos_conditioning = object()
+    neg_conditioning = object()
+
+    monkeypatch.setattr(metadata_processor, "standalone_mode", False)
+
+    metadata_registry.start_collection("prompt-guidance")
+    metadata_registry.set_current_prompt(prompt)
+
+    metadata_registry.record_node_execution(
+        "encode_pos",
+        "CLIPTextEncodeAttentionBias",
+        {"text": "A low-angle, medium close-up portrait of her."},
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "encode_pos", "CLIPTextEncodeAttentionBias", [(pos_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "encode_neg",
+        "CLIPTextEncodeAttentionBias",
+        {
+            "text": " This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom. It has a toony aesthetic with bold outlines and flat colors. ",
+        },
+        None,
+    )
+    metadata_registry.update_node_execution(
+        "encode_neg", "CLIPTextEncodeAttentionBias", [(neg_conditioning,)]
+    )
+    metadata_registry.record_node_execution(
+        "scheduled_cfg_guidance",
+        "ScheduledCFGGuidance",
+        {
+            "positive": pos_conditioning,
+            "negative": neg_conditioning,
+            "cfg": 2.6,
+        },
+        None,
+    )
+    metadata_registry.record_node_execution(
+        "sampler",
+        "SamplerCustomAdvanced",
+        {
+            "noise": types.SimpleNamespace(seed=174),
+            "guider": {
+                "positive": pos_conditioning,
+                "negative": neg_conditioning,
+            },
+            "sampler": ["sampler_select", 0],
+            "sigmas": ["scheduler", 0],
+            "latent_image": {"samples": types.SimpleNamespace(shape=(1, 4, 128, 128))},
+        },
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt-guidance")
+    params = MetadataProcessor.extract_generation_params(metadata)
+
+    assert params["prompt"] == "A low-angle, medium close-up portrait of her."
+    assert (
+        params["negative_prompt"]
+        == " This low quality greyscale unfinished sketch is inaccurate and flawed. The image is very blurred and lacks detail with excessive chromatic aberrations and artifacts. The image is overly saturated with excessive bloom. It has a toony aesthetic with bold outlines and flat colors. "
+    )
+
+
 def test_metadata_registry_caches_and_rehydrates(populated_registry):
     registry = populated_registry["registry"]
     prompt = populated_registry["prompt"]
@@ -161,3 +731,33 @@ def test_lora_manager_cache_updates_when_loras_removed(metadata_registry):
     metadata = metadata_registry.get_metadata("prompt3")
 
     assert "lora_node" not in metadata[LORAS]
+
+
+def test_lora_manager_checkpoint_and_unet_loaders_extract_models(metadata_registry):
+    metadata_registry.start_collection("prompt1")
+
+    metadata_registry.record_node_execution(
+        "checkpoint_node",
+        "CheckpointLoaderLM",
+        {"ckpt_name": ["models/checkpoint.safetensors"]},
+        None,
+    )
+    metadata_registry.record_node_execution(
+        "unet_node",
+        "UNETLoaderLM",
+        {"unet_name": ["models/diffusion_model.safetensors"], "weight_dtype": ["default"]},
+        None,
+    )
+
+    metadata = metadata_registry.get_metadata("prompt1")
+
+    assert metadata[MODELS]["checkpoint_node"] == {
+        "name": "models/checkpoint.safetensors",
+        "type": "checkpoint",
+        "node_id": "checkpoint_node",
+    }
+    assert metadata[MODELS]["unet_node"] == {
+        "name": "models/diffusion_model.safetensors",
+        "type": "checkpoint",
+        "node_id": "unet_node",
+    }

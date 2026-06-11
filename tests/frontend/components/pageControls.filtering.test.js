@@ -12,6 +12,7 @@ const apiClientMock = {
 };
 
 const showToastMock = vi.fn();
+const openCivitaiByMetadataMock = vi.fn();
 const updatePanelPositionsMock = vi.fn();
 const downloadManagerMock = {
   showDownloadModal: vi.fn(),
@@ -40,6 +41,7 @@ vi.mock('../../../static/js/api/modelApiFactory.js', () => ({
 
 vi.mock('../../../static/js/utils/uiHelpers.js', () => ({
   showToast: showToastMock,
+  openCivitaiByMetadata: openCivitaiByMetadataMock,
   updatePanelPositions: updatePanelPositionsMock,
 }));
 
@@ -84,6 +86,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  delete window.bulkManager;
   delete window.modelDuplicatesManager;
   delete global.fetch;
   vi.useRealTimers();
@@ -107,11 +110,17 @@ function renderControlsDom(pageKey) {
       <div class="search-option-tag active" data-option="filename"></div>
     </div>
     <div id="filterPanel" class="filter-panel hidden">
+      <input id="baseModelSearchInput" />
       <div id="baseModelTags" class="filter-tags"></div>
+      <div id="baseModelEmptyState" hidden></div>
+      <div id="filterPresets" class="filter-presets"></div>
       <div id="modelTagsFilter" class="filter-tags"></div>
       <button class="clear-filter"></button>
     </div>
     <div class="controls">
+      <div id="excludedViewBanner" class="excluded-view-banner hidden">
+        <button id="excludedViewBackBtn">Back</button>
+      </div>
       <div class="actions">
         <div class="action-buttons">
           <div class="control-group">
@@ -126,7 +135,6 @@ function renderControlsDom(pageKey) {
             <button data-action="refresh" class="dropdown-main"></button>
             <button class="dropdown-toggle"></button>
             <div class="dropdown-menu">
-              <div class="dropdown-item" data-action="quick-refresh"></div>
               <div class="dropdown-item" data-action="full-rebuild"></div>
             </div>
           </div>
@@ -170,6 +178,9 @@ function renderControlsDom(pageKey) {
         <i class="fas fa-times-circle clear-filter"></i>
       </div>
     </div>
+    <div id="breadcrumbContainer"></div>
+    <div id="duplicatesBanner" style="display: none;"></div>
+    <div class="alphabet-bar-container"></div>
   `;
 }
 
@@ -277,6 +288,8 @@ describe('FilterManager tag and base model filters', () => {
 
     const manager = new FilterManager({ page: pageKey });
 
+    expect(global.fetch).toHaveBeenCalledWith(`/api/lm/${pageKey}/base-models?limit=0`);
+
     await vi.waitFor(() => {
       const chip = document.querySelector('[data-base-model="SDXL"]');
       expect(chip).not.toBeNull();
@@ -302,6 +315,259 @@ describe('FilterManager tag and base model filters', () => {
     expect(getCurrentPageState().filters.baseModel).toEqual([]);
     expect(baseModelChip.classList.contains('active')).toBe(false);
   });
+
+  it('filters base model chips locally without changing selected state', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        base_models: [
+          { name: 'SDXL', count: 2 },
+          { name: 'LTXV 2.3', count: 1 },
+        ],
+      }),
+    });
+
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    const { getCurrentPageState } = stateModule;
+    const { FilterManager } = await import('../../../static/js/managers/FilterManager.js');
+
+    new FilterManager({ page: 'loras' });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-base-model="LTXV 2.3"]')).not.toBeNull();
+    });
+
+    const searchInput = document.getElementById('baseModelSearchInput');
+    const ltxvChip = document.querySelector('[data-base-model="LTXV 2.3"]');
+    ltxvChip.dispatchEvent(new Event('click', { bubbles: true }));
+    await vi.waitFor(() => expect(loadMoreWithVirtualScrollMock).toHaveBeenCalledTimes(1));
+    expect(getCurrentPageState().filters.baseModel).toEqual(['LTXV 2.3']);
+
+    loadMoreWithVirtualScrollMock.mockClear();
+    searchInput.value = 'sdx';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    expect(document.querySelector('[data-base-model="SDXL"]')).not.toBeNull();
+    expect(document.querySelector('[data-base-model="LTXV 2.3"]')).toBeNull();
+    expect(document.getElementById('baseModelEmptyState').hidden).toBe(true);
+    expect(getCurrentPageState().filters.baseModel).toEqual(['LTXV 2.3']);
+
+    searchInput.value = 'zzz';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(document.getElementById('baseModelEmptyState').hidden).toBe(false);
+
+    searchInput.value = 'ltx';
+    searchInput.dispatchEvent(new Event('input', { bubbles: true }));
+    const restoredChip = document.querySelector('[data-base-model="LTXV 2.3"]');
+    expect(restoredChip).not.toBeNull();
+    expect(restoredChip.classList.contains('active')).toBe(true);
+  });
+
+  it('disables browser autocomplete helpers for the base model search input', async () => {
+    renderControlsDom('loras');
+
+    const searchInput = document.getElementById('baseModelSearchInput');
+
+    searchInput.setAttribute('autocomplete', 'off');
+    searchInput.setAttribute('autocorrect', 'off');
+    searchInput.setAttribute('autocapitalize', 'none');
+    searchInput.setAttribute('spellcheck', 'false');
+
+    expect(searchInput.getAttribute('autocomplete')).toBe('off');
+    expect(searchInput.getAttribute('autocorrect')).toBe('off');
+    expect(searchInput.getAttribute('autocapitalize')).toBe('none');
+    expect(searchInput.getAttribute('spellcheck')).toBe('false');
+  });
+
+  it('focuses the base model search input when opening the filter panel', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        base_models: [{ name: 'SDXL', count: 2 }],
+      }),
+    });
+
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    const { FilterManager } = await import('../../../static/js/managers/FilterManager.js');
+
+    const manager = new FilterManager({ page: 'loras' });
+    const searchInput = document.getElementById('baseModelSearchInput');
+
+    expect(document.activeElement).not.toBe(searchInput);
+
+    manager.toggleFilterPanel();
+
+    expect(document.activeElement).toBe(searchInput);
+  });
+
+  it('does not let base model search trigger bulk shortcuts', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        base_models: [{ name: 'SDXL', count: 2 }],
+      }),
+    });
+
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    const { BulkManager } = await import('../../../static/js/managers/BulkManager.js');
+    const { FilterManager } = await import('../../../static/js/managers/FilterManager.js');
+
+    const filterManager = new FilterManager({ page: 'loras' });
+    const bulkManager = new BulkManager();
+    const searchInput = document.getElementById('baseModelSearchInput');
+    window.filterManager = filterManager;
+
+    searchInput.focus();
+
+    const bulkEvent = new KeyboardEvent('keydown', {
+      key: 'b',
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(bulkEvent, 'target', { value: searchInput });
+    expect(bulkManager.handleGlobalKeyboard(bulkEvent)).toBe(false);
+
+    const selectAllEvent = new KeyboardEvent('keydown', {
+      key: 'a',
+      ctrlKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    Object.defineProperty(selectAllEvent, 'target', { value: searchInput });
+    expect(bulkManager.handleGlobalKeyboard(selectAllEvent)).toBe(false);
+  });
+
+  it('closes the filter panel on Escape', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        base_models: [{ name: 'SDXL', count: 2 }],
+      }),
+    });
+
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    const { FilterManager } = await import('../../../static/js/managers/FilterManager.js');
+    const { eventManager } = await import('../../../static/js/utils/EventManager.js');
+    const { initializeEventManagement } = await import('../../../static/js/utils/eventManagementInit.js');
+
+    eventManager.cleanup();
+    initializeEventManagement();
+
+    const manager = new FilterManager({ page: 'loras' });
+    window.filterManager = manager;
+    manager.toggleFilterPanel();
+    expect(manager.filterPanel.classList.contains('hidden')).toBe(false);
+
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+
+    expect(manager.filterPanel.classList.contains('hidden')).toBe(true);
+    eventManager.cleanup();
+  });
+
+  it('applies all base models from a preset using the full base model list', async () => {
+    global.fetch = vi.fn((url) => {
+      if (url.includes('/base-models?limit=0')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            base_models: [
+              { name: 'SDXL 1.0', count: 5 },
+              { name: 'SDXL Lightning', count: 3 },
+              { name: 'SDXL Hyper', count: 2 },
+            ],
+          }),
+        });
+      }
+
+      if (url.includes('/base-models')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            base_models: [{ name: 'SDXL 1.0', count: 5 }],
+          }),
+        });
+      }
+
+      if (url.includes('/top-tags')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            tags: [],
+          }),
+        });
+      }
+
+      if (url.includes('/model-types')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            success: true,
+            model_types: [],
+          }),
+        });
+      }
+
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
+    });
+
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    stateModule.state.global.settings.filter_presets = {
+      loras: [
+        {
+          name: 'SDXL Family',
+          filters: {
+            baseModel: ['SDXL 1.0', 'SDXL Lightning', 'SDXL Hyper'],
+            tags: {},
+            license: {},
+            modelTypes: [],
+            tagLogic: 'any',
+          },
+        },
+      ],
+    };
+
+    const { getCurrentPageState } = stateModule;
+    const { FilterManager } = await import('../../../static/js/managers/FilterManager.js');
+
+    const manager = new FilterManager({ page: 'loras' });
+
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-base-model="SDXL Hyper"]')).not.toBeNull();
+    });
+
+    await manager.presetManager.applyPreset('SDXL Family');
+
+    expect(manager.activePreset).toBe('SDXL Family');
+    expect(manager.filters.baseModel).toEqual(['SDXL 1.0', 'SDXL Lightning', 'SDXL Hyper']);
+    expect(getCurrentPageState().filters.baseModel).toEqual(['SDXL 1.0', 'SDXL Lightning', 'SDXL Hyper']);
+    expect(loadMoreWithVirtualScrollMock).toHaveBeenCalledWith(true, false);
+    expect(showToastMock).toHaveBeenCalledWith(
+      'Preset "SDXL Family" applied',
+      {},
+      'success',
+    );
+  });
+
 });
 
 describe('PageControls favorites, sorting, and duplicates scenarios', () => {
@@ -573,5 +839,94 @@ describe('PageControls favorites, sorting, and duplicates scenarios', () => {
     const duplicateButton = document.querySelector('[data-action="find-duplicates"]');
     duplicateButton.click();
     expect(toggleDuplicateMode).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['loras', 'LorasControls'],
+    ['checkpoints', 'CheckpointsControls'],
+    ['embeddings', 'EmbeddingsControls'],
+  ])('switches %s page into excluded mode and restores state', async (pageKey, exportName) => {
+    renderControlsDom(pageKey);
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState(pageKey);
+    const pageState = stateModule.getCurrentPageState();
+    pageState.filters.search = 'active-search';
+    pageState.showFavoritesOnly = true;
+    pageState.showUpdateAvailableOnly = true;
+
+    const controlsModule = await import('../../../static/js/components/controls/index.js');
+    const ControlsClass = controlsModule[exportName];
+    const controls = new ControlsClass();
+
+    await controls.enterExcludedView();
+
+    expect(pageState.viewMode).toBe('excluded');
+    expect(pageState.filters.search).toBe('');
+    expect(resetAndReloadMock).toHaveBeenLastCalledWith(false);
+    expect(document.getElementById('excludedViewBanner').classList.contains('hidden')).toBe(false);
+    expect(document.querySelector('[data-action="fetch"]').classList.contains('hidden')).toBe(true);
+    expect(document.getElementById('filterButton').disabled).toBe(true);
+
+    pageState.filters.search = 'excluded-search';
+    await controls.exitExcludedView();
+
+    expect(pageState.viewMode).toBe('active');
+    expect(pageState.filters.search).toBe('active-search');
+    expect(pageState.excludedViewState.search).toBe('excluded-search');
+    expect(resetAndReloadMock).toHaveBeenLastCalledWith(true);
+    expect(document.getElementById('excludedViewBanner').classList.contains('hidden')).toBe(true);
+    expect(document.querySelector('[data-action="fetch"]').classList.contains('hidden')).toBe(false);
+    expect(document.getElementById('filterButton').disabled).toBe(false);
+  });
+
+  it('suspends bulk and duplicate modes for excluded view and restores custom filter banner on exit', async () => {
+    renderControlsDom('loras');
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState('loras');
+    const pageState = stateModule.getCurrentPageState();
+    stateModule.state.bulkMode = true;
+    pageState.duplicatesMode = true;
+
+    sessionStorage.setItem('lora_manager_recipe_to_lora_filterLoraHash', 'hash-1');
+    sessionStorage.setItem('lora_manager_filterRecipeName', 'Recipe Filter');
+
+    const { LorasControls } = await import('../../../static/js/components/controls/LorasControls.js');
+
+    const toggleBulkMode = vi.fn(() => {
+      stateModule.state.bulkMode = !stateModule.state.bulkMode;
+    });
+    const exitDuplicateMode = vi.fn(() => {
+      pageState.duplicatesMode = false;
+    });
+    const enterDuplicateMode = vi.fn(() => {
+      pageState.duplicatesMode = true;
+    });
+
+    window.bulkManager = { toggleBulkMode };
+    window.modelDuplicatesManager = {
+      duplicateGroups: [{ hash: 'dup-1', models: [{ file_path: 'a' }, { file_path: 'b' }] }],
+      exitDuplicateMode,
+      enterDuplicateMode,
+    };
+
+    const controls = new LorasControls();
+    const indicator = document.getElementById('customFilterIndicator');
+    expect(indicator.classList.contains('hidden')).toBe(false);
+
+    await controls.enterExcludedView();
+
+    expect(toggleBulkMode).toHaveBeenCalledTimes(1);
+    expect(exitDuplicateMode).toHaveBeenCalledTimes(1);
+    expect(stateModule.state.bulkMode).toBe(false);
+    expect(pageState.duplicatesMode).toBe(false);
+    expect(indicator.classList.contains('hidden')).toBe(true);
+
+    await controls.exitExcludedView();
+
+    expect(indicator.classList.contains('hidden')).toBe(false);
+    expect(toggleBulkMode).toHaveBeenCalledTimes(2);
+    expect(enterDuplicateMode).toHaveBeenCalledTimes(1);
+    expect(stateModule.state.bulkMode).toBe(true);
+    expect(pageState.duplicatesMode).toBe(true);
   });
 });

@@ -1,4 +1,16 @@
 <div class="controls">
+    <div id="excludedViewBanner" class="excluded-view-banner hidden">
+        <div class="excluded-view-banner__content">
+            <div class="excluded-view-banner__title">
+                <i class="fas fa-eye-slash"></i>
+                <span>{{ t('globalContextMenu.manageExcludedModels.label', default='Excluded Models') }}</span>
+            </div>
+            <button id="excludedViewBackBtn" class="excluded-view-banner__back">
+                <i class="fas fa-arrow-left"></i>
+                <span>{{ t('common.actions.back', default='Back') }}</span>
+            </button>
+        </div>
+    </div>
     <div class="actions">
         <div class="action-buttons">
             <div title="{{ t('loras.controls.sort.title') }}" class="control-group">
@@ -29,9 +41,6 @@
                     <i class="fas fa-caret-down"></i>
                 </button>
                 <div class="dropdown-menu">
-                    <div class="dropdown-item" data-action="quick-refresh" title="{{ t('loras.controls.refresh.quickTooltip') }}">
-                        <i class="fas fa-bolt"></i> <span>{{ t('loras.controls.refresh.quick') }}</span>
-                    </div>
                     <div class="dropdown-item" data-action="full-rebuild" title="{{ t('loras.controls.refresh.fullTooltip') }}">
                         <i class="fas fa-tools"></i> <span>{{ t('loras.controls.refresh.full') }}</span>
                     </div>
@@ -84,6 +93,13 @@
         </div>
         
         <div class="controls-right">
+            <div class="control-group doctor-control-group">
+                <button id="doctorTriggerBtn" class="doctor-trigger" title="{{ t('doctor.buttonTitle', default='Run diagnostics and common fixes') }}">
+                    <i class="fas fa-stethoscope"></i>
+                    <span>{{ t('doctor.title', default='Doctor') }}</span>
+                    <span id="doctorStatusBadge" class="doctor-status-badge hidden" aria-hidden="true"></span>
+                </button>
+            </div>
             <div class="keyboard-nav-hint tooltip">
                 <i class="fas fa-keyboard"></i>
                 <span class="tooltiptext">
@@ -109,12 +125,5 @@
                 </span>
             </div>
         </div>
-    </div>
-    
-    <!-- Breadcrumb Navigation -->
-    <div id="breadcrumbContainer" class="sidebar-breadcrumb-container">
-        <nav class="sidebar-breadcrumb-nav" id="sidebarBreadcrumbNav">
-            <!-- Breadcrumbs will be populated by JavaScript -->
-        </nav>
     </div>
 </div>

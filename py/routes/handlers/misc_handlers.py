@@ -9,13 +9,21 @@ objects that can be composed by the route controller.
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import io
 import json
 import logging
+import time
 import os
+import platform
+import re
 import subprocess
 import sys
+import tempfile
+import zipfile
 from dataclasses import dataclass
-from typing import Awaitable, Callable, Dict, Mapping, Protocol
+from datetime import datetime, timezone
+from typing import Any, Awaitable, Callable, Dict, Mapping, Protocol, Sequence
 
 from aiohttp import web
 
@@ -25,23 +33,337 @@ from ...services.metadata_service import (
     update_metadata_providers,
 )
 from ...services.service_registry import ServiceRegistry
+from ...services.model_lifecycle_service import delete_model_artifacts
 from ...services.settings_manager import get_settings_manager
 from ...services.websocket_manager import ws_manager
 from ...services.downloader import get_downloader
 from ...services.errors import ResourceNotFoundError
+from ...services.cache_health_monitor import CacheHealthMonitor, CacheHealthStatus
+from ...utils.models import BaseModelMetadata
 from ...utils.constants import (
     CIVITAI_USER_MODEL_TYPES,
     DEFAULT_NODE_COLOR,
     NODE_TYPES,
+    PREVIEW_EXTENSIONS,
     SUPPORTED_MEDIA_EXTENSIONS,
     VALID_LORA_TYPES,
 )
 from ...utils.civitai_utils import rewrite_preview_url
 from ...utils.example_images_paths import is_valid_example_images_root
 from ...utils.lora_metadata import extract_trained_words
+from ...utils.session_logging import get_standalone_session_log_snapshot
 from ...utils.usage_stats import UsageStats
+from .base_model_handlers import BaseModelHandlerSet
 
 logger = logging.getLogger(__name__)
+
+
+def _get_project_root() -> str:
+    current_file = os.path.abspath(__file__)
+    return os.path.dirname(
+        os.path.dirname(os.path.dirname(os.path.dirname(current_file)))
+    )
+
+
+def _get_app_version_string() -> str:
+    version = "1.0.0"
+    short_hash = "stable"
+    try:
+        import toml
+
+        root_dir = _get_project_root()
+        pyproject_path = os.path.join(root_dir, "pyproject.toml")
+
+        if os.path.exists(pyproject_path):
+            with open(pyproject_path, "r", encoding="utf-8") as handle:
+                data = toml.load(handle)
+                version = (
+                    data.get("project", {}).get("version", "1.0.0").replace("v", "")
+                )
+
+        git_dir = os.path.join(root_dir, ".git")
+        if os.path.exists(git_dir):
+            try:
+                import git
+
+                repo = git.Repo(root_dir)
+                short_hash = repo.head.commit.hexsha[:7]
+            except Exception:
+                pass
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.debug("Failed to resolve app version for doctor diagnostics: %s", exc)
+
+    return f"{version}-{short_hash}"
+
+
+def _sanitize_sensitive_data(payload: Any) -> Any:
+    sensitive_markers = (
+        "api_key",
+        "apikey",
+        "token",
+        "password",
+        "secret",
+        "authorization",
+    )
+
+    if isinstance(payload, dict):
+        sanitized: dict[str, Any] = {}
+        for key, value in payload.items():
+            normalized_key = str(key).lower()
+            if any(marker in normalized_key for marker in sensitive_markers):
+                if isinstance(value, str) and value:
+                    sanitized[key] = f"{value[:4]}***{value[-2:]}" if len(value) > 6 else "***"
+                else:
+                    sanitized[key] = "***"
+            else:
+                sanitized[key] = _sanitize_sensitive_data(value)
+        return sanitized
+
+    if isinstance(payload, list):
+        return [_sanitize_sensitive_data(item) for item in payload]
+
+    if isinstance(payload, str):
+        return _sanitize_sensitive_text(payload)
+
+    return payload
+
+
+def _sanitize_sensitive_text(value: str) -> str:
+    if not value:
+        return value
+
+    redacted = value
+    patterns = (
+        (
+            r'(?i)("authorization"\s*:\s*")Bearer\s+([^"]+)(")',
+            r'\1Bearer ***\3',
+        ),
+        (
+            r'(?i)("x[-_]?api[-_]?key"\s*:\s*")([^"]+)(")',
+            r'\1***\3',
+        ),
+        (
+            r'(?i)("api[_-]?key"\s*:\s*")([^"]+)(")',
+            r'\1***\3',
+        ),
+        (
+            r'(?i)("token"\s*:\s*")([^"]+)(")',
+            r'\1***\3',
+        ),
+        (
+            r'(?i)("password"\s*:\s*")([^"]+)(")',
+            r'\1***\3',
+        ),
+        (
+            r'(?i)("secret"\s*:\s*")([^"]+)(")',
+            r'\1***\3',
+        ),
+        (
+            r"(?i)\b(authorization\s*[:=]\s*bearer\s+)([A-Za-z0-9._\-+/=]+)",
+            r"\1***",
+        ),
+        (
+            r"(?i)\b(x[-_]?api[-_]?key\s*[:=]\s*)([^\s,;]+)",
+            r"\1***",
+        ),
+        (
+            r"(?i)\b(api[_-]?key\s*[:=]\s*)([^\s,;]+)",
+            r"\1***",
+        ),
+        (
+            r"(?i)\b(token\s*[:=]\s*)([^\s,;]+)",
+            r"\1***",
+        ),
+        (
+            r"(?i)\b(password\s*[:=]\s*)([^\s,;]+)",
+            r"\1***",
+        ),
+        (
+            r"(?i)\b(secret\s*[:=]\s*)([^\s,;]+)",
+            r"\1***",
+        ),
+    )
+
+    import re
+
+    for pattern, replacement in patterns:
+        redacted = re.sub(pattern, replacement, redacted)
+
+    return redacted
+
+
+def _read_log_file_tail(path: str, max_bytes: int = 64 * 1024) -> str:
+    if not path or not os.path.isfile(path):
+        return ""
+
+    with open(path, "rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        file_size = handle.tell()
+        handle.seek(max(file_size - max_bytes, 0))
+        payload = handle.read()
+
+    return payload.decode("utf-8", errors="replace")
+
+
+def _read_text_file_head(path: str, max_bytes: int = 8 * 1024) -> str:
+    if not path or not os.path.isfile(path):
+        return ""
+
+    with open(path, "rb") as handle:
+        payload = handle.read(max_bytes)
+
+    return payload.decode("utf-8", errors="replace")
+
+
+def _extract_startup_marker(text: str, label: str) -> str | None:
+    if not text:
+        return None
+
+    pattern = re.compile(rf"{re.escape(label)}\s*:\s*([^\r\n]+)")
+    match = pattern.search(text)
+    if not match:
+        return None
+
+    return match.group(1).strip()
+
+
+def _format_comfyui_log_entries(entries: Sequence[Mapping[str, Any]] | None) -> str:
+    if not entries:
+        return ""
+
+    rendered: list[str] = []
+    for entry in entries:
+        timestamp = str(entry.get("t", "")).strip()
+        message = str(entry.get("m", ""))
+        if not message:
+            continue
+
+        if timestamp:
+            rendered.append(f"{timestamp} - {message}")
+        else:
+            rendered.append(message)
+
+    if not rendered:
+        return ""
+
+    text = "".join(rendered)
+    if text.endswith("\n"):
+        return text
+    return f"{text}\n"
+
+
+def _get_embedded_comfyui_log_path() -> str:
+    return os.path.abspath(
+        os.path.join(_get_project_root(), "..", "..", "user", "comfyui.log")
+    )
+
+
+def _collect_comfyui_session_logs(
+    *,
+    log_entries: Sequence[Mapping[str, Any]] | None = None,
+    log_file_path: str | None = None,
+) -> dict[str, Any]:
+    if log_entries is None:
+        try:
+            import app.logger as comfy_logger
+
+            log_entries = list(comfy_logger.get_logs() or [])
+        except Exception as exc:  # pragma: no cover - environment dependent
+            logger.debug("Failed to read ComfyUI in-memory logs: %s", exc)
+            log_entries = []
+
+    session_log_text = _format_comfyui_log_entries(log_entries)
+    session_started_at = _extract_startup_marker(
+        session_log_text, "** ComfyUI startup time"
+    )
+    if not session_started_at and log_entries:
+        session_started_at = str(log_entries[0].get("t", "")).strip() or None
+
+    resolved_log_path = os.path.abspath(log_file_path or _get_embedded_comfyui_log_path())
+    persisted_log_text = ""
+    notes: list[str] = []
+
+    if os.path.isfile(resolved_log_path):
+        head_text = _read_text_file_head(resolved_log_path)
+        file_started_at = _extract_startup_marker(head_text, "** ComfyUI startup time")
+        if session_started_at and file_started_at and file_started_at == session_started_at:
+            persisted_log_text = _read_log_file_tail(resolved_log_path)
+        elif session_started_at and file_started_at and file_started_at != session_started_at:
+            notes.append(
+                "Persistent ComfyUI log file does not match the current process session."
+            )
+        elif not session_started_at and file_started_at:
+            persisted_log_text = _read_log_file_tail(resolved_log_path)
+            session_started_at = file_started_at
+        else:
+            notes.append(
+                "Persistent ComfyUI log file is missing a startup marker and was not trusted as the current session log."
+            )
+    else:
+        notes.append("Persistent ComfyUI log file was not found.")
+
+    source_method = "comfyui_in_memory"
+    if persisted_log_text:
+        source_method = "comfyui_in_memory+current_log_file"
+    elif not session_log_text:
+        source_method = "unavailable"
+
+    return {
+        "mode": "comfyui",
+        "session_started_at": session_started_at,
+        "session_log_text": session_log_text,
+        "persistent_log_path": resolved_log_path,
+        "persistent_log_text": persisted_log_text,
+        "source_method": source_method,
+        "notes": notes,
+    }
+
+
+def _collect_standalone_session_logs(
+    *, snapshot: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
+    snapshot = snapshot or get_standalone_session_log_snapshot()
+
+    if not snapshot:
+        return {
+            "mode": "standalone",
+            "session_started_at": None,
+            "session_log_text": "",
+            "persistent_log_path": None,
+            "persistent_log_text": "",
+            "source_method": "unavailable",
+            "session_id": None,
+            "notes": ["Standalone session logging was not initialized."],
+        }
+
+    log_file_path = snapshot.get("log_file_path")
+    persisted_log_text = _read_log_file_tail(log_file_path) if log_file_path else ""
+    session_log_text = str(snapshot.get("in_memory_text") or "")
+    source_method = "standalone_memory"
+    if persisted_log_text:
+        source_method = "standalone_session_file"
+    elif session_log_text:
+        source_method = "standalone_memory"
+    else:
+        source_method = "unavailable"
+
+    return {
+        "mode": "standalone",
+        "session_started_at": snapshot.get("started_at"),
+        "session_log_text": session_log_text,
+        "persistent_log_path": log_file_path,
+        "persistent_log_text": persisted_log_text,
+        "source_method": source_method,
+        "session_id": snapshot.get("session_id"),
+        "notes": [],
+    }
+
+
+def _collect_backend_session_logs() -> dict[str, Any]:
+    standalone_mode = os.environ.get("LORA_MANAGER_STANDALONE", "0") == "1"
+    if standalone_mode:
+        return _collect_standalone_session_logs()
+    return _collect_comfyui_session_logs()
 
 
 def _is_wsl() -> bool:
@@ -126,6 +448,22 @@ class MetadataArchiveManagerProtocol(Protocol):
         ...
 
     def get_database_path(self) -> str | None:  # pragma: no cover - protocol
+        ...
+
+
+class BackupServiceProtocol(Protocol):
+    async def create_snapshot(
+        self, *, snapshot_type: str = "manual", persist: bool = False
+    ) -> dict:  # pragma: no cover - protocol
+        ...
+
+    async def restore_snapshot(self, archive_path: str) -> dict:  # pragma: no cover - protocol
+        ...
+
+    def get_status(self) -> dict:  # pragma: no cover - protocol
+        ...
+
+    def get_available_snapshots(self) -> list[dict]:  # pragma: no cover - protocol
         ...
 
 
@@ -250,6 +588,636 @@ class SupportersHandler:
         except Exception as exc:
             self._logger.error("Error loading supporters: %s", exc, exc_info=True)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+
+class DoctorHandler:
+    """Run environment diagnostics and export a support bundle."""
+
+    def __init__(
+        self,
+        *,
+        settings_service=None,
+        civitai_client_factory: Callable[[], Awaitable[Any]] = ServiceRegistry.get_civitai_client,
+        scanner_factories: Sequence[tuple[str, str, Callable[[], Awaitable[Any]]]] | None = None,
+        app_version_getter: Callable[[], str] = _get_app_version_string,
+    ) -> None:
+        self._settings = settings_service or get_settings_manager()
+        self._civitai_client_factory = civitai_client_factory
+        self._scanner_factories = tuple(
+            scanner_factories
+            or (
+                ("lora", "LoRAs", ServiceRegistry.get_lora_scanner),
+                ("checkpoint", "Checkpoints", ServiceRegistry.get_checkpoint_scanner),
+                ("embedding", "Embeddings", ServiceRegistry.get_embedding_scanner),
+            )
+        )
+        self._app_version_getter = app_version_getter
+
+    async def get_doctor_diagnostics(self, request: web.Request) -> web.Response:
+        try:
+            client_version = (request.query.get("clientVersion") or "").strip()
+            app_version = self._app_version_getter()
+            diagnostics = [
+                await self._check_civitai_api_key(),
+                await self._check_cache_health(),
+                await self._check_filename_conflicts(),
+                self._check_ui_version(client_version, app_version),
+            ]
+
+            issue_count = sum(
+                1 for item in diagnostics if item.get("status") in {"warning", "error"}
+            )
+            error_count = sum(1 for item in diagnostics if item.get("status") == "error")
+            warning_count = sum(
+                1 for item in diagnostics if item.get("status") == "warning"
+            )
+
+            overall_status = "ok"
+            if error_count:
+                overall_status = "error"
+            elif warning_count:
+                overall_status = "warning"
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "app_version": app_version,
+                    "summary": {
+                        "status": overall_status,
+                        "issue_count": issue_count,
+                        "warning_count": warning_count,
+                        "error_count": error_count,
+                        "checked_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                    "diagnostics": diagnostics,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error building doctor diagnostics: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def repair_doctor_cache(self, request: web.Request) -> web.Response:
+        repaired: list[dict[str, Any]] = []
+        failures: list[dict[str, str]] = []
+
+        for model_type, label, factory in self._scanner_factories:
+            try:
+                scanner = await factory()
+                await scanner.get_cached_data(force_refresh=True, rebuild_cache=True)
+                repaired.append({"model_type": model_type, "label": label})
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.error("Doctor cache rebuild failed for %s: %s", model_type, exc, exc_info=True)
+                failures.append(
+                    {
+                        "model_type": model_type,
+                        "label": label,
+                        "error": str(exc),
+                    }
+                )
+
+        status = 200 if not failures else 500
+        return web.json_response(
+            {
+                "success": not failures,
+                "repaired": repaired,
+                "failures": failures,
+            },
+            status=status,
+        )
+
+    async def resolve_filename_conflicts(self, request: web.Request) -> web.Response:
+        if self._settings.get("lora_syntax_format", "legacy") == "full":
+            return web.json_response({"success": True, "renamed": [], "count": 0})
+
+        renamed: list[dict[str, Any]] = []
+
+        try:
+            for model_type, label, factory in self._scanner_factories:
+                try:
+                    scanner = await factory()
+                    hash_index = getattr(scanner, "_hash_index", None)
+                    if hash_index is None:
+                        continue
+                    duplicates = {
+                        filename: list(paths)
+                        for filename, paths in hash_index.get_duplicate_filenames().items()
+                    }
+                    if not duplicates:
+                        continue
+
+                    cache = await scanner.get_cached_data()
+                    path_to_model = {m["file_path"]: m for m in cache.raw_data}
+
+                    used_basenames: set[str] = set()
+                    for paths in duplicates.values():
+                        if paths:
+                            used_basenames.add(
+                                os.path.splitext(os.path.basename(paths[0]))[0]
+                            )
+
+                    for filename, paths in duplicates.items():
+                        for idx, path in enumerate(paths):
+                            if idx == 0:
+                                continue
+                            dirname = os.path.dirname(path)
+                            base_name = os.path.splitext(os.path.basename(path))[0]
+                            ext = os.path.splitext(path)[1]
+                            if not ext:
+                                continue
+
+                            model_data = path_to_model.get(path)
+                            sha256 = (
+                                model_data.get("sha256", "") if model_data else ""
+                            )
+                            hash_provider = (
+                                lambda s=sha256: s if s else "0000"
+                            )
+
+                            new_filename = (
+                                BaseModelMetadata.generate_unique_filename(
+                                    dirname,
+                                    base_name,
+                                    ext,
+                                    hash_provider=hash_provider,
+                                )
+                            )
+
+                            candidate_base = os.path.splitext(new_filename)[0]
+                            counter = 1
+                            original_base = candidate_base
+                            while candidate_base in used_basenames:
+                                candidate_base = f"{original_base}-{counter}"
+                                new_filename = f"{candidate_base}{ext}"
+                                counter += 1
+                            used_basenames.add(candidate_base)
+
+                            new_path = os.path.join(dirname, new_filename)
+
+                            if new_filename == os.path.basename(path):
+                                continue
+
+                            if not os.path.exists(path):
+                                continue
+
+                            old_base_no_ext = os.path.splitext(path)[0]
+                            new_base_no_ext = (
+                                os.path.splitext(new_path)[0]
+                            )
+
+                            os.rename(path, new_path)
+
+                            for suffix in (".metadata.json", ".civitai.info"):
+                                old_sidecar = old_base_no_ext + suffix
+                                new_sidecar = new_base_no_ext + suffix
+                                if os.path.exists(old_sidecar):
+                                    os.rename(old_sidecar, new_sidecar)
+
+                            for preview_ext in PREVIEW_EXTENSIONS:
+                                old_preview = old_base_no_ext + preview_ext
+                                new_preview = new_base_no_ext + preview_ext
+                                if os.path.exists(old_preview):
+                                    os.rename(old_preview, new_preview)
+
+                            entry = path_to_model.get(path)
+                            if entry:
+                                entry = dict(entry)
+                                entry["file_name"] = os.path.splitext(new_filename)[0]
+                                if entry.get("preview_url"):
+                                    old_preview_url = entry["preview_url"].replace("\\", "/")
+                                    preview_ext = os.path.splitext(old_preview_url)[1]
+                                    if preview_ext:
+                                        entry["preview_url"] = (new_base_no_ext + preview_ext).replace(os.sep, "/")
+                                await scanner.update_single_model_cache(
+                                    path, new_path, entry
+                                )
+
+                            logger.info(
+                                "Resolved duplicate filename '%s': "
+                                "renamed '%s' to '%s'",
+                                filename,
+                                path,
+                                new_path,
+                            )
+                            renamed.append({
+                                "model_type": model_type,
+                                "label": label,
+                                "filename": filename,
+                                "old_path": path,
+                                "new_path": new_path,
+                                "new_filename": new_filename,
+                            })
+                except Exception as exc:  # pragma: no cover - defensive
+                    logger.error(
+                        "Failed to resolve filename conflicts for %s: %s",
+                        model_type,
+                        exc,
+                        exc_info=True,
+                    )
+
+            return web.json_response({
+                "success": True,
+                "renamed": renamed,
+                "count": len(renamed),
+            })
+        except Exception as exc:
+            logger.error(
+                "Error resolving filename conflicts: %s", exc, exc_info=True
+            )
+            return web.json_response(
+                {"success": False, "error": str(exc)}, status=500
+            )
+
+    async def export_doctor_bundle(self, request: web.Request) -> web.Response:
+        try:
+            payload = await request.json()
+        except Exception:
+            payload = {}
+
+        try:
+            archive_bytes = self._build_support_bundle(payload)
+            timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+            headers = {
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="lora-manager-doctor-{timestamp}.zip"',
+            }
+            return web.Response(body=archive_bytes, headers=headers)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error exporting doctor bundle: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def _check_civitai_api_key(self) -> dict[str, Any]:
+        api_key = (self._settings.get("civitai_api_key", "") or "").strip()
+        if not api_key:
+            return {
+                "id": "civitai_api_key",
+                "title": "Civitai API Key",
+                "status": "warning",
+                "summary": "Civitai API key is not configured.",
+                "details": [
+                    "Downloads and authenticated Civitai requests may fail until a valid API key is saved."
+                ],
+                "actions": [{"id": "open-settings", "label": "Open Settings"}],
+            }
+
+        obvious_placeholders = {"your_api_key", "changeme", "placeholder", "none"}
+        if api_key.lower() in obvious_placeholders:
+            return {
+                "id": "civitai_api_key",
+                "title": "Civitai API Key",
+                "status": "error",
+                "summary": "Civitai API key looks like a placeholder value.",
+                "details": ["Replace the placeholder with a real key from your Civitai account settings."],
+                "actions": [{"id": "open-settings", "label": "Open Settings"}],
+            }
+
+        try:
+            client = await self._civitai_client_factory()
+            success, result = await client._make_request(  # noqa: SLF001 - internal diagnostic probe
+                "GET",
+                f"{client.base_url}/models",
+                use_auth=True,
+                params={"limit": 1},
+            )
+            if success:
+                return {
+                    "id": "civitai_api_key",
+                    "title": "Civitai API Key",
+                    "status": "ok",
+                    "summary": "Civitai API key is configured and accepted.",
+                    "details": [],
+                    "actions": [{"id": "open-settings", "label": "Open Settings"}],
+                }
+
+            error_text = str(result)
+            lowered = error_text.lower()
+            if any(token in lowered for token in ("401", "403", "unauthorized", "forbidden", "invalid")):
+                return {
+                    "id": "civitai_api_key",
+                    "title": "Civitai API Key",
+                    "status": "error",
+                    "summary": "Configured Civitai API key was rejected.",
+                    "details": [error_text],
+                    "actions": [{"id": "open-settings", "label": "Open Settings"}],
+                }
+
+            return {
+                "id": "civitai_api_key",
+                "title": "Civitai API Key",
+                "status": "warning",
+                "summary": "Unable to confirm whether the Civitai API key is valid.",
+                "details": [error_text],
+                "actions": [{"id": "open-settings", "label": "Open Settings"}],
+            }
+        except Exception as exc:  # pragma: no cover - network/path dependent
+            logger.warning("Doctor API key validation failed: %s", exc)
+            return {
+                "id": "civitai_api_key",
+                "title": "Civitai API Key",
+                "status": "warning",
+                "summary": "Could not validate the Civitai API key right now.",
+                "details": [str(exc)],
+                "actions": [{"id": "open-settings", "label": "Open Settings"}],
+            }
+
+    async def _check_cache_health(self) -> dict[str, Any]:
+        details: list[dict[str, Any]] = []
+        overall_status = "ok"
+        summary = "All model caches look healthy."
+
+        for model_type, label, factory in self._scanner_factories:
+            try:
+                scanner = await factory()
+                persisted = None
+                persistent_cache = getattr(scanner, "_persistent_cache", None)
+                if persistent_cache and hasattr(persistent_cache, "load_cache"):
+                    loop = asyncio.get_event_loop()
+                    persisted = await loop.run_in_executor(
+                        None,
+                        persistent_cache.load_cache,
+                        getattr(scanner, "model_type", model_type),
+                    )
+
+                raw_data = list(getattr(persisted, "raw_data", None) or [])
+                if not raw_data:
+                    cache = await scanner.get_cached_data(force_refresh=False)
+                    raw_data = list(getattr(cache, "raw_data", None) or [])
+
+                report = CacheHealthMonitor().check_health(raw_data, auto_repair=False)
+                report_status = "ok"
+                if report.status == CacheHealthStatus.CORRUPTED:
+                    report_status = "error"
+                elif report.status != CacheHealthStatus.HEALTHY:
+                    report_status = "warning"
+
+                details.append(
+                    {
+                        "model_type": model_type,
+                        "label": label,
+                        "status": report_status,
+                        "message": report.message,
+                        "total_entries": report.total_entries,
+                        "invalid_entries": report.invalid_entries,
+                        "repaired_entries": report.repaired_entries,
+                        "corruption_rate": f"{report.corruption_rate:.1%}",
+                    }
+                )
+
+                if report_status == "error":
+                    overall_status = "error"
+                elif report_status == "warning" and overall_status == "ok":
+                    overall_status = "warning"
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.error("Doctor cache health check failed for %s: %s", model_type, exc, exc_info=True)
+                details.append(
+                    {
+                        "model_type": model_type,
+                        "label": label,
+                        "status": "error",
+                        "message": str(exc),
+                    }
+                )
+                overall_status = "error"
+
+        if overall_status == "warning":
+            summary = "One or more model caches contain invalid entries."
+        elif overall_status == "error":
+            summary = "One or more model caches are corrupted or unavailable."
+
+        return {
+            "id": "cache_health",
+            "title": "Model Cache Health",
+            "status": overall_status,
+            "summary": summary,
+            "details": details,
+            "actions": [{"id": "repair-cache", "label": "Rebuild Cache"}],
+        }
+
+    async def _check_filename_conflicts(self) -> dict[str, Any]:
+        # When full path syntax is active, duplicate filenames across subfolders
+        # are not ambiguous (<lora:subfolder/name:strength>), so skip the check.
+        if self._settings.get("lora_syntax_format", "legacy") == "full":
+            return {
+                "id": "filename_conflicts",
+                "title": "Duplicate Filename Conflicts",
+                "status": "ok",
+                "summary": "Full path syntax is active — duplicate filenames across folders are not ambiguous.",
+                "details": [],
+                "actions": [],
+            }
+
+        all_conflicts: list[dict[str, Any]] = []
+        total_conflict_groups = 0
+        total_conflict_files = 0
+
+        for model_type, label, factory in self._scanner_factories:
+            # Duplicate filename detection targets LoRAs which use basename-only
+            # syntax (<lora:name:strength>). Checkpoints/embeddings reference
+            # models via relative paths with extensions, so conflicts there would
+            # be false positives.
+            if model_type != "lora":
+                continue
+            try:
+                scanner = await factory()
+                hash_index = getattr(scanner, "_hash_index", None)
+                if hash_index is None:
+                    continue
+                duplicates = hash_index.get_duplicate_filenames()
+                if not duplicates:
+                    continue
+
+                total_conflict_groups += len(duplicates)
+                for filename, paths in duplicates.items():
+                    total_conflict_files += len(paths)
+                    all_conflicts.append({
+                        "model_type": model_type,
+                        "label": label,
+                        "filename": filename,
+                        "paths": paths,
+                    })
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.error(
+                    "Doctor filename conflict check failed for %s: %s",
+                    model_type,
+                    exc,
+                    exc_info=True,
+                )
+
+        if not all_conflicts:
+            return {
+                "id": "filename_conflicts",
+                "title": "Duplicate Filename Conflicts",
+                "status": "ok",
+                "summary": "No duplicate filenames found across model directories.",
+                "details": [],
+                "actions": [],
+            }
+
+        summary = (
+            f"{total_conflict_groups} filename(s) shared by "
+            f"{total_conflict_files} files across your library. "
+            f"This causes ambiguity when loading LoRAs by name."
+        )
+        details: list[str | dict[str, Any]] = [
+            {
+                "conflict_groups": total_conflict_groups,
+                "total_conflict_files": total_conflict_files,
+            }
+        ]
+
+        # Show at most 5 conflict groups inline; note any remainder.
+        MAX_VISIBLE_CONFLICTS = 5
+        visible_conflicts = all_conflicts[:MAX_VISIBLE_CONFLICTS]
+        for conflict in visible_conflicts:
+            details.append(
+                f"'{conflict['filename']}' "
+                f"found in {len(conflict['paths'])} locations"
+            )
+
+        hidden_count = len(all_conflicts) - MAX_VISIBLE_CONFLICTS
+        if hidden_count > 0:
+            details.append(
+                f"...and {hidden_count} more duplicate filename group(s)"
+            )
+
+        return {
+            "id": "filename_conflicts",
+            "title": "Duplicate Filename Conflicts",
+            "status": "warning",
+            "summary": summary,
+            "details": details,
+            "actions": [
+                {
+                    "id": "resolve-filename-conflicts",
+                    "label": "Resolve Conflicts",
+                },
+                {
+                    "id": "open-settings-syntax-format",
+                    "label": "Switch to Full Path Syntax",
+                },
+            ],
+        }
+
+    def _check_ui_version(self, client_version: str, app_version: str) -> dict[str, Any]:
+        if client_version and client_version != app_version:
+            return {
+                "id": "ui_version",
+                "title": "UI Version",
+                "status": "warning",
+                "summary": "Browser is running an older UI bundle than the backend expects.",
+                "details": [
+                    {
+                        "client_version": client_version,
+                        "server_version": app_version,
+                    }
+                ],
+                "actions": [{"id": "reload-page", "label": "Reload UI"}],
+            }
+
+        return {
+            "id": "ui_version",
+            "title": "UI Version",
+            "status": "ok",
+            "summary": "Browser UI bundle matches the backend version.",
+            "details": [
+                {
+                    "client_version": client_version or app_version,
+                    "server_version": app_version,
+                }
+            ],
+            "actions": [{"id": "reload-page", "label": "Reload UI"}],
+        }
+
+    def _collect_backend_session_logs(self) -> dict[str, Any]:
+        return _collect_backend_session_logs()
+
+    def _build_support_bundle(self, payload: dict[str, Any]) -> bytes:
+        diagnostics = payload.get("diagnostics") or []
+        frontend_logs = payload.get("frontend_logs") or []
+        client_context = payload.get("client_context") or {}
+
+        app_version = self._app_version_getter()
+        settings_snapshot = _sanitize_sensitive_data(
+            getattr(self._settings, "settings", {}) or {}
+        )
+        startup_messages_getter = getattr(self._settings, "get_startup_messages", None)
+        startup_messages = (
+            list(startup_messages_getter()) if callable(startup_messages_getter) else []
+        )
+
+        environment = {
+            "app_version": app_version,
+            "python_version": sys.version,
+            "platform": platform.platform(),
+            "cwd": os.getcwd(),
+            "standalone_mode": os.environ.get("LORA_MANAGER_STANDALONE", "0") == "1",
+            "settings_file": getattr(self._settings, "settings_file", None),
+            "exported_at": datetime.now(timezone.utc).isoformat(),
+            "client_context": client_context,
+        }
+        backend_logs = self._collect_backend_session_logs()
+        backend_session_text = _sanitize_sensitive_text(
+            str(backend_logs.get("session_log_text") or "")
+        )
+        backend_persisted_text = _sanitize_sensitive_text(
+            str(backend_logs.get("persistent_log_text") or "")
+        )
+        if not backend_session_text and backend_persisted_text:
+            backend_session_text = backend_persisted_text
+        if not backend_session_text:
+            backend_session_text = "No current backend session logs were available.\n"
+
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+            archive.writestr(
+                "doctor-report.json",
+                json.dumps(
+                    {
+                        "app_version": app_version,
+                        "diagnostics": diagnostics,
+                        "summary": payload.get("summary"),
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            )
+            archive.writestr(
+                "settings-sanitized.json",
+                json.dumps(settings_snapshot, indent=2, ensure_ascii=False),
+            )
+            archive.writestr(
+                "startup-messages.json",
+                json.dumps(startup_messages, indent=2, ensure_ascii=False),
+            )
+            archive.writestr(
+                "environment.json",
+                json.dumps(environment, indent=2, ensure_ascii=False),
+            )
+            archive.writestr(
+                "frontend-console.json",
+                json.dumps(_sanitize_sensitive_data(frontend_logs), indent=2, ensure_ascii=False),
+            )
+            archive.writestr("backend-logs.txt", backend_session_text)
+            archive.writestr(
+                "backend-log-source.json",
+                json.dumps(
+                    _sanitize_sensitive_data(
+                        {
+                            "mode": backend_logs.get("mode"),
+                            "source_method": backend_logs.get("source_method"),
+                            "session_started_at": backend_logs.get("session_started_at"),
+                            "session_id": backend_logs.get("session_id"),
+                            "persistent_log_path": backend_logs.get("persistent_log_path"),
+                            "notes": backend_logs.get("notes") or [],
+                        }
+                    ),
+                    indent=2,
+                    ensure_ascii=False,
+                ),
+            )
+            if backend_persisted_text:
+                archive.writestr("backend-session-file-tail.txt", backend_persisted_text)
+
+        return buffer.getvalue()
 
 
 class ExampleWorkflowsHandler:
@@ -745,11 +1713,17 @@ class ModelExampleFilesHandler:
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
 
+async def _noop_backup_service() -> None:
+    return None
+
+
 @dataclass
 class ServiceRegistryAdapter:
     get_lora_scanner: Callable[[], Awaitable]
     get_checkpoint_scanner: Callable[[], Awaitable]
     get_embedding_scanner: Callable[[], Awaitable]
+    get_downloaded_version_history_service: Callable[[], Awaitable]
+    get_backup_service: Callable[[], Awaitable] = _noop_backup_service
 
 
 class ModelLibraryHandler:
@@ -762,6 +1736,41 @@ class ModelLibraryHandler:
     ) -> None:
         self._service_registry = service_registry
         self._metadata_provider_factory = metadata_provider_factory
+
+    @staticmethod
+    def _normalize_model_type(model_type: str | None) -> str | None:
+        if not isinstance(model_type, str):
+            return None
+        normalized = model_type.strip().lower()
+        if normalized in {"lora", "locon", "dora"}:
+            return "lora"
+        if normalized == "checkpoint":
+            return "checkpoint"
+        if normalized in {"embedding", "textualinversion"}:
+            return "embedding"
+        return None
+
+    async def _get_scanner_for_type(self, model_type: str | None):
+        normalized_type = self._normalize_model_type(model_type)
+        if normalized_type == "lora":
+            return normalized_type, await self._service_registry.get_lora_scanner()
+        if normalized_type == "checkpoint":
+            return normalized_type, await self._service_registry.get_checkpoint_scanner()
+        if normalized_type == "embedding":
+            return normalized_type, await self._service_registry.get_embedding_scanner()
+        return None, None
+
+    async def _get_download_history_service(self):
+        return await self._service_registry.get_downloaded_version_history_service()
+
+    @staticmethod
+    def _with_downloaded_flag(versions: list[dict]) -> list[dict]:
+        enriched: list[dict] = []
+        for version in versions:
+            entry = dict(version)
+            entry.setdefault("hasBeenDownloaded", True)
+            enriched.append(entry)
+        return enriched
 
     async def check_model_exists(self, request: web.Request) -> web.Response:
         try:
@@ -818,11 +1827,34 @@ class ModelLibraryHandler:
                     exists = True
                     model_type = "embedding"
 
+                if exists:
+                    return web.json_response(
+                        {
+                            "success": True,
+                            "exists": True,
+                            "modelType": model_type,
+                            "hasBeenDownloaded": False,
+                        }
+                    )
+
+                history_service = await self._get_download_history_service()
+                has_been_downloaded = False
+                history_type = None
+                for candidate_type in ("lora", "checkpoint", "embedding"):
+                    if await history_service.has_been_downloaded(
+                        candidate_type,
+                        model_version_id,
+                    ):
+                        has_been_downloaded = True
+                        history_type = candidate_type
+                        break
+
                 return web.json_response(
                     {
                         "success": True,
-                        "exists": exists,
-                        "modelType": model_type if exists else None,
+                        "exists": False,
+                        "modelType": history_type,
+                        "hasBeenDownloaded": has_been_downloaded,
                     }
                 )
 
@@ -840,21 +1872,333 @@ class ModelLibraryHandler:
 
             model_type = None
             versions = []
+            downloaded_version_ids = []
             if lora_versions:
-                model_type = "lora"
-                versions = lora_versions
-            elif checkpoint_versions:
-                model_type = "checkpoint"
-                versions = checkpoint_versions
-            elif embedding_versions:
-                model_type = "embedding"
-                versions = embedding_versions
+                return web.json_response(
+                    {
+                        "success": True,
+                        "modelType": "lora",
+                        "versions": self._with_downloaded_flag(lora_versions),
+                        "downloadedVersionIds": [],
+                    }
+                )
+            if checkpoint_versions:
+                return web.json_response(
+                    {
+                        "success": True,
+                        "modelType": "checkpoint",
+                        "versions": self._with_downloaded_flag(checkpoint_versions),
+                        "downloadedVersionIds": [],
+                    }
+                )
+            if embedding_versions:
+                return web.json_response(
+                    {
+                        "success": True,
+                        "modelType": "embedding",
+                        "versions": self._with_downloaded_flag(embedding_versions),
+                        "downloadedVersionIds": [],
+                    }
+                )
+
+            history_service = await self._get_download_history_service()
+            for candidate_type in ("lora", "checkpoint", "embedding"):
+                candidate_downloaded_version_ids = (
+                    await history_service.get_downloaded_version_ids(
+                        candidate_type,
+                        model_id,
+                    )
+                )
+                if candidate_downloaded_version_ids:
+                    model_type = candidate_type
+                    downloaded_version_ids = candidate_downloaded_version_ids
+                    break
 
             return web.json_response(
-                {"success": True, "modelType": model_type, "versions": versions}
+                {
+                    "success": True,
+                    "modelType": model_type,
+                    "versions": versions,
+                    "downloadedVersionIds": downloaded_version_ids,
+                }
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Failed to check model existence: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def check_models_exist(self, request: web.Request) -> web.Response:
+        try:
+            model_ids_raw = request.query.get("modelIds", "")
+            if not model_ids_raw:
+                return web.json_response(
+                    {"success": True, "results": []}
+                )
+
+            raw_ids = model_ids_raw.split(",")
+            seen: set[int] = set()
+            model_ids: list[int] = []
+            for raw in raw_ids:
+                stripped = raw.strip()
+                if not stripped:
+                    continue
+                try:
+                    mid = int(stripped)
+                except ValueError:
+                    continue
+                if mid not in seen:
+                    seen.add(mid)
+                    model_ids.append(mid)
+
+            if not model_ids:
+                return web.json_response(
+                    {"success": True, "results": []}
+                )
+
+            lora_scanner = await self._service_registry.get_lora_scanner()
+            checkpoint_scanner = await self._service_registry.get_checkpoint_scanner()
+            embedding_scanner = await self._service_registry.get_embedding_scanner()
+
+            results: list[dict] = []
+            for model_id in model_ids:
+                lora_versions = await lora_scanner.get_model_versions_by_id(model_id)
+                if lora_versions:
+                    results.append({
+                        "modelId": model_id,
+                        "modelType": "lora",
+                        "versions": self._with_downloaded_flag(lora_versions),
+                        "downloadedVersionIds": [],
+                    })
+                    continue
+
+                if checkpoint_scanner:
+                    checkpoint_versions = await checkpoint_scanner.get_model_versions_by_id(model_id)
+                    if checkpoint_versions:
+                        results.append({
+                            "modelId": model_id,
+                            "modelType": "checkpoint",
+                            "versions": self._with_downloaded_flag(checkpoint_versions),
+                            "downloadedVersionIds": [],
+                        })
+                        continue
+
+                if embedding_scanner:
+                    embedding_versions = await embedding_scanner.get_model_versions_by_id(model_id)
+                    if embedding_versions:
+                        results.append({
+                            "modelId": model_id,
+                            "modelType": "embedding",
+                            "versions": self._with_downloaded_flag(embedding_versions),
+                            "downloadedVersionIds": [],
+                        })
+                        continue
+
+                results.append({
+                    "modelId": model_id,
+                    "modelType": None,
+                    "versions": [],
+                    "downloadedVersionIds": [],
+                })
+
+            return web.json_response(
+                {"success": True, "results": results}
+            )
+        except Exception as exc:
+            logger.error("Failed to check models existence: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def get_model_version_download_status(
+        self, request: web.Request
+    ) -> web.Response:
+        try:
+            model_type, _ = await self._get_scanner_for_type(request.query.get("modelType"))
+            if not model_type:
+                return web.json_response(
+                    {"success": False, "error": "Parameter modelType is required"},
+                    status=400,
+                )
+
+            model_version_id_str = request.query.get("modelVersionId")
+            if not model_version_id_str:
+                return web.json_response(
+                    {"success": False, "error": "Missing required parameter: modelVersionId"},
+                    status=400,
+                )
+            try:
+                model_version_id = int(model_version_id_str)
+            except ValueError:
+                return web.json_response(
+                    {"success": False, "error": "Parameter modelVersionId must be an integer"},
+                    status=400,
+                )
+
+            history_service = await self._get_download_history_service()
+            return web.json_response(
+                {
+                    "success": True,
+                    "modelType": model_type,
+                    "modelVersionId": model_version_id,
+                    "hasBeenDownloaded": await history_service.has_been_downloaded(
+                        model_type,
+                        model_version_id,
+                    ),
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(
+                "Failed to get model version download status: %s",
+                exc,
+                exc_info=True,
+            )
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def set_model_version_download_status(
+        self, request: web.Request
+    ) -> web.Response:
+        try:
+            if request.method == "GET":
+                data = request.query
+            else:
+                data = await request.json()
+            model_type, _ = await self._get_scanner_for_type(data.get("modelType"))
+            if not model_type:
+                return web.json_response(
+                    {"success": False, "error": "Parameter modelType is required"},
+                    status=400,
+                )
+
+            try:
+                model_version_id = int(data.get("modelVersionId"))
+            except (TypeError, ValueError):
+                return web.json_response(
+                    {"success": False, "error": "Parameter modelVersionId must be an integer"},
+                    status=400,
+                )
+
+            downloaded = data.get("downloaded")
+            if isinstance(downloaded, str):
+                normalized_downloaded = downloaded.strip().lower()
+                if normalized_downloaded in {"true", "1"}:
+                    downloaded = True
+                elif normalized_downloaded in {"false", "0"}:
+                    downloaded = False
+
+            if not isinstance(downloaded, bool):
+                return web.json_response(
+                    {"success": False, "error": "Parameter downloaded must be a boolean"},
+                    status=400,
+                )
+
+            history_service = await self._get_download_history_service()
+            if downloaded:
+                model_id = data.get("modelId")
+                file_path = data.get("filePath")
+                await history_service.mark_downloaded(
+                    model_type,
+                    model_version_id,
+                    model_id=model_id,
+                    source="manual",
+                    file_path=file_path if isinstance(file_path, str) else None,
+                )
+            else:
+                await history_service.mark_as_deleted(model_type, model_version_id)
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "modelType": model_type,
+                    "modelVersionId": model_version_id,
+                    "hasBeenDownloaded": downloaded,
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error(
+                "Failed to set model version download status: %s",
+                exc,
+                exc_info=True,
+            )
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def delete_model_version(self, request: web.Request) -> web.Response:
+        try:
+            model_version_id_str = request.query.get("modelVersionId")
+            if not model_version_id_str:
+                return web.json_response(
+                    {"success": False, "error": "Missing required parameter: modelVersionId"},
+                    status=400,
+                )
+            try:
+                model_version_id = int(model_version_id_str)
+            except ValueError:
+                return web.json_response(
+                    {"success": False, "error": "Parameter modelVersionId must be an integer"},
+                    status=400,
+                )
+
+            lora_scanner = await self._service_registry.get_lora_scanner()
+            checkpoint_scanner = await self._service_registry.get_checkpoint_scanner()
+            embedding_scanner = await self._service_registry.get_embedding_scanner()
+
+            found_type = None
+            file_path = None
+            found_cache = None
+
+            for model_type, scanner in (
+                ("lora", lora_scanner),
+                ("checkpoint", checkpoint_scanner),
+                ("embedding", embedding_scanner),
+            ):
+                cache = await scanner.get_cached_data()
+                if cache and model_version_id in cache.version_index:
+                    found_type = model_type
+                    found_cache = cache
+                    entry = cache.version_index[model_version_id]
+                    file_path = entry.get("file_path")
+                    break
+
+            if not file_path:
+                return web.json_response(
+                    {"success": False, "error": "Model version not found in any scanner cache"},
+                    status=404,
+                )
+
+            target_dir = os.path.dirname(file_path)
+            base_name = os.path.basename(file_path)
+            file_name, extension = os.path.splitext(base_name)
+            await delete_model_artifacts(target_dir, file_name, main_extension=extension)
+
+            if found_cache:
+                found_cache.raw_data = [
+                    item
+                    for item in found_cache.raw_data
+                    if item.get("file_path") != file_path
+                ]
+                await found_cache.resort()
+
+            scanner_map = {
+                "lora": lora_scanner,
+                "checkpoint": checkpoint_scanner,
+                "embedding": embedding_scanner,
+            }
+            scanner = scanner_map.get(found_type)
+            if scanner:
+                persist = getattr(scanner, "_persist_current_cache", None)
+                if callable(persist):
+                    await persist()
+
+            history_service = await self._get_download_history_service()
+            await history_service.mark_as_deleted(found_type, model_version_id)
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "modelType": found_type,
+                    "modelVersionId": model_version_id,
+                }
+            )
+        except Exception as exc:
+            logger.error(
+                "Failed to delete model version: %s", exc, exc_info=True
+            )
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
     async def get_model_versions_status(self, request: web.Request) -> web.Response:
@@ -895,18 +2239,8 @@ class ModelLibraryHandler:
             model_name = response.get("name", "")
             model_type = response.get("type", "").lower()
 
-            scanner = None
-            normalized_type = None
-            if model_type in {"lora", "locon", "dora"}:
-                scanner = await self._service_registry.get_lora_scanner()
-                normalized_type = "lora"
-            elif model_type == "checkpoint":
-                scanner = await self._service_registry.get_checkpoint_scanner()
-                normalized_type = "checkpoint"
-            elif model_type == "textualinversion":
-                scanner = await self._service_registry.get_embedding_scanner()
-                normalized_type = "embedding"
-            else:
+            normalized_type, scanner = await self._get_scanner_for_type(model_type)
+            if not normalized_type:
                 return web.json_response(
                     {
                         "success": False,
@@ -924,8 +2258,14 @@ class ModelLibraryHandler:
                     status=503,
                 )
 
+            history_service = await self._get_download_history_service()
             local_versions = await scanner.get_model_versions_by_id(model_id)
             local_version_ids = {version["versionId"] for version in local_versions}
+            downloaded_version_ids = await history_service.get_downloaded_version_ids(
+                normalized_type,
+                model_id,
+            )
+            downloaded_version_id_set = set(downloaded_version_ids)
 
             enriched_versions = []
             for version in versions:
@@ -938,6 +2278,7 @@ class ModelLibraryHandler:
                         if version.get("images")
                         else None,
                         "inLibrary": version_id in local_version_ids,
+                        "hasBeenDownloaded": version_id in downloaded_version_id_set,
                     }
                 )
 
@@ -1006,6 +2347,33 @@ class ModelLibraryHandler:
             }
 
             versions: list[dict] = []
+            history_service = await self._get_download_history_service()
+            model_ids: list[int] = []
+            for model in models:
+                try:
+                    model_ids.append(int(model.get("id")))
+                except (TypeError, ValueError):
+                    continue
+
+            lora_downloaded = await history_service.get_downloaded_version_ids_bulk(
+                "lora",
+                model_ids,
+            )
+            checkpoint_downloaded = await history_service.get_downloaded_version_ids_bulk(
+                "checkpoint",
+                model_ids,
+            )
+            embedding_downloaded = await history_service.get_downloaded_version_ids_bulk(
+                "embedding",
+                model_ids,
+            )
+            downloaded_version_map: Dict[str, Dict[int, set[int]]] = {
+                "lora": lora_downloaded,
+                "locon": lora_downloaded,
+                "dora": lora_downloaded,
+                "checkpoint": checkpoint_downloaded,
+                "textualinversion": embedding_downloaded,
+            }
             for model in models:
                 if not isinstance(model, dict):
                     continue
@@ -1060,6 +2428,8 @@ class ModelLibraryHandler:
                     in_library = await scanner.check_model_version_exists(
                         version_id_int
                     )
+                    downloaded_versions = downloaded_version_map.get(model_type, {})
+                    downloaded_version_ids = downloaded_versions.get(model_id_int, set())
 
                     versions.append(
                         {
@@ -1072,6 +2442,7 @@ class ModelLibraryHandler:
                             "baseModel": version.get("baseModel"),
                             "thumbnailUrl": thumbnail_url,
                             "inLibrary": in_library,
+                            "hasBeenDownloaded": version_id_int in downloaded_version_ids,
                         }
                     )
 
@@ -1192,9 +2563,149 @@ class MetadataArchiveHandler:
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
 
+class BackupHandler:
+    """Handler for user-state backup export/import."""
+
+    def __init__(
+        self,
+        *,
+        backup_service_factory: Callable[[], Awaitable[BackupServiceProtocol]] = ServiceRegistry.get_backup_service,
+    ) -> None:
+        self._backup_service_factory = backup_service_factory
+
+    async def get_backup_status(self, request: web.Request) -> web.Response:
+        try:
+            service = await self._backup_service_factory()
+            return web.json_response(
+                {
+                    "success": True,
+                    "status": service.get_status(),
+                    "snapshots": service.get_available_snapshots(),
+                }
+            )
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error getting backup status: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def export_backup(self, request: web.Request) -> web.Response:
+        try:
+            service = await self._backup_service_factory()
+            result = await service.create_snapshot(snapshot_type="manual", persist=False)
+            headers = {
+                "Content-Type": "application/zip",
+                "Content-Disposition": f'attachment; filename="{result["archive_name"]}"',
+            }
+            return web.Response(body=result["archive_bytes"], headers=headers)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error exporting backup: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def import_backup(self, request: web.Request) -> web.Response:
+        temp_path: str | None = None
+        try:
+            fd, temp_path = tempfile.mkstemp(
+                suffix=".zip", prefix="lora-manager-backup-"
+            )
+            os.close(fd)
+
+            if request.content_type.startswith("multipart/"):
+                reader = await request.multipart()
+                field = await reader.next()
+                uploaded = False
+                while field is not None:
+                    if getattr(field, "filename", None):
+                        with open(temp_path, "wb") as handle:
+                            while True:
+                                chunk = await field.read_chunk()
+                                if not chunk:
+                                    break
+                                handle.write(chunk)
+                        uploaded = True
+                        break
+                    field = await reader.next()
+                if not uploaded:
+                    return web.json_response(
+                        {"success": False, "error": "Missing backup archive"},
+                        status=400,
+                    )
+            else:
+                body = await request.read()
+                if not body:
+                    return web.json_response(
+                        {"success": False, "error": "Missing backup archive"},
+                        status=400,
+                    )
+                with open(temp_path, "wb") as handle:
+                    handle.write(body)
+
+            if not temp_path or not os.path.exists(temp_path) or os.path.getsize(temp_path) == 0:
+                return web.json_response(
+                    {"success": False, "error": "Missing backup archive"},
+                    status=400,
+                )
+
+            service = await self._backup_service_factory()
+            result = await service.restore_snapshot(temp_path)
+            return web.json_response({"success": True, **result})
+        except (ValueError, zipfile.BadZipFile) as exc:
+            logger.error("Error importing backup: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=400)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Error importing backup: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+        finally:
+            if temp_path and os.path.exists(temp_path):
+                with contextlib.suppress(OSError):
+                    os.remove(temp_path)
+
+
 class FileSystemHandler:
     def __init__(self, settings_service=None) -> None:
         self._settings = settings_service or get_settings_manager()
+
+    async def _open_path(self, path: str) -> web.Response:
+        path = os.path.abspath(path)
+        if not os.path.isdir(path):
+            return web.json_response(
+                {"success": False, "error": "Folder does not exist"},
+                status=404,
+            )
+
+        if os.name == "nt":
+            subprocess.Popen(["explorer", path])
+        elif os.name == "posix":
+            if _is_docker():
+                return web.json_response(
+                    {
+                        "success": True,
+                        "message": "Running in Docker: Path available for copying",
+                        "path": path,
+                        "mode": "clipboard",
+                    }
+                )
+            if _is_wsl():
+                windows_path = _wsl_to_windows_path(path)
+                if windows_path:
+                    subprocess.Popen(["explorer.exe", windows_path])
+                else:
+                    logger.error(
+                        "Failed to convert WSL path to Windows path: %s", path
+                    )
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Failed to open folder location: path conversion error",
+                        },
+                        status=500,
+                    )
+            elif sys.platform == "darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+
+        return web.json_response(
+            {"success": True, "message": f"Opened folder: {path}", "path": path}
+        )
 
     async def open_file_location(self, request: web.Request) -> web.Response:
         try:
@@ -1310,6 +2821,30 @@ class FileSystemHandler:
             logger.error("Failed to open settings location: %s", exc, exc_info=True)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
+    async def open_backup_location(self, request: web.Request) -> web.Response:
+        try:
+            settings_file = getattr(self._settings, "settings_file", None)
+            if not settings_file:
+                return web.json_response(
+                    {"success": False, "error": "Settings file not found"}, status=404
+                )
+
+            backup_dir = os.path.join(os.path.dirname(os.path.abspath(settings_file)), "backups")
+            return await self._open_path(backup_dir)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to open backup location: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+    async def open_wildcards_location(self, request: web.Request) -> web.Response:
+        try:
+            from ...services.wildcard_service import get_wildcards_dir
+
+            wildcards_dir = get_wildcards_dir(create=True)
+            return await self._open_path(wildcards_dir)
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to open wildcards location: %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
 
 class CustomWordsHandler:
     """Handler for autocomplete via TagFTSIndex."""
@@ -1387,6 +2922,41 @@ class CustomWordsHandler:
         except ValueError:
             logger.debug("Invalid category parameter: %s", param)
             return None
+
+
+class WildcardsHandler:
+    """Handler for wildcard autocomplete search."""
+
+    def __init__(self, *, service=None) -> None:
+        if service is None:
+            from ...services.wildcard_service import get_wildcard_service
+
+            service = get_wildcard_service()
+        self._service = service
+
+    async def search_wildcards(self, request: web.Request) -> web.Response:
+        """Search managed wildcard keys for autocomplete."""
+
+        try:
+            search_term = request.query.get("search", "")
+            limit = min(int(request.query.get("limit", "20")), 100)
+            offset = max(0, int(request.query.get("offset", "0")))
+            metadata = self._service.get_metadata(create_dir=True)
+            results = self._service.search_keys(search_term, limit=limit, offset=offset)
+            return web.json_response(
+                {
+                    "success": True,
+                    "words": results,
+                    "meta": {
+                        "has_wildcards": metadata.has_wildcards,
+                        "wildcards_dir": metadata.wildcards_dir,
+                        "supported_formats": list(metadata.supported_formats),
+                    },
+                }
+            )
+        except Exception as exc:
+            logger.error("Error searching wildcards: %s", exc, exc_info=True)
+            return web.json_response({"error": str(exc)}, status=500)
 
 
 class NodeRegistryHandler:
@@ -1614,10 +3184,14 @@ class MiscHandlerSet:
         node_registry: NodeRegistryHandler,
         model_library: ModelLibraryHandler,
         metadata_archive: MetadataArchiveHandler,
+        backup: BackupHandler,
         filesystem: FileSystemHandler,
         custom_words: CustomWordsHandler,
+        wildcards: WildcardsHandler,
         supporters: SupportersHandler,
+        doctor: DoctorHandler,
         example_workflows: ExampleWorkflowsHandler,
+        base_model: BaseModelHandlerSet,
     ) -> None:
         self.health = health
         self.settings = settings
@@ -1628,10 +3202,14 @@ class MiscHandlerSet:
         self.node_registry = node_registry
         self.model_library = model_library
         self.metadata_archive = metadata_archive
+        self.backup = backup
         self.filesystem = filesystem
         self.custom_words = custom_words
+        self.wildcards = wildcards
         self.supporters = supporters
+        self.doctor = doctor
         self.example_workflows = example_workflows
+        self.base_model = base_model
 
     def to_route_mapping(
         self,
@@ -1640,6 +3218,10 @@ class MiscHandlerSet:
             "health_check": self.health.health_check,
             "get_settings": self.settings.get_settings,
             "update_settings": self.settings.update_settings,
+            "get_doctor_diagnostics": self.doctor.get_doctor_diagnostics,
+            "repair_doctor_cache": self.doctor.repair_doctor_cache,
+            "resolve_doctor_filename_conflicts": self.doctor.resolve_filename_conflicts,
+            "export_doctor_bundle": self.doctor.export_doctor_bundle,
             "get_priority_tags": self.settings.get_priority_tags,
             "get_settings_libraries": self.settings.get_libraries,
             "activate_library": self.settings.activate_library,
@@ -1652,17 +3234,32 @@ class MiscHandlerSet:
             "update_node_widget": self.node_registry.update_node_widget,
             "get_registry": self.node_registry.get_registry,
             "check_model_exists": self.model_library.check_model_exists,
+            "check_models_exist": self.model_library.check_models_exist,
+            "get_model_version_download_status": self.model_library.get_model_version_download_status,
+            "set_model_version_download_status": self.model_library.set_model_version_download_status,
+            "delete_model_version": self.model_library.delete_model_version,
             "get_civitai_user_models": self.model_library.get_civitai_user_models,
             "download_metadata_archive": self.metadata_archive.download_metadata_archive,
             "remove_metadata_archive": self.metadata_archive.remove_metadata_archive,
             "get_metadata_archive_status": self.metadata_archive.get_metadata_archive_status,
+            "get_backup_status": self.backup.get_backup_status,
+            "export_backup": self.backup.export_backup,
+            "import_backup": self.backup.import_backup,
             "get_model_versions_status": self.model_library.get_model_versions_status,
             "open_file_location": self.filesystem.open_file_location,
             "open_settings_location": self.filesystem.open_settings_location,
+            "open_backup_location": self.filesystem.open_backup_location,
+            "open_wildcards_location": self.filesystem.open_wildcards_location,
             "search_custom_words": self.custom_words.search_custom_words,
+            "search_wildcards": self.wildcards.search_wildcards,
             "get_supporters": self.supporters.get_supporters,
             "get_example_workflows": self.example_workflows.get_example_workflows,
             "get_example_workflow": self.example_workflows.get_example_workflow,
+            # Base model handlers
+            "get_base_models": self.base_model.get_base_models,
+            "refresh_base_models": self.base_model.refresh_base_models,
+            "get_base_model_categories": self.base_model.get_base_model_categories,
+            "get_base_model_cache_status": self.base_model.get_base_model_cache_status,
         }
 
 
@@ -1671,4 +3268,6 @@ def build_service_registry_adapter() -> ServiceRegistryAdapter:
         get_lora_scanner=ServiceRegistry.get_lora_scanner,
         get_checkpoint_scanner=ServiceRegistry.get_checkpoint_scanner,
         get_embedding_scanner=ServiceRegistry.get_embedding_scanner,
+        get_downloaded_version_history_service=ServiceRegistry.get_downloaded_version_history_service,
+        get_backup_service=ServiceRegistry.get_backup_service,
     )

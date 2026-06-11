@@ -1,6 +1,7 @@
 import { RecipeCard } from '../components/RecipeCard.js';
 import { state, getCurrentPageState } from '../state/index.js';
 import { showToast } from '../utils/uiHelpers.js';
+import { captureScrollPosition, restoreScrollPosition } from '../utils/infiniteScroll.js';
 
 const RECIPE_ENDPOINTS = {
     list: '/api/lm/recipes',
@@ -14,6 +15,7 @@ const RECIPE_ENDPOINTS = {
     move: '/api/lm/recipe/move',
     moveBulk: '/api/lm/recipes/move-bulk',
     bulkDelete: '/api/lm/recipes/bulk-delete',
+    repairBulk: '/api/lm/recipes/repair-bulk',
 };
 
 const RECIPE_SIDEBAR_CONFIG = {
@@ -29,6 +31,20 @@ export function extractRecipeId(filePath) {
     const basename = filePath.split('/').pop().split('\\').pop();
     const dotIndex = basename.lastIndexOf('.');
     return dotIndex > 0 ? basename.substring(0, dotIndex) : basename;
+}
+
+export async function fetchRecipeDetails(recipeId) {
+    if (!recipeId) {
+        throw new Error('Unable to determine recipe ID');
+    }
+
+    const encodedRecipeId = encodeURIComponent(recipeId);
+    const response = await fetch(`${RECIPE_ENDPOINTS.detail}/${encodedRecipeId}`);
+    if (!response.ok) {
+        throw new Error(`Failed to load recipe: ${response.statusText}`);
+    }
+
+    return response.json();
 }
 
 /**
@@ -61,7 +77,9 @@ export async function fetchRecipesPage(page = 1, pageSize = 100) {
         // If we have a specific recipe ID to load
         if (pageState.customFilter?.active && pageState.customFilter?.recipeId) {
             // Special case: load specific recipe
-            const response = await fetch(`${RECIPE_ENDPOINTS.detail}/${pageState.customFilter.recipeId}`);
+            const response = await fetch(
+                `${RECIPE_ENDPOINTS.detail}/${encodeURIComponent(pageState.customFilter.recipeId)}`
+            );
 
             if (!response.ok) {
                 throw new Error(`Failed to load recipe: ${response.statusText}`);
@@ -82,6 +100,9 @@ export async function fetchRecipesPage(page = 1, pageSize = 100) {
         // Add custom filter for Lora if present
         if (pageState.customFilter?.active && pageState.customFilter?.loraHash) {
             params.append('lora_hash', pageState.customFilter.loraHash);
+            params.append('bypass_filters', 'true');
+        } else if (pageState.customFilter?.active && pageState.customFilter?.checkpointHash) {
+            params.append('checkpoint_hash', pageState.customFilter.checkpointHash);
             params.append('bypass_filters', 'true');
         } else {
             // Normal filtering logic
@@ -163,10 +184,12 @@ export async function resetAndReloadWithVirtualScroll(options = {}) {
     const {
         modelType = 'lora',
         updateFolders = false,
-        fetchPageFunction
+        fetchPageFunction,
+        preserveScroll = false
     } = options;
 
     const pageState = getCurrentPageState();
+    const scrollSnapshot = preserveScroll ? captureScrollPosition() : null;
 
     try {
         pageState.isLoading = true;
@@ -174,8 +197,8 @@ export async function resetAndReloadWithVirtualScroll(options = {}) {
         // Reset page counter
         pageState.currentPage = 1;
 
-        // Fetch the first page
-        const result = await fetchPageFunction(1, pageState.pageSize || 50);
+        const pageSize = state.virtualScroller?.pageSize || pageState.pageSize || 100;
+        const result = await fetchPageFunction(1, pageSize);
 
         // Update the virtual scroller
         state.virtualScroller.refreshWithData(
@@ -187,6 +210,10 @@ export async function resetAndReloadWithVirtualScroll(options = {}) {
         // Update state
         pageState.hasMore = result.hasMore;
         pageState.currentPage = 2; // Next page will be 2
+
+        if (scrollSnapshot) {
+            await restoreScrollPosition(scrollSnapshot);
+        }
 
         return result;
     } catch (error) {
@@ -208,10 +235,12 @@ export async function loadMoreWithVirtualScroll(options = {}) {
         modelType = 'lora',
         resetPage = false,
         updateFolders = false,
-        fetchPageFunction
+        fetchPageFunction,
+        preserveScroll = false
     } = options;
 
     const pageState = getCurrentPageState();
+    const scrollSnapshot = preserveScroll ? captureScrollPosition() : null;
 
     try {
         // Start loading state
@@ -222,8 +251,8 @@ export async function loadMoreWithVirtualScroll(options = {}) {
             pageState.currentPage = 1;
         }
 
-        // Fetch the first page of data
-        const result = await fetchPageFunction(pageState.currentPage, pageState.pageSize || 50);
+        const pageSize = state.virtualScroller?.pageSize || pageState.pageSize || 100;
+        const result = await fetchPageFunction(pageState.currentPage, pageSize);
 
         // Update virtual scroller with the new data
         state.virtualScroller.refreshWithData(
@@ -235,6 +264,10 @@ export async function loadMoreWithVirtualScroll(options = {}) {
         // Update state
         pageState.hasMore = result.hasMore;
         pageState.currentPage = 2; // Next page to load would be 2
+
+        if (scrollSnapshot) {
+            await restoreScrollPosition(scrollSnapshot);
+        }
 
         return result;
     } catch (error) {
@@ -251,56 +284,51 @@ export async function loadMoreWithVirtualScroll(options = {}) {
  * @param {boolean} updateFolders - Whether to update folder tags
  * @returns {Promise<Object>} The fetch result
  */
-export async function resetAndReload(updateFolders = false) {
+export async function resetAndReload(updateFolders = false, options = {}) {
     return resetAndReloadWithVirtualScroll({
         modelType: 'recipe',
         updateFolders,
-        fetchPageFunction: fetchRecipesPage
+        fetchPageFunction: fetchRecipesPage,
+        preserveScroll: options.preserveScroll === true
     });
 }
 
 /**
- * Sync changes - quick refresh without rebuilding cache (similar to models page)
+ * Refreshes the recipe list by triggering a backend scan, then reloading.
+ * @param {boolean} fullRebuild - If true, fully rebuild the cache; if false, incremental scan
  */
 export async function syncChanges() {
-    try {
-        state.loadingManager.showSimpleLoading('Syncing changes...');
-
-        // Simply reload the recipes without rebuilding cache
-        await resetAndReload();
-
-        showToast('toast.recipes.syncComplete', {}, 'success');
-    } catch (error) {
-        console.error('Error syncing recipes:', error);
-        showToast('toast.recipes.syncFailed', { message: error.message }, 'error');
-    } finally {
-        state.loadingManager.hide();
-        state.loadingManager.restoreProgressBar();
-    }
+    return refreshRecipes(false);
 }
 
-/**
- * Refreshes the recipe list by first rebuilding the cache and then loading recipes
- */
-export async function refreshRecipes() {
-    try {
-        state.loadingManager.showSimpleLoading('Refreshing recipes...');
+export async function refreshRecipes(fullRebuild = true) {
+    const actionLabel = fullRebuild ? 'Rebuilding recipe cache' : 'Refreshing recipes';
+    const actionToast = fullRebuild ? 'Full rebuild' : 'Refresh';
 
-        // Call the API endpoint to rebuild the recipe cache
-        const response = await fetch(RECIPE_ENDPOINTS.scan);
+    try {
+        state.loadingManager.show(`${actionLabel}...`, 0);
+
+        const url = new URL(RECIPE_ENDPOINTS.scan, window.location.origin);
+        url.searchParams.append('full_rebuild', fullRebuild);
+
+        const response = await fetch(url);
 
         if (!response.ok) {
-            const data = await response.json();
-            throw new Error(data.error || 'Failed to refresh recipe cache');
+            throw new Error(`Failed to refresh recipe cache: ${response.status} ${response.statusText}`);
         }
 
-        // After successful cache rebuild, reload the recipes
-        await resetAndReload();
+        const data = await response.json();
+        if (data.status === 'cancelled') {
+            showToast('toast.api.operationCancelled', {}, 'info');
+            return;
+        }
 
-        showToast('toast.recipes.refreshComplete', {}, 'success');
+        await resetAndReload(false);
+
+        showToast('toast.api.refreshComplete', { action: actionToast }, 'success');
     } catch (error) {
         console.error('Error refreshing recipes:', error);
-        showToast('toast.recipes.refreshFailed', { message: error.message }, 'error');
+        showToast('toast.api.refreshFailed', { action: fullRebuild ? 'rebuild' : 'refresh', type: 'recipe' }, 'error');
     } finally {
         state.loadingManager.hide();
         state.loadingManager.restoreProgressBar();
@@ -346,9 +374,10 @@ export function createRecipeCard(recipe) {
  * @param {Object} updates - The metadata updates to apply
  * @returns {Promise<Object>} The updated recipe data
  */
-export async function updateRecipeMetadata(filePath, updates) {
+export async function updateRecipeMetadata(filePath, updates, options = {}) {
     try {
         state.loadingManager.showSimpleLoading('Saving metadata...');
+        const listFilePath = options.listFilePath || filePath;
 
         // Extract recipeId from filePath (basename without extension)
         const recipeId = extractRecipeId(filePath);
@@ -356,7 +385,7 @@ export async function updateRecipeMetadata(filePath, updates) {
             throw new Error('Unable to determine recipe ID');
         }
 
-        const response = await fetch(`${RECIPE_ENDPOINTS.update}/${recipeId}/update`, {
+        const response = await fetch(`${RECIPE_ENDPOINTS.update}/${encodeURIComponent(recipeId)}/update`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -371,7 +400,7 @@ export async function updateRecipeMetadata(filePath, updates) {
             throw new Error(data.error || 'Failed to update recipe');
         }
 
-        state.virtualScroller.updateSingleItem(filePath, updates);
+        state.virtualScroller.updateSingleItem(listFilePath, updates);
 
         return data;
     } catch (error) {
@@ -521,6 +550,38 @@ export class RecipeSidebarApiClient {
             folder: result.folder || '',
             message: result.message,
         };
+    }
+
+    async repairBulkModels(filePaths) {
+        if (!filePaths || filePaths.length === 0) {
+            throw new Error('No file paths provided');
+        }
+
+        const recipeIds = filePaths
+            .map((path) => extractRecipeId(path))
+            .filter((id) => !!id);
+
+        if (recipeIds.length === 0) {
+            throw new Error('No recipe IDs could be derived from file paths');
+        }
+
+        const response = await fetch(this.apiConfig.endpoints.repairBulk, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                recipe_ids: recipeIds,
+            }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+            throw new Error(result.error || 'Failed to repair recipes');
+        }
+
+        return result;
     }
 
     async bulkDeleteModels(filePaths) {

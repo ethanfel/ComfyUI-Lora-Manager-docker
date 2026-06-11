@@ -18,6 +18,7 @@ from .service_registry import ServiceRegistry
 from .lora_scanner import LoraScanner
 from .metadata_service import get_default_metadata_provider
 from .checkpoint_scanner import CheckpointScanner
+from .settings_manager import get_settings_manager
 from .recipes.errors import RecipeNotFoundError
 from ..utils.utils import calculate_recipe_fingerprint, fuzzy_match
 from natsort import natsorted
@@ -64,7 +65,7 @@ class RecipeScanner:
             cls._instance._civitai_client = None  # Will be lazily initialized
         return cls._instance
 
-    REPAIR_VERSION = 3
+    REPAIR_VERSION = 4
 
     def __init__(
         self,
@@ -291,6 +292,32 @@ class RecipeScanner:
         if recipe.get("repair_version", 0) >= self.REPAIR_VERSION:
             return False
 
+        # 1.5 Detect and clear corrupted checkpoint (LoRA data saved as checkpoint).
+        #     A checkpoint whose modelVersionId also appears in a LoRA entry is
+        #     definitely wrong — the CivitAI import code used to pick
+        #     modelVersionIds[0] as the checkpoint, which was often a LoRA.
+        #     Clearing it lets the enrichment flow re-resolve the correct
+        #     checkpoint from CivitAI image metadata.
+        cp = recipe.get("checkpoint")
+        lora_mvids = {
+            l.get("modelVersionId")
+            for l in recipe.get("loras", [])
+            if l.get("modelVersionId")
+        }
+        if cp and cp.get("modelVersionId") and cp["modelVersionId"] in lora_mvids:
+            cp_mvid = cp["modelVersionId"]
+            logger.info(
+                "Recipe %s: checkpoint modelVersionId %s matches a LoRA — "
+                "clearing corrupted checkpoint and removing matching LoRA entry",
+                recipe.get("id"),
+                cp_mvid,
+            )
+            recipe["checkpoint"] = None
+            recipe["loras"] = [
+                l for l in recipe.get("loras", [])
+                if l.get("modelVersionId") != cp_mvid
+            ]
+
         # 2. Identification: Is repair needed?
         has_checkpoint = (
             "checkpoint" in recipe
@@ -503,6 +530,9 @@ class RecipeScanner:
                     self._cache.raw_data = recipes
                     self._update_folder_metadata(self._cache)
                     self._sort_cache_sync()
+                    # Backfill source_path from JSON files if missing (schema migration)
+                    if self._backfill_source_path_if_needed(recipes, json_paths):
+                        self._persistent_cache.save_cache(recipes, json_paths)
                     return self._cache
                 else:
                     # Partial update: some files changed
@@ -513,6 +543,8 @@ class RecipeScanner:
                     self._cache.raw_data = recipes
                     self._update_folder_metadata(self._cache)
                     self._sort_cache_sync()
+                    # Backfill source_path from JSON files if missing (schema migration)
+                    self._backfill_source_path_if_needed(recipes, json_paths)
                     # Persist updated cache
                     self._persistent_cache.save_cache(recipes, json_paths)
                     return self._cache
@@ -640,6 +672,34 @@ class RecipeScanner:
                 logger.debug("Recipe file deleted: %s", json_path)
 
         return recipes, changed, json_paths
+
+    def _backfill_source_path_if_needed(
+        self,
+        recipes: List[Dict],
+        json_paths: Dict[str, str],
+    ) -> bool:
+        """Backfill source_path from recipe JSON files if missing from cache.
+
+        Returns True if any recipes were updated (caller should persist cache).
+        """
+        updated = False
+        for recipe in recipes:
+            if recipe.get("source_path"):
+                continue
+            recipe_id = str(recipe.get("id", ""))
+            json_path = json_paths.get(recipe_id)
+            if not json_path or not os.path.exists(json_path):
+                continue
+            try:
+                with open(json_path, "r", encoding="utf-8") as f:
+                    json_data = json.load(f)
+                file_source_path = json_data.get("source_path")
+                if file_source_path:
+                    recipe["source_path"] = file_source_path
+                    updated = True
+            except Exception:
+                pass
+        return updated
 
     def _full_directory_scan_sync(
         self, recipes_dir: str
@@ -951,6 +1011,30 @@ class RecipeScanner:
         except Exception as exc:
             logger.debug("Failed to update FTS index for recipe: %s", exc)
 
+    @staticmethod
+    def _normalize_recipe_gen_params(recipe_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return a recipe copy with normalized generation parameter aliases added."""
+
+        normalized_recipe = dict(recipe_data)
+        gen_params = recipe_data.get("gen_params")
+        if not isinstance(gen_params, dict):
+            return normalized_recipe
+
+        normalized_gen_params = dict(gen_params)
+        for key, value in gen_params.items():
+            if value in (None, ""):
+                continue
+
+            normalized_key = GenParamsMerger.NORMALIZATION_MAPPING.get(key, key)
+            if normalized_key not in GenParamsMerger.ALLOWED_KEYS:
+                continue
+
+            if normalized_gen_params.get(normalized_key) in (None, ""):
+                normalized_gen_params[normalized_key] = value
+
+        normalized_recipe["gen_params"] = normalized_gen_params
+        return normalized_recipe
+
     async def _enrich_cache_metadata(self) -> None:
         """Perform remote metadata enrichment after the initial scan."""
 
@@ -1090,6 +1174,14 @@ class RecipeScanner:
     @property
     def recipes_dir(self) -> str:
         """Get path to recipes directory"""
+        custom_recipes_dir = get_settings_manager().get("recipes_path", "")
+        if isinstance(custom_recipes_dir, str) and custom_recipes_dir.strip():
+            recipes_dir = os.path.abspath(
+                os.path.normpath(os.path.expanduser(custom_recipes_dir.strip()))
+            )
+            os.makedirs(recipes_dir, exist_ok=True)
+            return recipes_dir
+
         if not config.loras_roots:
             return ""
 
@@ -1336,6 +1428,7 @@ class RecipeScanner:
             # Ensure gen_params exists
             if "gen_params" not in recipe_data:
                 recipe_data["gen_params"] = {}
+            recipe_data = self._normalize_recipe_gen_params(recipe_data)
 
             # Update lora information with local paths and availability
             lora_metadata_updated = await self._update_lora_information(recipe_data)
@@ -1615,6 +1708,9 @@ class RecipeScanner:
     ) -> Optional[Dict[str, Any]]:
         """Coerce legacy or malformed checkpoint entries into a dict."""
 
+        if checkpoint_raw is None:
+            return None
+
         if isinstance(checkpoint_raw, dict):
             return dict(checkpoint_raw)
 
@@ -1632,9 +1728,6 @@ class RecipeScanner:
                 "file_name": file_name,
             }
 
-        logger.warning(
-            "Unexpected checkpoint payload type %s", type(checkpoint_raw).__name__
-        )
         return None
 
     def _enrich_checkpoint_entry(self, checkpoint: Dict[str, Any]) -> Dict[str, Any]:
@@ -1781,6 +1874,15 @@ class RecipeScanner:
 
         return await self._lora_scanner.get_model_info_by_name(name)
 
+    async def get_local_checkpoint(self, name: str) -> Optional[Dict[str, Any]]:
+        """Lookup a local checkpoint model by name."""
+
+        checkpoint_scanner = getattr(self, "_checkpoint_scanner", None)
+        if not checkpoint_scanner or not name:
+            return None
+
+        return await checkpoint_scanner.get_model_info_by_name(name)
+
     async def get_paginated_data(
         self,
         page: int,
@@ -1790,6 +1892,7 @@ class RecipeScanner:
         filters: dict = None,
         search_options: dict = None,
         lora_hash: str = None,
+        checkpoint_hash: str = None,
         bypass_filters: bool = True,
         folder: str | None = None,
         recursive: bool = True,
@@ -1804,7 +1907,8 @@ class RecipeScanner:
             filters: Dictionary of filters to apply
             search_options: Dictionary of search options to apply
             lora_hash: Optional SHA256 hash of a LoRA to filter recipes by
-            bypass_filters: If True, ignore other filters when a lora_hash is provided
+            checkpoint_hash: Optional SHA256 hash of a checkpoint to filter recipes by
+            bypass_filters: If True, ignore other filters when a hash filter is provided
             folder: Optional folder filter relative to recipes directory
             recursive: Whether to include recipes in subfolders of the selected folder
         """
@@ -1852,9 +1956,23 @@ class RecipeScanner:
                 # Skip other filters if bypass_filters is True
                 pass
             # Otherwise continue with normal filtering after applying LoRA hash filter
+        elif checkpoint_hash:
+            normalized_checkpoint_hash = checkpoint_hash.lower()
+            filtered_data = [
+                item
+                for item in filtered_data
+                if isinstance(item.get("checkpoint"), dict)
+                and (item["checkpoint"].get("hash", "") or "").lower()
+                == normalized_checkpoint_hash
+            ]
 
-        # Skip further filtering if we're only filtering by LoRA hash with bypass enabled
-        if not (lora_hash and bypass_filters):
+            if bypass_filters:
+                pass
+
+        has_hash_filter = bool(lora_hash or checkpoint_hash)
+
+        # Skip further filtering if we're only filtering by model hash with bypass enabled
+        if not (has_hash_filter and bypass_filters):
             # Apply folder filter before other criteria
             if folder is not None:
                 normalized_folder = folder.strip("/")
@@ -2030,7 +2148,10 @@ class RecipeScanner:
         end_idx = min(start_idx + page_size, total_items)
 
         # Get paginated items
-        paginated_items = filtered_data[start_idx:end_idx]
+        paginated_items = [
+            self._normalize_recipe_gen_params(item)
+            for item in filtered_data[start_idx:end_idx]
+        ]
 
         # Add inLibrary information and URLs for each recipe
         for item in paginated_items:
@@ -2089,8 +2210,18 @@ class RecipeScanner:
         if not recipe:
             return None
 
+        # Prefer the on-disk recipe JSON for fields that are not persisted in the
+        # SQLite cache yet, such as source_path.
+        merged_recipe = self._normalize_recipe_gen_params({**recipe})
+        recipe_json = await self._load_recipe_json(recipe_id)
+        if recipe_json:
+            for field in ("source_path", "checkpoint", "loras", "gen_params"):
+                if field not in recipe_json:
+                    merged_recipe.pop(field, None)
+            merged_recipe.update(recipe_json)
+
         # Format the recipe with all needed information
-        formatted_recipe = {**recipe}  # Copy all fields
+        formatted_recipe = {**merged_recipe}
 
         # Format file path to URL
         if "file_path" in formatted_recipe:
@@ -2123,6 +2254,30 @@ class RecipeScanner:
                 formatted_recipe.pop("checkpoint", None)
 
         return formatted_recipe
+
+    async def _load_recipe_json(self, recipe_id: str) -> Optional[Dict[str, Any]]:
+        """Load the raw recipe JSON payload for a recipe ID if it exists."""
+
+        recipe_json_path = await self.get_recipe_json_path(recipe_id)
+        if not recipe_json_path or not os.path.exists(recipe_json_path):
+            return None
+
+        try:
+            with open(recipe_json_path, "r", encoding="utf-8") as f:
+                recipe_data = json.load(f)
+        except Exception as exc:
+            logger.debug(
+                "Failed to load recipe JSON for %s from %s: %s",
+                recipe_id,
+                recipe_json_path,
+                exc,
+            )
+            return None
+
+        if not isinstance(recipe_data, dict):
+            return None
+
+        return self._normalize_recipe_gen_params(recipe_data)
 
     def _format_file_url(self, file_path: str) -> str:
         """Format file path as URL for serving in web UI"""
@@ -2334,6 +2489,38 @@ class RecipeScanner:
 
         return matching_recipes
 
+    async def get_recipes_for_checkpoint(
+        self, checkpoint_hash: str
+    ) -> List[Dict[str, Any]]:
+        """Return recipes that reference a given checkpoint hash."""
+
+        if not checkpoint_hash:
+            return []
+
+        normalized_hash = checkpoint_hash.lower()
+        cache = await self.get_cached_data()
+        matching_recipes: List[Dict[str, Any]] = []
+
+        for recipe in cache.raw_data:
+            checkpoint = self._normalize_checkpoint_entry(recipe.get("checkpoint"))
+            if not checkpoint:
+                continue
+
+            enriched_checkpoint = self._enrich_checkpoint_entry(dict(checkpoint))
+            if (enriched_checkpoint.get("hash") or "").lower() != normalized_hash:
+                continue
+
+            recipe_copy = {**recipe}
+            recipe_copy["checkpoint"] = enriched_checkpoint
+            recipe_copy["loras"] = [
+                self._enrich_lora_entry(dict(entry))
+                for entry in recipe.get("loras", [])
+            ]
+            recipe_copy["file_url"] = self._format_file_url(recipe.get("file_path"))
+            matching_recipes.append(recipe_copy)
+
+        return matching_recipes
+
     async def get_recipe_syntax_tokens(self, recipe_id: str) -> List[str]:
         """Build LoRA syntax tokens for a recipe."""
 
@@ -2356,6 +2543,7 @@ class RecipeScanner:
                 continue
 
             file_name = None
+            folder = ""
             hash_value = (lora.get("hash") or "").lower()
             if (
                 hash_value
@@ -2365,6 +2553,11 @@ class RecipeScanner:
                 file_path = self._lora_scanner._hash_index.get_path(hash_value)
                 if file_path:
                     file_name = os.path.splitext(os.path.basename(file_path))[0]
+                    if lora_cache is not None:
+                        for cached_lora in getattr(lora_cache, "raw_data", []):
+                            if cached_lora.get("file_path") == file_path:
+                                folder = cached_lora.get("folder", "")
+                                break
 
             if not file_name and lora.get("modelVersionId") and lora_cache is not None:
                 for cached_lora in getattr(lora_cache, "raw_data", []):
@@ -2379,13 +2572,16 @@ class RecipeScanner:
                             file_name = os.path.splitext(os.path.basename(cached_path))[
                                 0
                             ]
+                            folder = cached_lora.get("folder", "")
                         break
 
             if not file_name:
                 file_name = lora.get("file_name", "unknown-lora")
+                folder = lora.get("folder", "")
 
+            lora_name = f"{folder}/{file_name}" if folder else file_name
             strength = lora.get("strength", 1.0)
-            syntax_parts.append(f"<lora:{file_name}:{strength}>")
+            syntax_parts.append(f"<lora:{lora_name}:{strength}>")
 
         return syntax_parts
 

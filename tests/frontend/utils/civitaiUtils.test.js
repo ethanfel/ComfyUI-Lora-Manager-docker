@@ -1,10 +1,18 @@
 import { describe, it, expect } from 'vitest';
 import {
+    DEFAULT_CIVITAI_PAGE_HOST,
+    normalizeCivitaiPageHost,
+    buildCivitaiModelUrl,
+    buildCivitaiSearchUrl,
+    buildCivitaiUrl,
     rewriteCivitaiUrl,
     getOptimizedUrl,
     getShowcaseUrl,
     getThumbnailUrl,
+    extractCivitaiImageId,
+    extractCivitaiModelUrlParts,
     isCivitaiUrl,
+    isSupportedCivitaiPageHost,
     OptimizationMode
 } from '../../../static/js/utils/civitaiUtils.js';
 
@@ -13,6 +21,47 @@ describe('civitaiUtils', () => {
         it('should have correct mode values', () => {
             expect(OptimizationMode.SHOWCASE).toBe('showcase');
             expect(OptimizationMode.THUMBNAIL).toBe('thumbnail');
+        });
+    });
+
+    describe('Civitai page URL helpers', () => {
+        it('normalizes invalid hosts to the default page host', () => {
+            expect(DEFAULT_CIVITAI_PAGE_HOST).toBe('civitai.com');
+            expect(normalizeCivitaiPageHost('civitai.red')).toBe('civitai.red');
+            expect(normalizeCivitaiPageHost(' CIVITAI.COM ')).toBe('civitai.com');
+            expect(normalizeCivitaiPageHost('example.com')).toBe('civitai.com');
+            expect(normalizeCivitaiPageHost(null)).toBe('civitai.com');
+        });
+
+        it('builds model URLs using the configured host', () => {
+            expect(buildCivitaiModelUrl(123, 456, 'civitai.red')).toBe(
+                'https://civitai.red/models/123?modelVersionId=456'
+            );
+            expect(buildCivitaiModelUrl(123, null, 'civitai.com')).toBe(
+                'https://civitai.com/models/123'
+            );
+        });
+
+        it('falls back to the model-versions endpoint when only a version id is available', () => {
+            expect(buildCivitaiModelUrl(null, 456, 'civitai.red')).toBe(
+                'https://civitai.red/model-versions/456'
+            );
+        });
+
+        it('builds search URLs using the configured host', () => {
+            expect(buildCivitaiSearchUrl('demo model', 'civitai.red')).toBe(
+                'https://civitai.red/models?query=demo%20model'
+            );
+            expect(buildCivitaiSearchUrl('', 'civitai.red')).toBe(null);
+        });
+
+        it('prefers model/version URLs and falls back to search URLs', () => {
+            expect(buildCivitaiUrl({ modelId: 321, versionId: 654, host: 'civitai.red' })).toBe(
+                'https://civitai.red/models/321?modelVersionId=654'
+            );
+            expect(buildCivitaiUrl({ modelName: 'search me', host: 'civitai.red' })).toBe(
+                'https://civitai.red/models?query=search%20me'
+            );
         });
     });
 
@@ -94,6 +143,37 @@ describe('civitaiUtils', () => {
             expect(wasRewritten).toBe(false);
             expect(rewritten).toBe('not-a-valid-url');
         });
+
+        it('should rewrite URLs from CivitAI CDN subdomains', () => {
+            const originalUrl = 'https://image-b2.civitai.com/file/civitai-media-cache/original=true/sample.png';
+            const [rewritten, wasRewritten] = rewriteCivitaiUrl(originalUrl, 'image', OptimizationMode.THUMBNAIL);
+
+            expect(wasRewritten).toBe(true);
+            expect(rewritten).toBe('https://image-b2.civitai.com/file/civitai-media-cache/width=450,optimized=true/sample.png');
+        });
+
+        it('should handle URLs with explicit port numbers', () => {
+            const originalUrl = 'https://image.civitai.com:443/checkpoints/original=true/test.png';
+            const [rewritten, wasRewritten] = rewriteCivitaiUrl(originalUrl, 'image', OptimizationMode.THUMBNAIL);
+
+            expect(wasRewritten).toBe(true);
+            // JavaScript URL.toString() removes default HTTPS port (443)
+            expect(rewritten).toBe('https://image.civitai.com/checkpoints/width=450,optimized=true/test.png');
+        });
+
+        it('should handle case-insensitive hostnames', () => {
+            const testCases = [
+                'https://IMAGE.CIVITAI.COM/original=true/test.png',
+                'https://Image.Civitai.Com/original=true/test.png',
+                'https://image-b2.CIVITAI.com/original=true/test.png',
+            ];
+
+            for (const url of testCases) {
+                const [rewritten, wasRewritten] = rewriteCivitaiUrl(url, 'image', OptimizationMode.THUMBNAIL);
+                expect(wasRewritten).toBe(true);
+                expect(rewritten).toContain('width=450,optimized=true');
+            }
+        });
     });
 
     describe('getOptimizedUrl', () => {
@@ -157,6 +237,23 @@ describe('civitaiUtils', () => {
             expect(isCivitaiUrl('https://image.civitai.com/')).toBe(true);
         });
 
+        it('should return true for CivitAI CDN subdomains', () => {
+            expect(isCivitaiUrl('https://image-b2.civitai.com/file/test.png')).toBe(true);
+            expect(isCivitaiUrl('https://image-b3.civitai.com/test.jpg')).toBe(true);
+            expect(isCivitaiUrl('https://cdn.civitai.com/test.png')).toBe(true);
+        });
+
+        it('should return true for CivitAI URLs with explicit ports', () => {
+            expect(isCivitaiUrl('https://image.civitai.com:443/test.png')).toBe(true);
+            expect(isCivitaiUrl('https://image-b2.civitai.com:443/file/test.jpg')).toBe(true);
+        });
+
+        it('should handle case-insensitive hostnames', () => {
+            expect(isCivitaiUrl('https://IMAGE.CIVITAI.COM/test.png')).toBe(true);
+            expect(isCivitaiUrl('https://Image.Civitai.Com/test.png')).toBe(true);
+            expect(isCivitaiUrl('https://image-b2.CIVITAI.com/test.png')).toBe(true);
+        });
+
         it('should return false for non-CivitAI URLs', () => {
             expect(isCivitaiUrl('https://example.com/image.jpg')).toBe(false);
             expect(isCivitaiUrl('https://civitai.com/image.jpg')).toBe(false);
@@ -167,6 +264,45 @@ describe('civitaiUtils', () => {
 
         it('should handle invalid URLs gracefully', () => {
             expect(isCivitaiUrl('not-a-url')).toBe(false);
+        });
+    });
+
+    describe('isSupportedCivitaiPageHost', () => {
+        it('accepts civitai.com and civitai.red page hosts', () => {
+            expect(isSupportedCivitaiPageHost('civitai.com')).toBe(true);
+            expect(isSupportedCivitaiPageHost('civitai.red')).toBe(true);
+        });
+
+        it('rejects unrelated hosts', () => {
+            expect(isSupportedCivitaiPageHost('www.civitai.com')).toBe(false);
+            expect(isSupportedCivitaiPageHost('www.civitai.red')).toBe(false);
+            expect(isSupportedCivitaiPageHost('example.com')).toBe(false);
+            expect(isSupportedCivitaiPageHost('')).toBe(false);
+            expect(isSupportedCivitaiPageHost(null)).toBe(false);
+        });
+    });
+
+    describe('extractCivitaiModelUrlParts', () => {
+        it('extracts model and version ids from civitai.red model URLs', () => {
+            expect(
+                extractCivitaiModelUrlParts('https://civitai.red/models/65423/name?modelVersionId=98765')
+            ).toEqual({ modelId: '65423', modelVersionId: '98765' });
+        });
+
+        it('rejects model-like URLs from unsupported hosts', () => {
+            expect(
+                extractCivitaiModelUrlParts('https://example.com/models/65423?modelVersionId=98765')
+            ).toEqual({ modelId: null, modelVersionId: null });
+        });
+    });
+
+    describe('extractCivitaiImageId', () => {
+        it('extracts image ids from civitai.red image URLs', () => {
+            expect(extractCivitaiImageId('https://civitai.red/images/126920345')).toBe('126920345');
+        });
+
+        it('rejects image-like URLs from unsupported hosts', () => {
+            expect(extractCivitaiImageId('https://example.com/images/126920345')).toBe(null);
         });
     });
 });

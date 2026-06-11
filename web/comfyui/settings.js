@@ -13,6 +13,18 @@ const AUTO_PATH_CORRECTION_DEFAULT = true;
 const PROMPT_TAG_AUTOCOMPLETE_SETTING_ID = "loramanager.prompt_tag_autocomplete";
 const PROMPT_TAG_AUTOCOMPLETE_DEFAULT = true;
 
+const AUTOCOMPLETE_APPEND_COMMA_SETTING_ID = "loramanager.autocomplete_append_comma";
+const AUTOCOMPLETE_APPEND_COMMA_DEFAULT = true;
+
+const AUTOCOMPLETE_AUTO_FORMAT_SETTING_ID = "loramanager.autocomplete_auto_format";
+const AUTOCOMPLETE_AUTO_FORMAT_DEFAULT = true;
+
+const AUTOCOMPLETE_ACCEPT_KEY_SETTING_ID = "loramanager.autocomplete_accept_key";
+const AUTOCOMPLETE_ACCEPT_KEY_DEFAULT = "both";
+const AUTOCOMPLETE_ACCEPT_KEY_OPTION_BOTH = "Tab or Enter";
+const AUTOCOMPLETE_ACCEPT_KEY_OPTION_TAB_ONLY = "Tab only";
+const AUTOCOMPLETE_ACCEPT_KEY_OPTION_ENTER_ONLY = "Enter only";
+
 const TAG_SPACE_REPLACEMENT_SETTING_ID = "loramanager.tag_space_replacement";
 const TAG_SPACE_REPLACEMENT_DEFAULT = false;
 
@@ -23,6 +35,12 @@ const NEW_TAB_TEMPLATE_ID = "loramanager.new_tab_template";
 const NEW_TAB_TEMPLATE_DEFAULT = "Default";
 
 const NEW_TAB_ZOOM_LEVEL = 0.8;
+
+const STRENGTH_STEP_SETTING_ID = "loramanager.strength_step";
+const STRENGTH_STEP_DEFAULT = 0.05;
+
+const LORA_WIDGET_MAX_VISIBLE_SETTING_ID = "loramanager.lora_widget_max_visible_loras";
+const LORA_WIDGET_MAX_VISIBLE_DEFAULT = 12;
 
 // ============================================================================
 // Helper Functions
@@ -154,6 +172,93 @@ const getPromptTagAutocompletePreference = (() => {
     };
 })();
 
+const getAutocompleteAppendCommaPreference = (() => {
+    let settingsUnavailableLogged = false;
+
+    return () => {
+        const settingManager = app?.extensionManager?.setting;
+        if (!settingManager || typeof settingManager.get !== "function") {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: settings API unavailable, using default append comma setting.");
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_APPEND_COMMA_DEFAULT;
+        }
+
+        try {
+            const value = settingManager.get(AUTOCOMPLETE_APPEND_COMMA_SETTING_ID);
+            return value ?? AUTOCOMPLETE_APPEND_COMMA_DEFAULT;
+        } catch (error) {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: unable to read append comma setting, using default.", error);
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_APPEND_COMMA_DEFAULT;
+        }
+    };
+})();
+
+const getAutocompleteAutoFormatPreference = (() => {
+    let settingsUnavailableLogged = false;
+
+    return () => {
+        const settingManager = app?.extensionManager?.setting;
+        if (!settingManager || typeof settingManager.get !== "function") {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: settings API unavailable, using default autocomplete auto format setting.");
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_AUTO_FORMAT_DEFAULT;
+        }
+
+        try {
+            const value = settingManager.get(AUTOCOMPLETE_AUTO_FORMAT_SETTING_ID);
+            return value ?? AUTOCOMPLETE_AUTO_FORMAT_DEFAULT;
+        } catch (error) {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: unable to read autocomplete auto format setting, using default.", error);
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_AUTO_FORMAT_DEFAULT;
+        }
+    };
+})();
+
+const getAutocompleteAcceptKeyPreference = (() => {
+    let settingsUnavailableLogged = false;
+
+    return () => {
+        const settingManager = app?.extensionManager?.setting;
+        if (!settingManager || typeof settingManager.get !== "function") {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: settings API unavailable, using default autocomplete accept key setting.");
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_ACCEPT_KEY_DEFAULT;
+        }
+
+        try {
+            const value = settingManager.get(AUTOCOMPLETE_ACCEPT_KEY_SETTING_ID);
+            if (value === AUTOCOMPLETE_ACCEPT_KEY_OPTION_TAB_ONLY) {
+                return "tab_only";
+            }
+            if (value === AUTOCOMPLETE_ACCEPT_KEY_OPTION_ENTER_ONLY) {
+                return "enter_only";
+            }
+            if (value === AUTOCOMPLETE_ACCEPT_KEY_OPTION_BOTH || value == null) {
+                return AUTOCOMPLETE_ACCEPT_KEY_DEFAULT;
+            }
+            return value;
+        } catch (error) {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: unable to read autocomplete accept key setting, using default.", error);
+                settingsUnavailableLogged = true;
+            }
+            return AUTOCOMPLETE_ACCEPT_KEY_DEFAULT;
+        }
+    };
+})();
+
 const getTagSpaceReplacementPreference = (() => {
     let settingsUnavailableLogged = false;
 
@@ -232,6 +337,58 @@ const getNewTabTemplatePreference = (() => {
     };
 })();
 
+const getStrengthStepPreference = (() => {
+    let settingsUnavailableLogged = false;
+
+    return () => {
+        const settingManager = app?.extensionManager?.setting;
+        if (!settingManager || typeof settingManager.get !== "function") {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: settings API unavailable, using default strength step.");
+                settingsUnavailableLogged = true;
+            }
+            return STRENGTH_STEP_DEFAULT;
+        }
+
+        try {
+            const value = settingManager.get(STRENGTH_STEP_SETTING_ID);
+            return value ?? STRENGTH_STEP_DEFAULT;
+        } catch (error) {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: unable to read strength step setting, using default.", error);
+                settingsUnavailableLogged = true;
+            }
+            return STRENGTH_STEP_DEFAULT;
+        }
+    };
+})();
+
+const getLoraWidgetMaxVisibleLoras = (() => {
+    let settingsUnavailableLogged = false;
+
+    return () => {
+        const settingManager = app?.extensionManager?.setting;
+        if (!settingManager || typeof settingManager.get !== "function") {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: settings API unavailable, using default max visible loras.");
+                settingsUnavailableLogged = true;
+            }
+            return LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+        }
+
+        try {
+            const value = settingManager.get(LORA_WIDGET_MAX_VISIBLE_SETTING_ID);
+            return value ?? LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+        } catch (error) {
+            if (!settingsUnavailableLogged) {
+                console.warn("LoRA Manager: unable to read max visible loras setting, using default.", error);
+                settingsUnavailableLogged = true;
+            }
+            return LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+        }
+    };
+})();
+
 // ============================================================================
 // Register Extension with All Settings
 // ============================================================================
@@ -269,6 +426,35 @@ app.registerExtension({
             category: ["LoRA Manager", "Autocomplete", "Prompt"],
         },
         {
+            id: AUTOCOMPLETE_APPEND_COMMA_SETTING_ID,
+            name: "Append comma after autocomplete",
+            type: "boolean",
+            defaultValue: AUTOCOMPLETE_APPEND_COMMA_DEFAULT,
+            tooltip: "When enabled, accepted autocomplete suggestions append ', ' to the inserted text.",
+            category: ["LoRA Manager", "Autocomplete", "Append comma"],
+        },
+        {
+            id: AUTOCOMPLETE_AUTO_FORMAT_SETTING_ID,
+            name: "Auto format autocomplete text on blur",
+            type: "boolean",
+            defaultValue: AUTOCOMPLETE_AUTO_FORMAT_DEFAULT,
+            tooltip: "When enabled, leaving an autocomplete textarea removes duplicate commas and collapses unnecessary spaces.",
+            category: ["LoRA Manager", "Autocomplete", "Auto Format"],
+        },
+        {
+            id: AUTOCOMPLETE_ACCEPT_KEY_SETTING_ID,
+            name: "Autocomplete accept key",
+            type: "combo",
+            options: [
+                AUTOCOMPLETE_ACCEPT_KEY_OPTION_BOTH,
+                AUTOCOMPLETE_ACCEPT_KEY_OPTION_TAB_ONLY,
+                AUTOCOMPLETE_ACCEPT_KEY_OPTION_ENTER_ONLY,
+            ],
+            defaultValue: AUTOCOMPLETE_ACCEPT_KEY_OPTION_BOTH,
+            tooltip: "Choose which key accepts the selected autocomplete suggestion. Keys not selected here keep their normal textarea behavior.",
+            category: ["LoRA Manager", "Autocomplete", "Accept key"],
+        },
+        {
             id: TAG_SPACE_REPLACEMENT_SETTING_ID,
             name: "Replace underscores with spaces in tags",
             type: "boolean",
@@ -292,6 +478,32 @@ app.registerExtension({
             defaultValue: NEW_TAB_TEMPLATE_DEFAULT,
             tooltip: "Choose a template workflow to load when creating a new workflow tab. 'Default (Blank)' keeps ComfyUI's original blank workflow behavior.",
             category: ["LoRA Manager", "Workflow", "New Tab Template"],
+        },
+        {
+            id: STRENGTH_STEP_SETTING_ID,
+            name: "Strength Adjustment Step",
+            type: "slider",
+            attrs: {
+                min: 0.01,
+                max: 0.1,
+                step: 0.01,
+            },
+            defaultValue: STRENGTH_STEP_DEFAULT,
+            tooltip: "Step size for adjusting LoRA strength via arrow buttons or keyboard (default: 0.05)",
+            category: ["LoRA Manager", "LoRA Widget", "Strength Step"],
+        },
+        {
+            id: LORA_WIDGET_MAX_VISIBLE_SETTING_ID,
+            name: "Node 2.0: Maximum visible LoRA entries",
+            type: "slider",
+            attrs: {
+                min: 3,
+                max: 50,
+                step: 1,
+            },
+            defaultValue: LORA_WIDGET_MAX_VISIBLE_DEFAULT,
+            tooltip: "When using Node 2.0 rendering, limit the loras widget height to show at most this many entries (default: 12). Excess entries are accessible via scrollbar.",
+            category: ["LoRA Manager", "LoRA Widget", "Max Visible"],
         },
     ],
     async setup() {
@@ -371,8 +583,13 @@ app.registerExtension({
 export {
     getWheelSensitivity,
     getAutoPathCorrectionPreference,
+    getAutocompleteAppendCommaPreference,
+    getAutocompleteAutoFormatPreference,
+    getAutocompleteAcceptKeyPreference,
     getPromptTagAutocompletePreference,
     getTagSpaceReplacementPreference,
     getUsageStatisticsPreference,
     getNewTabTemplatePreference,
+    getStrengthStepPreference,
+    getLoraWidgetMaxVisibleLoras,
 };

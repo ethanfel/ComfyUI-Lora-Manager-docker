@@ -2,17 +2,38 @@ import asyncio
 import copy
 import json
 import os
+import posixpath
 import shutil
+import tempfile
 import logging
 from pathlib import Path
 from datetime import datetime, timezone
 from threading import Lock
-from typing import Any, Awaitable, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
+from typing import (
+    Any,
+    Awaitable,
+    Dict,
+    Iterable,
+    List,
+    Mapping,
+    Optional,
+    Sequence,
+    Tuple,
+)
 
 from platformdirs import user_config_dir
 
-from ..utils.constants import DEFAULT_HASH_CHUNK_SIZE_MB, DEFAULT_PRIORITY_TAG_CONFIG
-from ..utils.settings_paths import APP_NAME, ensure_settings_file, get_legacy_settings_path
+from ..utils.constants import (
+    DEFAULT_HASH_CHUNK_SIZE_MB,
+    DEFAULT_PRIORITY_TAG_CONFIG,
+    SUPPORTED_DOWNLOAD_SKIP_BASE_MODELS,
+)
+from ..utils.preview_selection import VALID_MATURE_BLUR_LEVELS
+from ..utils.settings_paths import (
+    APP_NAME,
+    ensure_settings_file,
+    get_legacy_settings_path,
+)
 from ..utils.tag_priorities import (
     PriorityTagEntry,
     collect_canonical_tags,
@@ -34,6 +55,9 @@ DEFAULT_KEYS_CLEANUP_THRESHOLD = 10
 
 DEFAULT_SETTINGS: Dict[str, Any] = {
     "civitai_api_key": "",
+    "civitai_host": "civitai.com",
+    "download_backend": "python",
+    "aria2c_path": "",
     "use_portable_settings": False,
     "hash_chunk_size_mb": DEFAULT_HASH_CHUNK_SIZE_MB,
     "language": "en",
@@ -51,14 +75,19 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "default_checkpoint_root": "",
     "default_unet_root": "",
     "default_embedding_root": "",
+    "recipes_path": "",
     "base_model_path_mappings": {},
     "download_path_templates": {},
     "folder_paths": {},
     "extra_folder_paths": {},
     "example_images_path": "",
+    "example_images_open_mode": "system",
+    "example_images_local_root": "",
+    "example_images_open_uri_template": "",
     "optimize_example_images": True,
     "auto_download_example_images": False,
     "blur_mature_content": True,
+    "mature_blur_level": "R",
     "autoplay_on_hover": False,
     "display_density": "default",
     "card_info_display": "always",
@@ -67,11 +96,26 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "compact_mode": False,
     "priority_tags": DEFAULT_PRIORITY_TAG_CONFIG.copy(),
     "model_name_display": "model_name",
+    "lora_syntax_format": "legacy",
     "model_card_footer_action": "replace_preview",
+    "show_version_on_card": True,
     "update_flag_strategy": "same_base",
     "auto_organize_exclusions": [],
     "metadata_refresh_skip_paths": [],
+    "skip_previously_downloaded_model_versions": False,
+    "download_skip_base_models": [],
+    "backup_auto_enabled": True,
+    "backup_retention_count": 5,
 }
+
+
+def _normalize_root_identity(path: str) -> str:
+    """Normalize a root path for equality checks across slash styles."""
+
+    normalized = posixpath.normpath(path.strip().replace("\\", "/"))
+    if len(normalized) >= 2 and normalized[1] == ":":
+        return normalized.lower()
+    return normalized
 
 
 class SettingsManager:
@@ -87,7 +131,9 @@ class SettingsManager:
         self._template_payload_cache_loaded = False
         self._original_disk_payload: Optional[Dict[str, Any]] = None
         self._preserve_disk_template = False
-        self._template_path = Path(__file__).resolve().parents[2] / "settings.json.example"
+        self._template_path = (
+            Path(__file__).resolve().parents[2] / "settings.json.example"
+        )
         self.settings = self._load_settings()
         self._migrate_setting_keys()
         self._ensure_default_settings()
@@ -113,7 +159,7 @@ class SettingsManager:
         """Load settings from file"""
         if os.path.exists(self.settings_file):
             try:
-                with open(self.settings_file, 'r', encoding='utf-8') as f:
+                with open(self.settings_file, "r", encoding="utf-8") as f:
                     data = json.load(f)
                 if isinstance(data, dict):
                     self._original_disk_payload = copy.deepcopy(data)
@@ -191,7 +237,9 @@ class SettingsManager:
             return None
 
         if not isinstance(data, dict):
-            logger.debug("settings.json.example is not a JSON object; ignoring template")
+            logger.debug(
+                "settings.json.example is not a JSON object; ignoring template"
+            )
             return None
 
         self._template_payload_cache = copy.deepcopy(data)
@@ -228,6 +276,7 @@ class SettingsManager:
                 default_checkpoint_root=merged.get("default_checkpoint_root"),
                 default_unet_root=merged.get("default_unet_root"),
                 default_embedding_root=merged.get("default_embedding_root"),
+                recipes_path=merged.get("recipes_path"),
             )
         }
         merged["active_library"] = library_name
@@ -267,12 +316,41 @@ class SettingsManager:
             normalized_skip_paths = self.normalize_metadata_refresh_skip_paths(
                 self.settings.get("metadata_refresh_skip_paths")
             )
-            if normalized_skip_paths != self.settings.get("metadata_refresh_skip_paths"):
+            if normalized_skip_paths != self.settings.get(
+                "metadata_refresh_skip_paths"
+            ):
                 self.settings["metadata_refresh_skip_paths"] = normalized_skip_paths
                 updated_existing = True
         else:
             self.settings["metadata_refresh_skip_paths"] = []
             inserted_defaults = True
+
+        if "download_skip_base_models" in self.settings:
+            normalized_skip_base_models = self.normalize_download_skip_base_models(
+                self.settings.get("download_skip_base_models")
+            )
+            if normalized_skip_base_models != self.settings.get(
+                "download_skip_base_models"
+            ):
+                self.settings["download_skip_base_models"] = normalized_skip_base_models
+                updated_existing = True
+        else:
+            self.settings["download_skip_base_models"] = []
+            inserted_defaults = True
+
+        if "skip_previously_downloaded_model_versions" not in self.settings:
+            self.settings["skip_previously_downloaded_model_versions"] = False
+            inserted_defaults = True
+
+        had_mature_level = "mature_blur_level" in self.settings
+        raw_mature_level = self.settings.get("mature_blur_level")
+        normalized_mature_level = self.normalize_mature_blur_level(raw_mature_level)
+        if normalized_mature_level != raw_mature_level:
+            self.settings["mature_blur_level"] = normalized_mature_level
+            if had_mature_level:
+                updated_existing = True
+            else:
+                inserted_defaults = True
 
         for key, value in defaults.items():
             if key == "priority_tags":
@@ -298,19 +376,19 @@ class SettingsManager:
         raw_top_level_paths = self.settings.get("folder_paths", {})
         normalized_top_level_paths: Dict[str, List[str]] = {}
         if isinstance(raw_top_level_paths, Mapping):
-            normalized_top_level_paths = self._normalize_folder_paths(raw_top_level_paths)
+            normalized_top_level_paths = self._normalize_folder_paths(
+                raw_top_level_paths
+            )
             if normalized_top_level_paths != raw_top_level_paths:
-                self.settings["folder_paths"] = copy.deepcopy(normalized_top_level_paths)
+                self.settings["folder_paths"] = copy.deepcopy(
+                    normalized_top_level_paths
+                )
 
         top_level_has_paths = self._has_configured_paths(normalized_top_level_paths)
 
         needs_library_bootstrap = not isinstance(libraries, dict) or not libraries
 
-        if (
-            not needs_library_bootstrap
-            and top_level_has_paths
-            and len(libraries) == 1
-        ):
+        if not needs_library_bootstrap and top_level_has_paths and len(libraries) == 1:
             only_library_payload = next(iter(libraries.values()))
             if isinstance(only_library_payload, Mapping):
                 folder_payload = only_library_payload.get("folder_paths")
@@ -322,9 +400,12 @@ class SettingsManager:
             library_payload = self._build_library_payload(
                 folder_paths=normalized_top_level_paths,
                 default_lora_root=self.settings.get("default_lora_root", ""),
-                default_checkpoint_root=self.settings.get("default_checkpoint_root", ""),
+                default_checkpoint_root=self.settings.get(
+                    "default_checkpoint_root", ""
+                ),
                 default_unet_root=self.settings.get("default_unet_root", ""),
                 default_embedding_root=self.settings.get("default_embedding_root", ""),
+                recipes_path=self.settings.get("recipes_path", ""),
             )
             libraries = {library_name: library_payload}
             self.settings["libraries"] = libraries
@@ -344,7 +425,11 @@ class SettingsManager:
 
             if target_name:
                 candidate_payload = libraries.get(target_name)
-                if isinstance(candidate_payload, Mapping) and not self._has_configured_paths(candidate_payload.get("folder_paths")):
+                if isinstance(
+                    candidate_payload, Mapping
+                ) and not self._has_configured_paths(
+                    candidate_payload.get("folder_paths")
+                ):
                     seed_library_name = target_name
 
         sanitized_libraries: Dict[str, Dict[str, Any]] = {}
@@ -368,6 +453,7 @@ class SettingsManager:
                 default_checkpoint_root=data.get("default_checkpoint_root"),
                 default_unet_root=data.get("default_unet_root"),
                 default_embedding_root=data.get("default_embedding_root"),
+                recipes_path=data.get("recipes_path"),
                 metadata=data.get("metadata"),
                 base=data,
             )
@@ -403,11 +489,18 @@ class SettingsManager:
         active_library = libraries.get(active_name, {})
         folder_paths = copy.deepcopy(active_library.get("folder_paths", {}))
         self.settings["folder_paths"] = folder_paths
-        self.settings["extra_folder_paths"] = copy.deepcopy(active_library.get("extra_folder_paths", {}))
+        self.settings["extra_folder_paths"] = copy.deepcopy(
+            active_library.get("extra_folder_paths", {})
+        )
         self.settings["default_lora_root"] = active_library.get("default_lora_root", "")
-        self.settings["default_checkpoint_root"] = active_library.get("default_checkpoint_root", "")
+        self.settings["default_checkpoint_root"] = active_library.get(
+            "default_checkpoint_root", ""
+        )
         self.settings["default_unet_root"] = active_library.get("default_unet_root", "")
-        self.settings["default_embedding_root"] = active_library.get("default_embedding_root", "")
+        self.settings["default_embedding_root"] = active_library.get(
+            "default_embedding_root", ""
+        )
+        self.settings["recipes_path"] = active_library.get("recipes_path", "")
 
         if save:
             self._save_settings()
@@ -424,6 +517,7 @@ class SettingsManager:
         default_checkpoint_root: Optional[str] = None,
         default_unet_root: Optional[str] = None,
         default_embedding_root: Optional[str] = None,
+        recipes_path: Optional[str] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         base: Optional[Mapping[str, Any]] = None,
     ) -> Dict[str, Any]:
@@ -436,7 +530,9 @@ class SettingsManager:
             payload.setdefault("folder_paths", {})
 
         if extra_folder_paths is not None:
-            payload["extra_folder_paths"] = self._normalize_folder_paths(extra_folder_paths)
+            payload["extra_folder_paths"] = self._normalize_folder_paths(
+                extra_folder_paths
+            )
         else:
             payload.setdefault("extra_folder_paths", {})
 
@@ -459,6 +555,11 @@ class SettingsManager:
             payload["default_embedding_root"] = default_embedding_root
         else:
             payload.setdefault("default_embedding_root", "")
+
+        if recipes_path is not None:
+            payload["recipes_path"] = recipes_path
+        else:
+            payload.setdefault("recipes_path", "")
 
         if metadata:
             merged_meta = dict(payload.get("metadata", {}))
@@ -545,7 +646,9 @@ class SettingsManager:
                 }
                 overlap = existing.intersection(new_paths.keys())
                 if overlap:
-                    collisions = ", ".join(sorted(new_paths[value] for value in overlap))
+                    collisions = ", ".join(
+                        sorted(new_paths[value] for value in overlap)
+                    )
                     raise ValueError(
                         f"Folder path(s) {collisions} already assigned to library '{other_name}'"
                     )
@@ -559,6 +662,7 @@ class SettingsManager:
         default_checkpoint_root: Optional[str] = None,
         default_unet_root: Optional[str] = None,
         default_embedding_root: Optional[str] = None,
+        recipes_path: Optional[str] = None,
     ) -> bool:
         libraries = self.settings.get("libraries", {})
         active_name = self.settings.get("active_library")
@@ -580,20 +684,36 @@ class SettingsManager:
                 library["extra_folder_paths"] = normalized_extra_paths
                 changed = True
 
-        if default_lora_root is not None and library.get("default_lora_root") != default_lora_root:
+        if (
+            default_lora_root is not None
+            and library.get("default_lora_root") != default_lora_root
+        ):
             library["default_lora_root"] = default_lora_root
             changed = True
 
-        if default_checkpoint_root is not None and library.get("default_checkpoint_root") != default_checkpoint_root:
+        if (
+            default_checkpoint_root is not None
+            and library.get("default_checkpoint_root") != default_checkpoint_root
+        ):
             library["default_checkpoint_root"] = default_checkpoint_root
             changed = True
 
-        if default_unet_root is not None and library.get("default_unet_root") != default_unet_root:
+        if (
+            default_unet_root is not None
+            and library.get("default_unet_root") != default_unet_root
+        ):
             library["default_unet_root"] = default_unet_root
             changed = True
 
-        if default_embedding_root is not None and library.get("default_embedding_root") != default_embedding_root:
+        if (
+            default_embedding_root is not None
+            and library.get("default_embedding_root") != default_embedding_root
+        ):
             library["default_embedding_root"] = default_embedding_root
+            changed = True
+
+        if recipes_path is not None and library.get("recipes_path") != recipes_path:
+            library["recipes_path"] = recipes_path
             changed = True
 
         if changed:
@@ -605,15 +725,16 @@ class SettingsManager:
     def _migrate_setting_keys(self) -> None:
         """Migrate legacy camelCase setting keys to snake_case"""
         key_migrations = {
-            'optimizeExampleImages': 'optimize_example_images',
-            'autoDownloadExampleImages': 'auto_download_example_images',
-            'blurMatureContent': 'blur_mature_content',
-            'autoplayOnHover': 'autoplay_on_hover',
-            'displayDensity': 'display_density',
-            'cardInfoDisplay': 'card_info_display',
-            'includeTriggerWords': 'include_trigger_words',
-            'compactMode': 'compact_mode',
-            'modelCardFooterAction': 'model_card_footer_action',
+            "optimizeExampleImages": "optimize_example_images",
+            "autoDownloadExampleImages": "auto_download_example_images",
+            "blurMatureContent": "blur_mature_content",
+            "matureBlurLevel": "mature_blur_level",
+            "autoplayOnHover": "autoplay_on_hover",
+            "displayDensity": "display_density",
+            "cardInfoDisplay": "card_info_display",
+            "includeTriggerWords": "include_trigger_words",
+            "compactMode": "compact_mode",
+            "modelCardFooterAction": "model_card_footer_action",
         }
 
         updated = False
@@ -630,78 +751,115 @@ class SettingsManager:
 
     def _migrate_download_path_template(self):
         """Migrate old download_path_template to new download_path_templates"""
-        old_template = self.settings.get('download_path_template')
-        templates = self.settings.get('download_path_templates')
+        old_template = self.settings.get("download_path_template")
+        templates = self.settings.get("download_path_templates")
 
         # If old template exists and new templates don't exist, migrate
         if old_template is not None and not templates:
             logger.info("Migrating download_path_template to download_path_templates")
-            self.settings['download_path_templates'] = {
-                'lora': old_template,
-                'checkpoint': old_template,
-                'embedding': old_template
+            self.settings["download_path_templates"] = {
+                "lora": old_template,
+                "checkpoint": old_template,
+                "embedding": old_template,
             }
             # Remove old setting
-            del self.settings['download_path_template']
+            del self.settings["download_path_template"]
             self._save_settings()
             logger.info("Migration completed")
 
     def _auto_set_default_roots(self):
-        """Auto set default root paths when the current default is unset or not among the options.
+        """Ensure default root paths always point at a current valid root.
 
-        For single-path cases, always use that path.
-        For multi-path cases, only set if current default is empty or invalid.
+        Empty or stale defaults are repaired to the first configured root.
+        Skips auto-setting when the settings file matches the template
+        (user hasn't customized yet).
         """
-        folder_paths = self.settings.get('folder_paths', {})
+        # Skip auto-setting if the user hasn't customized settings yet (template preserved)
+        if self._preserve_disk_template:
+            return
+
         updated = False
-        # loras
-        loras = folder_paths.get('loras', [])
-        if isinstance(loras, list) and len(loras) == 1:
-            current_lora_root = self.settings.get('default_lora_root')
-            if current_lora_root not in loras:
-                self.settings['default_lora_root'] = loras[0]
-                updated = True
-        # checkpoints
-        checkpoints = folder_paths.get('checkpoints', [])
-        if isinstance(checkpoints, list) and len(checkpoints) == 1:
-            current_checkpoint_root = self.settings.get('default_checkpoint_root')
-            if current_checkpoint_root not in checkpoints:
-                self.settings['default_checkpoint_root'] = checkpoints[0]
-                updated = True
-        # unet (diffusion models) - auto-set if empty or invalid
-        unet_paths = folder_paths.get('unet', [])
-        if isinstance(unet_paths, list) and len(unet_paths) >= 1:
-            current_unet_root = self.settings.get('default_unet_root')
-            # Set to first path if current is empty or not in the valid paths
-            if not current_unet_root or current_unet_root not in unet_paths:
-                self.settings['default_unet_root'] = unet_paths[0]
-                updated = True
-        # embeddings
-        embeddings = folder_paths.get('embeddings', [])
-        if isinstance(embeddings, list) and len(embeddings) == 1:
-            current_embedding_root = self.settings.get('default_embedding_root')
-            if current_embedding_root not in embeddings:
-                self.settings['default_embedding_root'] = embeddings[0]
-                updated = True
+
+        def _check_and_auto_set(key: str, setting_key: str) -> bool:
+            """Repair default roots when empty or no longer present."""
+            current = self.settings.get(setting_key, "")
+            primary_candidates = self._get_valid_root_candidates(key)
+            if not primary_candidates:
+                return False
+
+            allowed_roots = self._get_allowed_roots(key)
+            if current and _normalize_root_identity(current) in allowed_roots:
+                return False
+
+            self.settings[setting_key] = primary_candidates[0]
+            if current:
+                logger.info(
+                    "Repaired stale %s from '%s' to '%s' because it is not present in primary or extra roots",
+                    setting_key,
+                    current,
+                    primary_candidates[0],
+                )
+            else:
+                logger.info("Auto-set %s to '%s'", setting_key, primary_candidates[0])
+            return True
+
+        # Process all model types
+        updated = _check_and_auto_set("loras", "default_lora_root") or updated
+        updated = (
+            _check_and_auto_set("checkpoints", "default_checkpoint_root") or updated
+        )
+        updated = _check_and_auto_set("unet", "default_unet_root") or updated
+        updated = _check_and_auto_set("embeddings", "default_embedding_root") or updated
+
         if updated:
             self._update_active_library_entry(
-                default_lora_root=self.settings.get('default_lora_root'),
-                default_checkpoint_root=self.settings.get('default_checkpoint_root'),
-                default_unet_root=self.settings.get('default_unet_root'),
-                default_embedding_root=self.settings.get('default_embedding_root'),
+                default_lora_root=self.settings.get("default_lora_root"),
+                default_checkpoint_root=self.settings.get("default_checkpoint_root"),
+                default_unet_root=self.settings.get("default_unet_root"),
+                default_embedding_root=self.settings.get("default_embedding_root"),
             )
             if self._bootstrap_reason == "missing":
                 self._needs_initial_save = True
             else:
                 self._save_settings()
 
+    def _get_valid_root_candidates(self, key: str) -> List[str]:
+        """Return stable root candidates, preferring primary roots over extra roots."""
+
+        candidates: List[str] = []
+        seen: set[str] = set()
+        for mapping_key in ("folder_paths", "extra_folder_paths"):
+            raw_paths = self.settings.get(mapping_key, {})
+            if not isinstance(raw_paths, Mapping):
+                continue
+            values = raw_paths.get(key, [])
+            if not isinstance(values, list):
+                continue
+            for value in values:
+                if not isinstance(value, str):
+                    continue
+                normalized = value.strip()
+                if not normalized:
+                    continue
+                identity = _normalize_root_identity(normalized)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                candidates.append(normalized)
+        return candidates
+
+    def _get_allowed_roots(self, key: str) -> set[str]:
+        """Return all valid roots for a model type, including extra roots."""
+
+        return {_normalize_root_identity(path) for path in self._get_valid_root_candidates(key)}
+
     def _check_environment_variables(self) -> None:
         """Check for environment variables and update settings if needed"""
-        env_api_key = os.environ.get('CIVITAI_API_KEY')
+        env_api_key = os.environ.get("CIVITAI_API_KEY")
         if env_api_key:  # Check if the environment variable exists and is not empty
             logger.info("Found CIVITAI_API_KEY environment variable")
             # Always use the environment variable if it exists
-            self.settings['civitai_api_key'] = env_api_key
+            self.settings["civitai_api_key"] = env_api_key
             self._save_settings()
 
     def _default_settings_actions(self) -> List[Dict[str, Any]]:
@@ -766,7 +924,9 @@ class SettingsManager:
             disk_value = self._original_disk_payload.get(key)
             default_value = defaults.get(key)
             # Compare using JSON serialization for complex objects
-            if json.dumps(disk_value, sort_keys=True, default=str) == json.dumps(default_value, sort_keys=True, default=str):
+            if json.dumps(disk_value, sort_keys=True, default=str) == json.dumps(
+                default_value, sort_keys=True, default=str
+            ):
                 default_value_keys.add(key)
 
         # Only cleanup if there are "many" default keys (indicating a bloated file)
@@ -774,7 +934,7 @@ class SettingsManager:
         if len(default_value_keys) >= DEFAULT_KEYS_CLEANUP_THRESHOLD:
             logger.info(
                 "Cleaning up %d default value(s) from settings.json to keep it minimal",
-                len(default_value_keys)
+                len(default_value_keys),
             )
             self._save_settings()
             # Update original payload to match what we just saved
@@ -784,8 +944,8 @@ class SettingsManager:
         if not self._standalone_mode:
             return
 
-        folder_paths = self.settings.get('folder_paths', {}) or {}
-        monitored_keys = ('loras', 'checkpoints', 'embeddings')
+        folder_paths = self.settings.get("folder_paths", {}) or {}
+        monitored_keys = ("loras", "checkpoints", "embeddings")
 
         has_valid_paths = False
         for key in monitored_keys:
@@ -796,7 +956,10 @@ class SettingsManager:
                 iterator = list(raw_paths)
             except TypeError:
                 continue
-            if any(isinstance(path, str) and path and os.path.exists(path) for path in iterator):
+            if any(
+                isinstance(path, str) and path and os.path.exists(path)
+                for path in iterator
+            ):
                 has_valid_paths = True
                 break
 
@@ -827,13 +990,13 @@ class SettingsManager:
     def _get_default_settings(self) -> Dict[str, Any]:
         """Return default settings"""
         defaults = copy.deepcopy(DEFAULT_SETTINGS)
-        defaults['base_model_path_mappings'] = {}
-        defaults['download_path_templates'] = {}
-        defaults['priority_tags'] = DEFAULT_PRIORITY_TAG_CONFIG.copy()
-        defaults.setdefault('folder_paths', {})
-        defaults.setdefault('extra_folder_paths', {})
-        defaults['auto_organize_exclusions'] = []
-        defaults['metadata_refresh_skip_paths'] = []
+        defaults["base_model_path_mappings"] = {}
+        defaults["download_path_templates"] = {}
+        defaults["priority_tags"] = DEFAULT_PRIORITY_TAG_CONFIG.copy()
+        defaults.setdefault("folder_paths", {})
+        defaults.setdefault("extra_folder_paths", {})
+        defaults["auto_organize_exclusions"] = []
+        defaults["metadata_refresh_skip_paths"] = []
 
         library_name = defaults.get("active_library") or "default"
         default_library = self._build_library_payload(
@@ -841,10 +1004,12 @@ class SettingsManager:
             extra_folder_paths=defaults.get("extra_folder_paths", {}),
             default_lora_root=defaults.get("default_lora_root"),
             default_checkpoint_root=defaults.get("default_checkpoint_root"),
+            default_unet_root=defaults.get("default_unet_root"),
             default_embedding_root=defaults.get("default_embedding_root"),
+            recipes_path=defaults.get("recipes_path"),
         )
-        defaults['libraries'] = {library_name: default_library}
-        defaults['active_library'] = library_name
+        defaults["libraries"] = {library_name: default_library}
+        defaults["active_library"] = library_name
         return defaults
 
     def _normalize_priority_tag_config(self, value: Any) -> Dict[str, str]:
@@ -860,6 +1025,13 @@ class SettingsManager:
 
         return normalized
 
+    def normalize_mature_blur_level(self, value: Any) -> str:
+        if isinstance(value, str):
+            normalized = value.strip().upper()
+            if normalized in VALID_MATURE_BLUR_LEVELS:
+                return normalized
+        return "R"
+
     def normalize_auto_organize_exclusions(self, value: Any) -> List[str]:
         if value is None:
             return []
@@ -868,7 +1040,9 @@ class SettingsManager:
             candidates: Iterable[str] = (
                 value.replace("\n", ",").replace(";", ",").split(",")
             )
-        elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (bytes, bytearray, str)
+        ):
             candidates = value
         else:
             return []
@@ -914,7 +1088,9 @@ class SettingsManager:
             candidates: Iterable[str] = (
                 value.replace("\n", ",").replace(";", ",").split(",")
             )
-        elif isinstance(value, Sequence) and not isinstance(value, (bytes, bytearray, str)):
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (bytes, bytearray, str)
+        ):
             candidates = value
         else:
             return []
@@ -944,6 +1120,56 @@ class SettingsManager:
             self._save_settings()
         return skip_paths
 
+    def normalize_download_skip_base_models(self, value: Any) -> List[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            candidates: Iterable[str] = (
+                value.replace("\n", ",").replace(";", ",").split(",")
+            )
+        elif isinstance(value, Sequence) and not isinstance(
+            value, (bytes, bytearray, str)
+        ):
+            candidates = value
+        else:
+            return []
+
+        base_models: List[str] = []
+        seen = set()
+        for raw in candidates:
+            if not isinstance(raw, str):
+                continue
+            token = raw.strip()
+            if not token or token not in SUPPORTED_DOWNLOAD_SKIP_BASE_MODELS:
+                continue
+            if token in seen:
+                continue
+            seen.add(token)
+            base_models.append(token)
+
+        return base_models
+
+    def get_download_skip_base_models(self) -> List[str]:
+        base_models = self.normalize_download_skip_base_models(
+            self.settings.get("download_skip_base_models")
+        )
+        if base_models != self.settings.get("download_skip_base_models"):
+            self.settings["download_skip_base_models"] = base_models
+            self._save_settings()
+        return base_models
+
+    def get_skip_previously_downloaded_model_versions(self) -> bool:
+        value = self.settings.get("skip_previously_downloaded_model_versions", False)
+        if isinstance(value, bool):
+            return value
+        normalized = False
+        if isinstance(value, str):
+            normalized = value.strip().lower() in {"1", "true", "yes", "on"}
+        self.settings["skip_previously_downloaded_model_versions"] = normalized
+        self._save_settings()
+        return normalized
+
     def get_extra_folder_paths(self) -> Dict[str, List[str]]:
         """Get extra folder paths for the active library.
 
@@ -966,6 +1192,74 @@ class SettingsManager:
         """
         active_name = self.get_active_library_name()
         self._validate_folder_paths(active_name, extra_folder_paths)
+
+        active_library = self.get_active_library()
+        active_folder_paths = active_library.get("folder_paths", {})
+        active_lora_paths = active_folder_paths.get("loras", []) or []
+        requested_extra_lora_paths = extra_folder_paths.get("loras", []) or []
+
+        primary_real_paths = set()
+        for path in active_lora_paths:
+            if not isinstance(path, str):
+                continue
+            stripped = path.strip()
+            if not stripped:
+                continue
+            normalized = os.path.normcase(os.path.normpath(stripped))
+            if os.path.exists(stripped):
+                normalized = os.path.normcase(
+                    os.path.normpath(os.path.realpath(stripped))
+                )
+            primary_real_paths.add(normalized)
+
+        primary_symlink_targets = set()
+        for path in active_lora_paths:
+            if not isinstance(path, str):
+                continue
+            stripped = path.strip()
+            if not stripped or not os.path.isdir(stripped):
+                continue
+            try:
+                with os.scandir(stripped) as iterator:
+                    for entry in iterator:
+                        try:
+                            if not entry.is_symlink():
+                                continue
+                            target_path = os.path.realpath(entry.path)
+                            if not os.path.isdir(target_path):
+                                continue
+                            primary_symlink_targets.add(
+                                os.path.normcase(os.path.normpath(target_path))
+                            )
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+        overlapping_paths = []
+        for path in requested_extra_lora_paths:
+            if not isinstance(path, str):
+                continue
+            stripped = path.strip()
+            if not stripped:
+                continue
+            normalized = os.path.normcase(os.path.normpath(stripped))
+            if os.path.exists(stripped):
+                normalized = os.path.normcase(
+                    os.path.normpath(os.path.realpath(stripped))
+                )
+            if (
+                normalized in primary_real_paths
+                or normalized in primary_symlink_targets
+            ):
+                overlapping_paths.append(stripped)
+
+        if overlapping_paths:
+            collisions = ", ".join(sorted(set(overlapping_paths)))
+            # Settings writes should reject new conflicting configuration instead of tolerating it.
+            raise ValueError(
+                f"Extra LoRA path(s) {collisions} overlap with the active library's primary LoRA roots"
+            )
 
         normalized_paths = self._normalize_folder_paths(extra_folder_paths)
         self.settings["extra_folder_paths"] = normalized_paths
@@ -1006,32 +1300,233 @@ class SettingsManager:
         """Get setting value"""
         return self.settings.get(key, default)
 
+    def _normalize_recipes_path_value(self, value: Any) -> str:
+        """Return a normalized absolute recipes path or an empty string."""
+
+        if not isinstance(value, str):
+            value = "" if value is None else str(value)
+
+        stripped = value.strip()
+        if not stripped:
+            return ""
+
+        return os.path.abspath(os.path.normpath(os.path.expanduser(stripped)))
+
+    def _get_effective_recipes_dir(self, recipes_path: Optional[str] = None) -> str:
+        """Resolve the effective recipes directory for the active library."""
+
+        normalized_custom = self._normalize_recipes_path_value(
+            self.settings.get("recipes_path", "")
+            if recipes_path is None
+            else recipes_path
+        )
+        if normalized_custom:
+            return normalized_custom
+
+        folder_paths = self.settings.get("folder_paths", {})
+        configured_lora_roots = []
+        if isinstance(folder_paths, Mapping):
+            raw_lora_roots = folder_paths.get("loras", [])
+            if isinstance(raw_lora_roots, Sequence) and not isinstance(
+                raw_lora_roots, (str, bytes)
+            ):
+                configured_lora_roots = [
+                    path
+                    for path in raw_lora_roots
+                    if isinstance(path, str) and path.strip()
+                ]
+
+        if configured_lora_roots:
+            lora_root = sorted(configured_lora_roots, key=str.casefold)[0]
+            return os.path.abspath(os.path.join(lora_root, "recipes"))
+
+        config_lora_roots = [
+            path
+            for path in getattr(config, "loras_roots", []) or []
+            if isinstance(path, str) and path.strip()
+        ]
+        if not config_lora_roots:
+            return ""
+
+        return os.path.abspath(
+            os.path.join(sorted(config_lora_roots, key=str.casefold)[0], "recipes")
+        )
+
+    def _validate_recipes_storage_path(self, normalized_path: str) -> None:
+        """Ensure the recipes storage target is usable before saving it."""
+
+        if not normalized_path:
+            return
+
+        if os.path.exists(normalized_path) and not os.path.isdir(normalized_path):
+            raise ValueError("Recipes path must point to a directory")
+
+        try:
+            os.makedirs(normalized_path, exist_ok=True)
+        except Exception as exc:
+            raise ValueError(f"Unable to create recipes directory: {exc}") from exc
+
+        try:
+            fd, probe_path = tempfile.mkstemp(
+                prefix=".lora-manager-recipes-", dir=normalized_path
+            )
+            os.close(fd)
+            os.remove(probe_path)
+        except Exception as exc:
+            raise ValueError(f"Recipes path is not writable: {exc}") from exc
+
+    def _migrate_recipes_directory(self, source_dir: str, target_dir: str) -> None:
+        """Move existing recipe files to a new recipes root and rewrite JSON paths."""
+
+        source = os.path.abspath(os.path.normpath(source_dir)) if source_dir else ""
+        target = os.path.abspath(os.path.normpath(target_dir)) if target_dir else ""
+        if not source or not target or source == target:
+            return
+
+        if not os.path.exists(source):
+            os.makedirs(target, exist_ok=True)
+            return
+
+        if os.path.exists(target) and not os.path.isdir(target):
+            raise ValueError("Recipes path must point to a directory")
+
+        try:
+            common_root = os.path.commonpath([source, target])
+        except ValueError as exc:
+            raise ValueError("Invalid recipes path change") from exc
+
+        if common_root == source:
+            raise ValueError("Recipes path cannot be moved into a nested directory")
+
+        planned_recipe_updates: Dict[str, Dict[str, Any]] = {}
+        file_pairs: List[Tuple[str, str]] = []
+
+        for root, _, files in os.walk(source):
+            for filename in files:
+                source_path = os.path.normpath(os.path.join(root, filename))
+                relative_path = os.path.relpath(source_path, source)
+                target_path = os.path.normpath(os.path.join(target, relative_path))
+                file_pairs.append((source_path, target_path))
+
+                if not filename.endswith(".recipe.json"):
+                    continue
+
+                try:
+                    with open(source_path, "r", encoding="utf-8") as handle:
+                        payload = json.load(handle)
+                except Exception as exc:
+                    raise ValueError(
+                        f"Unable to read recipe metadata during migration: {source_path}: {exc}"
+                    ) from exc
+
+                if not isinstance(payload, dict):
+                    continue
+
+                file_path = payload.get("file_path")
+                if isinstance(file_path, str) and file_path.strip():
+                    normalized_file_path = os.path.abspath(
+                        os.path.normpath(os.path.expanduser(file_path))
+                    )
+                    source_candidates = [source]
+                    real_source = os.path.abspath(
+                        os.path.normpath(os.path.realpath(source_dir))
+                    )
+                    if real_source not in source_candidates:
+                        source_candidates.append(real_source)
+
+                    rewritten = False
+                    for source_candidate in source_candidates:
+                        try:
+                            file_common_root = os.path.commonpath(
+                                [normalized_file_path, source_candidate]
+                            )
+                        except ValueError:
+                            continue
+
+                        if file_common_root != source_candidate:
+                            continue
+
+                        image_relative_path = os.path.relpath(
+                            normalized_file_path, source_candidate
+                        )
+                        payload["file_path"] = os.path.normpath(
+                            os.path.join(target, image_relative_path)
+                        )
+                        rewritten = True
+                        break
+
+                    if not rewritten and source_candidates:
+                        logger.debug(
+                            "Skipping recipe file_path rewrite during migration for %s",
+                            normalized_file_path,
+                        )
+
+                planned_recipe_updates[target_path] = payload
+
+        for _, target_path in file_pairs:
+            if os.path.exists(target_path):
+                raise ValueError(
+                    f"Recipes path already contains conflicting file: {target_path}"
+                )
+
+        os.makedirs(target, exist_ok=True)
+
+        for source_path, target_path in file_pairs:
+            os.makedirs(os.path.dirname(target_path), exist_ok=True)
+            shutil.move(source_path, target_path)
+
+        for target_path, payload in planned_recipe_updates.items():
+            with open(target_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=4, ensure_ascii=False)
+
+        for root, dirs, files in os.walk(source, topdown=False):
+            if dirs or files:
+                continue
+            try:
+                os.rmdir(root)
+            except OSError:
+                pass
+
     def set(self, key: str, value: Any) -> None:
         """Set setting value and save"""
         if key == "auto_organize_exclusions":
             value = self.normalize_auto_organize_exclusions(value)
         elif key == "metadata_refresh_skip_paths":
             value = self.normalize_metadata_refresh_skip_paths(value)
+        elif key == "download_skip_base_models":
+            value = self.normalize_download_skip_base_models(value)
+        elif key == "mature_blur_level":
+            value = self.normalize_mature_blur_level(value)
+        elif key == "recipes_path":
+            current_recipes_dir = self._get_effective_recipes_dir()
+            value = self._normalize_recipes_path_value(value)
+            target_recipes_dir = self._get_effective_recipes_dir(value)
+            self._validate_recipes_storage_path(target_recipes_dir)
+            self._migrate_recipes_directory(current_recipes_dir, target_recipes_dir)
         self.settings[key] = value
         portable_switch_pending = False
         if key == "use_portable_settings" and isinstance(value, bool):
             portable_switch_pending = True
             self._prepare_portable_switch(value)
-        if key == 'folder_paths' and isinstance(value, Mapping):
+        if key == "folder_paths" and isinstance(value, Mapping):
             self._update_active_library_entry(folder_paths=value)  # type: ignore[arg-type]
-        elif key == 'extra_folder_paths' and isinstance(value, Mapping):
+        elif key == "extra_folder_paths" and isinstance(value, Mapping):
             self._update_active_library_entry(extra_folder_paths=value)  # type: ignore[arg-type]
-        elif key == 'default_lora_root':
+        elif key == "default_lora_root":
             self._update_active_library_entry(default_lora_root=str(value))
-        elif key == 'default_checkpoint_root':
+        elif key == "default_checkpoint_root":
             self._update_active_library_entry(default_checkpoint_root=str(value))
-        elif key == 'default_unet_root':
+        elif key == "default_unet_root":
             self._update_active_library_entry(default_unet_root=str(value))
-        elif key == 'default_embedding_root':
+        elif key == "default_embedding_root":
             self._update_active_library_entry(default_embedding_root=str(value))
-        elif key == 'model_name_display':
+        elif key == "recipes_path":
+            self._update_active_library_entry(recipes_path=str(value))
+        elif key == "model_name_display":
             self._notify_model_name_display_change(value)
         self._save_settings()
+        if key == "recipes_path":
+            self._notify_library_change(self.get_active_library_name())
         if portable_switch_pending:
             self._finalize_portable_switch()
 
@@ -1105,10 +1600,9 @@ class SettingsManager:
 
         source_cache_dir = os.path.join(source_dir, "model_cache")
         target_cache_dir = os.path.join(target_dir, "model_cache")
-        if (
-            os.path.isdir(source_cache_dir)
-            and os.path.abspath(source_cache_dir) != os.path.abspath(target_cache_dir)
-        ):
+        if os.path.isdir(source_cache_dir) and os.path.abspath(
+            source_cache_dir
+        ) != os.path.abspath(target_cache_dir):
             try:
                 shutil.copytree(
                     source_cache_dir,
@@ -1126,10 +1620,9 @@ class SettingsManager:
 
         source_cache_file = os.path.join(source_dir, "model_cache.sqlite")
         target_cache_file = os.path.join(target_dir, "model_cache.sqlite")
-        if (
-            os.path.isfile(source_cache_file)
-            and os.path.abspath(source_cache_file) != os.path.abspath(target_cache_file)
-        ):
+        if os.path.isfile(source_cache_file) and os.path.abspath(
+            source_cache_file
+        ) != os.path.abspath(target_cache_file):
             try:
                 shutil.copy2(source_cache_file, target_cache_file)
             except Exception as exc:
@@ -1155,7 +1648,9 @@ class SettingsManager:
         try:
             os.makedirs(config_dir, exist_ok=True)
         except Exception as exc:
-            logger.warning("Failed to create user config directory %s: %s", config_dir, exc)
+            logger.warning(
+                "Failed to create user config directory %s: %s", config_dir, exc
+            )
 
         return config_dir
 
@@ -1215,7 +1710,9 @@ class SettingsManager:
                 try:
                     asyncio.run(coroutine)
                 except RuntimeError:
-                    logger.debug("Skipping name display update due to missing event loop")
+                    logger.debug(
+                        "Skipping name display update due to missing event loop"
+                    )
                 continue
 
             if loop is not None and target_loop is loop:
@@ -1238,7 +1735,7 @@ class SettingsManager:
         """Save settings to file"""
         try:
             payload = self._serialize_settings_for_disk()
-            with open(self.settings_file, 'w', encoding='utf-8') as f:
+            with open(self.settings_file, "w", encoding="utf-8") as f:
                 json.dump(payload, f, indent=2)
         except Exception as e:
             logger.error(f"Error saving settings: {e}")
@@ -1279,7 +1776,9 @@ class SettingsManager:
                 minimal[key] = copy.deepcopy(value)
             # Complex objects need deep comparison
             elif isinstance(value, (dict, list)) and default_value is not None:
-                if json.dumps(value, sort_keys=True, default=str) != json.dumps(default_value, sort_keys=True, default=str):
+                if json.dumps(value, sort_keys=True, default=str) != json.dumps(
+                    default_value, sort_keys=True, default=str
+                ):
                     minimal[key] = copy.deepcopy(value)
             # Simple values use direct comparison
             elif value != default_value:
@@ -1337,6 +1836,7 @@ class SettingsManager:
         default_checkpoint_root: Optional[str] = None,
         default_unet_root: Optional[str] = None,
         default_embedding_root: Optional[str] = None,
+        recipes_path: Optional[str] = None,
         metadata: Optional[Mapping[str, Any]] = None,
         activate: bool = False,
     ) -> Dict[str, Any]:
@@ -1356,9 +1856,15 @@ class SettingsManager:
         existing = libraries.get(name, {})
 
         payload = self._build_library_payload(
-            folder_paths=folder_paths if folder_paths is not None else existing.get("folder_paths"),
-            extra_folder_paths=extra_folder_paths if extra_folder_paths is not None else existing.get("extra_folder_paths"),
-            default_lora_root=default_lora_root if default_lora_root is not None else existing.get("default_lora_root"),
+            folder_paths=folder_paths
+            if folder_paths is not None
+            else existing.get("folder_paths"),
+            extra_folder_paths=extra_folder_paths
+            if extra_folder_paths is not None
+            else existing.get("extra_folder_paths"),
+            default_lora_root=default_lora_root
+            if default_lora_root is not None
+            else existing.get("default_lora_root"),
             default_checkpoint_root=(
                 default_checkpoint_root
                 if default_checkpoint_root is not None
@@ -1373,6 +1879,11 @@ class SettingsManager:
                 default_embedding_root
                 if default_embedding_root is not None
                 else existing.get("default_embedding_root")
+            ),
+            recipes_path=(
+                recipes_path
+                if recipes_path is not None
+                else existing.get("recipes_path")
             ),
             metadata=metadata if metadata is not None else existing.get("metadata"),
             base=existing,
@@ -1401,6 +1912,7 @@ class SettingsManager:
         default_checkpoint_root: str = "",
         default_unet_root: str = "",
         default_embedding_root: str = "",
+        recipes_path: str = "",
         metadata: Optional[Mapping[str, Any]] = None,
         activate: bool = False,
     ) -> Dict[str, Any]:
@@ -1418,6 +1930,7 @@ class SettingsManager:
             default_checkpoint_root=default_checkpoint_root,
             default_unet_root=default_unet_root,
             default_embedding_root=default_embedding_root,
+            recipes_path=recipes_path,
             metadata=metadata,
             activate=activate,
         )
@@ -1477,6 +1990,7 @@ class SettingsManager:
         default_checkpoint_root: Optional[str] = None,
         default_unet_root: Optional[str] = None,
         default_embedding_root: Optional[str] = None,
+        recipes_path: Optional[str] = None,
     ) -> None:
         """Update folder paths for the active library."""
 
@@ -1489,6 +2003,7 @@ class SettingsManager:
             default_checkpoint_root=default_checkpoint_root,
             default_unet_root=default_unet_root,
             default_embedding_root=default_embedding_root,
+            recipes_path=recipes_path,
             activate=True,
         )
 
@@ -1513,12 +2028,15 @@ class SettingsManager:
                 "checkpoint_scanner",
                 "embedding_scanner",
                 "recipe_scanner",
+                "model_update_service",
             ):
                 service = ServiceRegistry.get_service_sync(service_name)
                 if service and hasattr(service, "on_library_changed"):
                     try:
                         service.on_library_changed()
-                    except Exception as service_exc:  # pragma: no cover - defensive logging
+                    except (
+                        Exception
+                    ) as service_exc:  # pragma: no cover - defensive logging
                         logger.debug(
                             "Service %s failed to handle library change: %s",
                             service_name,
@@ -1529,15 +2047,15 @@ class SettingsManager:
 
     def get_download_path_template(self, model_type: str) -> str:
         """Get download path template for specific model type
-        
+
         Args:
             model_type: The type of model ('lora', 'checkpoint', 'embedding')
-            
+
         Returns:
             Template string for the model type, defaults to '{base_model}/{first_tag}'
         """
-        templates = self.settings.get('download_path_templates', {})
-        
+        templates = self.settings.get("download_path_templates", {})
+
         # Handle edge case where templates might be stored as JSON string
         if isinstance(templates, str):
             try:
@@ -1545,36 +2063,40 @@ class SettingsManager:
                 parsed_templates = json.loads(templates)
                 if isinstance(parsed_templates, dict):
                     # Update settings with parsed dictionary
-                    self.settings['download_path_templates'] = parsed_templates
+                    self.settings["download_path_templates"] = parsed_templates
                     self._save_settings()
                     templates = parsed_templates
-                    logger.info("Successfully parsed download_path_templates from JSON string")
+                    logger.info(
+                        "Successfully parsed download_path_templates from JSON string"
+                    )
                 else:
                     raise ValueError("Parsed JSON is not a dictionary")
             except (json.JSONDecodeError, ValueError) as e:
                 # If parsing fails, set default values
-                logger.warning(f"Failed to parse download_path_templates JSON string: {e}. Setting default values.")
-                default_template = '{base_model}/{first_tag}'
+                logger.warning(
+                    f"Failed to parse download_path_templates JSON string: {e}. Setting default values."
+                )
+                default_template = "{base_model}/{first_tag}"
                 templates = {
-                    'lora': default_template,
-                    'checkpoint': default_template,
-                    'embedding': default_template
+                    "lora": default_template,
+                    "checkpoint": default_template,
+                    "embedding": default_template,
                 }
-                self.settings['download_path_templates'] = templates
+                self.settings["download_path_templates"] = templates
                 self._save_settings()
-        
+
         # Ensure templates is a dictionary
         if not isinstance(templates, dict):
-            default_template = '{base_model}/{first_tag}'
+            default_template = "{base_model}/{first_tag}"
             templates = {
-                'lora': default_template,
-                'checkpoint': default_template,
-                'embedding': default_template
+                "lora": default_template,
+                "checkpoint": default_template,
+                "embedding": default_template,
             }
-            self.settings['download_path_templates'] = templates
+            self.settings["download_path_templates"] = templates
             self._save_settings()
-        
-        return templates.get(model_type, '{base_model}/{first_tag}')
+
+        return templates.get(model_type, "{base_model}/{first_tag}")
 
 
 _SETTINGS_MANAGER: Optional["SettingsManager"] = None

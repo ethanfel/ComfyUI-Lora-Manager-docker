@@ -90,7 +90,7 @@
                                 </div>
                             </div>
                         </div>
-                        
+                       
                         <!-- API Configuration -->
                         <div class="setting-item api-key-item">
                             <div class="setting-row">
@@ -104,12 +104,158 @@
                                             id="civitaiApiKey" 
                                             placeholder="{{ t('settings.civitaiApiKeyPlaceholder') }}"
                                             value="{{ settings.get('civitai_api_key', '') }}"
+                                            autocomplete="new-password"
                                             onblur="settingsManager.saveInputSetting('civitaiApiKey', 'civitai_api_key')"
                                             onkeydown="if(event.key === 'Enter') { this.blur(); }" />
                                         <button class="toggle-visibility">
                                             <i class="fas fa-eye"></i>
                                         </button>
                                     </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="setting-item">
+                            <div class="setting-row">
+                                <div class="setting-info">
+                                    <label for="civitaiHost">{{ t('settings.civitaiHost.label') }}</label>
+                                    <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.civitaiHost.help') }}"></i>
+                                </div>
+                                <div class="setting-control select-control">
+                                    <select id="civitaiHost" onchange="settingsManager.saveSelectSetting('civitaiHost', 'civitai_host')">
+                                        <option value="civitai.com">{{ t('settings.civitaiHost.options.com') }}</option>
+                                        <option value="civitai.red">{{ t('settings.civitaiHost.options.red') }}</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="settings-subsection">
+                            <div class="settings-subsection-header">
+                                <h4>{{ t('settings.sections.downloads') }}</h4>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="downloadBackend">{{ t('settings.downloadBackend.label') }}</label>
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.downloadBackend.help') }}"></i>
+                                        <a class="settings-action-link" href="https://github.com/willmiao/ComfyUI-Lora-Manager/wiki/Aria2-Download-Backend-(Experimental)" target="_blank" rel="noopener" aria-label="{{ t('settings.aria2HelpLink') }}" title="{{ t('settings.aria2HelpLink') }}">
+                                            <i class="fas fa-question-circle" aria-hidden="true"></i>
+                                        </a>
+                                    </div>
+                                    <div class="setting-control select-control">
+                                        <select id="downloadBackend" onchange="settingsManager.saveSelectSetting('downloadBackend', 'download_backend')">
+                                            <option value="python">{{ t('settings.downloadBackend.options.python') }}</option>
+                                            <option value="aria2">{{ t('settings.downloadBackend.options.aria2') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="setting-item" id="aria2PathSetting" style="display: none;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="aria2cPath">{{ t('settings.aria2cPath.label') }}</label>
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.aria2cPath.help') }}"></i>
+                                    </div>
+                                    <div class="setting-control">
+                                        <div class="text-input-wrapper">
+                                            <input type="text"
+                                                   id="aria2cPath"
+                                                   placeholder="{{ t('settings.aria2cPath.placeholder') }}"
+                                                   onblur="settingsManager.saveInputSetting('aria2cPath', 'aria2c_path')"
+                                                   onkeydown="if(event.key === 'Enter') { this.blur(); }" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Backup -->
+                        <div class="settings-subsection">
+                            <div class="settings-subsection-header">
+                                <h4>{{ t('settings.sections.backup') }}</h4>
+                            </div>
+                            <div class="settings-help-text subtle">
+                                {{ t('settings.backup.scopeHelp') }}
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="backupAutoEnabled">
+                                            {{ t('settings.backup.autoEnabled') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.backup.autoEnabledHelp') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="backupAutoEnabled"
+                                                   onchange="settingsManager.saveToggleSetting('backupAutoEnabled', 'backup_auto_enabled')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="backupRetentionCount">
+                                            {{ t('settings.backup.retention') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.backup.retentionHelp') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <div class="text-input-wrapper">
+                                            <input
+                                                type="number"
+                                                id="backupRetentionCount"
+                                                min="1"
+                                                step="1"
+                                                onblur="settingsManager.saveInputSetting('backupRetentionCount', 'backup_retention_count')"
+                                                onkeydown="if(event.key === 'Enter') { this.blur(); }"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label>
+                                            {{ t('settings.backup.management') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.backup.managementHelp') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <button type="button" class="secondary-btn" onclick="settingsManager.exportBackup()">
+                                            {{ t('settings.backup.exportButton') }}
+                                        </button>
+                                        <button type="button" class="secondary-btn" onclick="settingsManager.triggerBackupImport()" style="margin-left: 10px;">
+                                            {{ t('settings.backup.importButton') }}
+                                        </button>
+                                        <input
+                                            type="file"
+                                            id="backupImportInput"
+                                            accept=".zip,application/zip"
+                                            style="display: none;"
+                                            onchange="settingsManager.handleBackupImportFile(this)"
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <details class="backup-location-details">
+                                    <summary>{{ t('settings.backup.locationSummary') }}</summary>
+                                    <div class="backup-location-panel">
+                                        <code id="backupLocationPath" class="backup-location-path"></code>
+                                        <button type="button" class="secondary-btn" id="backupOpenLocationBtn">
+                                            {{ t('settings.backup.openFolderButton') }}
+                                        </button>
+                                    </div>
+                                </details>
+                            </div>
+                            <div class="setting-item">
+                                <div class="backup-status" id="backupStatus">
+                                    <!-- Status will be populated by JavaScript -->
                                 </div>
                             </div>
                         </div>
@@ -226,6 +372,7 @@
                                             <div class="api-key-input">
                                                 <input type="password" id="proxyPassword" 
                                                        placeholder="{{ t('settings.proxySettings.proxyPasswordPlaceholder') }}"
+                                                       autocomplete="new-password"
                                                        onblur="settingsManager.saveInputSetting('proxyPassword', 'proxy_password')"
                                                        onkeydown="if(event.key === 'Enter') { this.blur(); }" />
                                                 <button class="toggle-visibility">
@@ -278,6 +425,26 @@
                                                    onchange="settingsManager.saveToggleSetting('showOnlySFW', 'show_only_sfw')">
                                             <span class="toggle-slider"></span>
                                         </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="matureBlurLevel">
+                                        {{ t('settings.contentFiltering.matureBlurThreshold') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.contentFiltering.matureBlurThresholdHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control select-control">
+                                        <select id="matureBlurLevel"
+                                                onchange="settingsManager.saveSelectSetting('matureBlurLevel', 'mature_blur_level')">
+                                            <option value="PG13">{{ t('settings.contentFiltering.matureBlurThresholdOptions.pg13') }}</option>
+                                            <option value="R">{{ t('settings.contentFiltering.matureBlurThresholdOptions.r') }}</option>
+                                            <option value="X">{{ t('settings.contentFiltering.matureBlurThresholdOptions.x') }}</option>
+                                            <option value="XXX">{{ t('settings.contentFiltering.matureBlurThresholdOptions.xxx') }}</option>
+                                        </select>
                                     </div>
                                 </div>
                             </div>
@@ -371,7 +538,7 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
@@ -385,6 +552,24 @@
                                             <option value="always">{{ t('settings.layoutSettings.cardInfoDisplayOptions.always') }}</option>
                                             <option value="hover">{{ t('settings.layoutSettings.cardInfoDisplayOptions.hover') }}</option>
                                         </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="showVersionOnCard">
+                                        {{ t('settings.layoutSettings.showVersionOnCard') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.layoutSettings.showVersionOnCardHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="showVersionOnCard"
+                                                   onchange="settingsManager.saveToggleSetting('showVersionOnCard', 'show_version_on_card')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
                                     </div>
                                 </div>
                             </div>
@@ -415,6 +600,22 @@
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
+                                        <label for="loraSyntaxFormat">
+                                        {{ t('settings.misc.loraSyntaxFormat') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.misc.loraSyntaxFormatHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control select-control">
+                                        <select id="loraSyntaxFormat" onchange="settingsManager.saveSelectSetting('loraSyntaxFormat', 'lora_syntax_format')">
+                                            <option value="full">{{ t('settings.misc.loraSyntaxFormatOptions.full') }}</option>
+                                            <option value="legacy">{{ t('settings.misc.loraSyntaxFormatOptions.legacy') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
                                         <label for="includeTriggerWords">
                                         {{ t('settings.misc.includeTriggerWords') }}
                                         <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.misc.includeTriggerWordsHelp') }}"></i>
@@ -430,6 +631,7 @@
                                 </div>
                             </div>
                         </div>
+
                     </div>
                     
                     <!-- Section 3: Library -->
@@ -464,9 +666,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultLoraRoot" onchange="settingsManager.saveSelectSetting('defaultLoraRoot', 'default_lora_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultLoraRoot" onchange="settingsManager.saveSelectSetting('defaultLoraRoot', 'default_lora_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -480,9 +680,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultCheckpointRoot" onchange="settingsManager.saveSelectSetting('defaultCheckpointRoot', 'default_checkpoint_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultCheckpointRoot" onchange="settingsManager.saveSelectSetting('defaultCheckpointRoot', 'default_checkpoint_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -496,9 +694,7 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultUnetRoot" onchange="settingsManager.saveSelectSetting('defaultUnetRoot', 'default_unet_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultUnetRoot" onchange="settingsManager.saveSelectSetting('defaultUnetRoot', 'default_unet_root')"></select>
                                     </div>
                                 </div>
                             </div>
@@ -512,9 +708,33 @@
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="defaultEmbeddingRoot" onchange="settingsManager.saveSelectSetting('defaultEmbeddingRoot', 'default_embedding_root')">
-                                            <option value="">{{ t('settings.folderSettings.noDefault') }}</option>
-                                        </select>
+                                        <select id="defaultEmbeddingRoot" onchange="settingsManager.saveSelectSetting('defaultEmbeddingRoot', 'default_embedding_root')"></select>
+                                    </div>
+                                </div>
+                            </div>
+
+                        </div>
+
+                        <!-- Recipe Settings -->
+                        <div class="settings-subsection">
+                            <div class="settings-subsection-header">
+                                <h4>{{ t('settings.sections.recipeSettings') }}</h4>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="recipesPath">
+                                        {{ t('settings.folderSettings.recipesPath') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.folderSettings.recipesPathHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <div class="text-input-wrapper">
+                                            <input type="text" id="recipesPath"
+                                                   placeholder="{{ t('settings.folderSettings.recipesPathPlaceholder') }}"
+                                                   onblur="settingsManager.saveInputSetting('recipesPath', 'recipes_path')"
+                                                   onkeydown="if(event.key === 'Enter') { this.blur(); }" />
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -525,7 +745,7 @@
                             <div class="settings-subsection-header">
                                 <h4>
                                     {{ t('settings.extraFolderPaths.title') }}
-                                    <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.extraFolderPaths.help') }}"></i>
+                                    <i class="fas fa-sync-alt restart-required-icon" title="{{ t('settings.extraFolderPaths.restartRequired') }}"></i>
                                 </h4>
                             </div>
                             <div class="setting-item">
@@ -723,6 +943,64 @@
                                 </div>
                             </div>
 
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="skipPreviouslyDownloadedModelVersions">
+                                            {{ t('settings.skipPreviouslyDownloadedModelVersions.label') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.skipPreviouslyDownloadedModelVersions.help') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="skipPreviouslyDownloadedModelVersions"
+                                                   onchange="settingsManager.saveToggleSetting('skipPreviouslyDownloadedModelVersions', 'skip_previously_downloaded_model_versions')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="downloadSkipBaseModelsToggle">
+                                            {{ t('settings.downloadSkipBaseModels.label') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.downloadSkipBaseModels.help') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <button
+                                            type="button"
+                                            id="downloadSkipBaseModelsToggle"
+                                            class="secondary-btn base-model-skip-toggle"
+                                            aria-expanded="false"
+                                        >
+                                            <span id="downloadSkipBaseModelsSummary">{{ t('settings.downloadSkipBaseModels.summary.none') }}</span>
+                                            <span class="base-model-skip-toggle-label">{{ t('settings.downloadSkipBaseModels.actions.edit') }}</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div id="downloadSkipBaseModelsPanel" class="base-model-skip-panel" hidden>
+                                    <div class="base-model-skip-toolbar">
+                                        <input
+                                            type="text"
+                                            id="downloadSkipBaseModelsSearch"
+                                            class="base-model-skip-search"
+                                            placeholder="{{ t('settings.downloadSkipBaseModels.searchPlaceholder') }}"
+                                        />
+                                        <button type="button" class="text-btn base-model-skip-clear" id="downloadSkipBaseModelsClear">
+                                            {{ t('settings.downloadSkipBaseModels.actions.clear') }}
+                                        </button>
+                                    </div>
+                                    <div id="downloadSkipBaseModelsContainer" class="base-model-skip-list"></div>
+                                    <div id="downloadSkipBaseModelsEmpty" class="base-model-skip-empty" hidden>
+                                        {{ t('settings.downloadSkipBaseModels.empty') }}
+                                    </div>
+                                </div>
+                                <div class="settings-input-error-message" id="downloadSkipBaseModelsError"></div>
+                            </div>
+
                             <!-- Priority Tags -->
                             <div class="setting-item priority-tags-item">
                                 <div class="setting-row priority-tags-header-row">
@@ -842,7 +1120,7 @@
                                     </div>
                                 </div>
                             </div>
-                            
+
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
@@ -857,6 +1135,63 @@
                                                    onchange="settingsManager.saveToggleSetting('optimizeExampleImages', 'optimize_example_images')">
                                             <span class="toggle-slider"></span>
                                         </label>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="exampleImagesOpenMode">
+                                            {{ t('settings.exampleImages.openMode') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.exampleImages.openModeHelp') }}"></i>
+                                            <a class="settings-action-link" href="https://github.com/willmiao/ComfyUI-Lora-Manager/wiki/Remote-Open-for-Example-Images" target="_blank" rel="noopener" title="{{ t('settings.exampleImages.openModeWikiLink') }}">
+                                                <i class="fas fa-question-circle" aria-hidden="true"></i>
+                                            </a>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control select-control">
+                                        <select id="exampleImagesOpenMode" onchange="settingsManager.handleExampleImagesOpenModeChange()">
+                                            <option value="system">{{ t('settings.exampleImages.openModeOptions.system') }}</option>
+                                            <option value="clipboard">{{ t('settings.exampleImages.openModeOptions.clipboard') }}</option>
+                                            <option value="uri_template">{{ t('settings.exampleImages.openModeOptions.uriTemplate') }}</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item" id="exampleImagesLocalRootSetting" style="display: none;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="exampleImagesLocalRoot">
+                                            {{ t('settings.exampleImages.localRoot') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.exampleImages.localRootHelp') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control path-control">
+                                        <input
+                                            type="text"
+                                            id="exampleImagesLocalRoot"
+                                            placeholder="{{ t('settings.exampleImages.localRootPlaceholder') }}"
+                                            onchange="settingsManager.saveInputSetting('exampleImagesLocalRoot', 'example_images_local_root')" />
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="setting-item" id="exampleImagesUriTemplateSetting" style="display: none;">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="exampleImagesOpenUriTemplate">
+                                            {{ t('settings.exampleImages.uriTemplate') }}
+                                            <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.exampleImages.uriTemplateHelp') }} {{ t('settings.exampleImages.uriTemplatePlaceholders') }}"></i>
+                                        </label>
+                                    </div>
+                                    <div class="setting-control path-control">
+                                        <input
+                                            type="text"
+                                            id="exampleImagesOpenUriTemplate"
+                                            placeholder="{{ t('settings.exampleImages.uriTemplatePlaceholder') }}"
+                                            onchange="settingsManager.saveInputSetting('exampleImagesOpenUriTemplate', 'example_images_open_uri_template')" />
                                     </div>
                                 </div>
                             </div>

@@ -4,6 +4,8 @@
         
         <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
+            <!-- Header Actions: populated dynamically in RecipeModal.js -->
+            <div class="recipe-header-actions" id="recipeHeaderActions"></div>
             <!-- Recipe Tags Container -->
             <div class="recipe-tags-container">
                 <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
@@ -22,29 +24,68 @@
                 </div>
                 
                 <div class="info-section recipe-gen-params">
-                    <h3>Generation Parameters</h3>
+                    <div class="gen-params-header-row">
+                        <h3>Generation Parameters</h3>
+                        <label class="inline-toggle-container lora-strip-toggle" title="When enabled, &lt;lora:...&gt; tags are removed from prompt text when copying">
+                            <span class="inline-toggle-label">Strip &lt;lora:&gt;</span>
+                            <div class="toggle-switch">
+                                <input type="checkbox" id="stripLoraOnCopyToggle">
+                                <span class="toggle-slider"></span>
+                            </div>
+                        </label>
+                    </div>
                     
                     <div class="gen-params-container">
                         <!-- Prompt -->
                         <div class="param-group info-item">
                             <div class="param-header">
                                 <label>Prompt</label>
-                                <button class="copy-btn" id="copyPromptBtn" title="Copy Prompt">
-                                    <i class="fas fa-copy"></i>
-                                </button>
+                                <div class="param-actions">
+                                    <button class="copy-btn" id="copyPromptBtn" title="Copy Prompt">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="edit-btn" id="editPromptBtn" title="Edit Prompt">
+                                        <i class="fas fa-pencil-alt"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="param-content" id="recipePrompt"></div>
+                            <div class="param-editor" id="recipePromptEditor">
+                                <textarea
+                                    class="param-textarea"
+                                    id="recipePromptInput"
+                                    placeholder="Enter prompt"
+                                ></textarea>
+                                <div class="param-editor-hint">
+                                    {{ t('toast.recipes.promptEditorHint') }}
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Negative Prompt -->
                         <div class="param-group info-item">
                             <div class="param-header">
                                 <label>Negative Prompt</label>
-                                <button class="copy-btn" id="copyNegativePromptBtn" title="Copy Negative Prompt">
-                                    <i class="fas fa-copy"></i>
-                                </button>
+                                <div class="param-actions">
+                                    <button class="copy-btn" id="copyNegativePromptBtn" title="Copy Negative Prompt">
+                                        <i class="fas fa-copy"></i>
+                                    </button>
+                                    <button class="edit-btn" id="editNegativePromptBtn" title="Edit Negative Prompt">
+                                        <i class="fas fa-pencil-alt"></i>
+                                    </button>
+                                </div>
                             </div>
                             <div class="param-content" id="recipeNegativePrompt"></div>
+                            <div class="param-editor" id="recipeNegativePromptEditor">
+                                <textarea
+                                    class="param-textarea"
+                                    id="recipeNegativePromptInput"
+                                    placeholder="Enter negative prompt"
+                                ></textarea>
+                                <div class="param-editor-hint">
+                                    {{ t('toast.recipes.promptEditorHint') }}
+                                </div>
+                            </div>
                         </div>
                         
                         <!-- Other Parameters -->
@@ -64,6 +105,9 @@
                     </button>
                     <button class="copy-btn" id="copyRecipeSyntaxBtn" title="Copy Recipe Syntax">
                         <i class="fas fa-copy"></i>
+                    </button>
+                    <button class="action-btn send-recipe-btn" id="sendRecipeBtn" title="Send Recipe to ComfyUI">
+                        <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
             </div>

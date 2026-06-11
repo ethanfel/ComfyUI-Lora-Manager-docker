@@ -6,7 +6,7 @@ import { showToast } from '../../../utils/uiHelpers.js';
 import { state } from '../../../state/index.js';
 import { modalManager } from '../../../managers/ModalManager.js';
 import { translate } from '../../../utils/i18nHelpers.js';
-import { NSFW_LEVELS } from '../../../utils/constants.js';
+import { NSFW_LEVELS, getMatureBlurThreshold } from '../../../utils/constants.js';
 import { 
     initLazyLoading,
     initNsfwBlurHandlers, 
@@ -17,6 +17,7 @@ import {
 import { generateMetadataPanel } from './MetadataPanel.js';
 import { generateImageWrapper, generateVideoWrapper } from './MediaRenderers.js';
 import { getShowcaseUrl } from '../../../utils/civitaiUtils.js';
+import { openMediaViewer } from '../MediaViewer.js';
 
 export const showcaseListenerMetrics = {
     wheelListeners: 0,
@@ -182,9 +183,13 @@ function renderMediaItem(img, index, exampleFiles) {
         Math.min(maxHeightPercent, aspectRatio)
     );
     
+    // Extract CivitAI image ID from CDN URL for import status check
+    const cdnImageId = (img.url || '').match(/\/(\d+)\.(?:jpeg|jpg|png|webp|gif)(?:\?|#|$)/)?.[1] || '';
+
     // Check if media should be blurred
     const nsfwLevel = img.nsfwLevel !== undefined ? img.nsfwLevel : 0;
-    const shouldBlur = state.settings.blur_mature_content && nsfwLevel > NSFW_LEVELS.PG13;
+    const matureBlurThreshold = getMatureBlurThreshold(state.settings);
+    const shouldBlur = state.settings.blur_mature_content && nsfwLevel >= matureBlurThreshold;
     
     // Determine NSFW warning text based on level
     let nsfwText = "Mature Content";
@@ -222,12 +227,25 @@ function renderMediaItem(img, index, exampleFiles) {
     // Determine if this is a custom image (has id property)
     const isCustomImage = Boolean(typeof img.id === 'string' && img.id);
     
+    const hasGenMeta = img.hasMeta || (img.meta && (img.meta.prompt || img.meta.seed || img.meta.resources));
+
     // Create the media control buttons HTML
     const mediaControlsHtml = `
         <div class="media-controls">
             <button class="media-control-btn set-preview-btn" title="Set as preview">
                 <i class="fas fa-image"></i>
             </button>
+            ${hasGenMeta ? `
+            <button class="media-control-btn create-recipe-btn"
+                    title="Create As Recipe"
+                    data-image-meta="${encodeURIComponent(JSON.stringify(img.meta || {}))}"
+                    data-image-url="${img.url || ''}"
+                    data-image-nsfw="${img.nsfwLevel ?? ''}"
+                    data-image-id="${cdnImageId}"
+                    data-local-path="${localFile ? localFile.path : ''}">
+                <i class="fas fa-book-open"></i>
+            </button>
+            ` : ''}
             <button class="media-control-btn set-nsfw-btn" 
                     title="Set content rating"
                     data-media-index="${index}"
@@ -238,7 +256,7 @@ function renderMediaItem(img, index, exampleFiles) {
             <button class="media-control-btn example-delete-btn ${!isCustomImage ? 'disabled' : ''}" 
                     title="${isCustomImage ? 'Delete this example' : 'Only custom images can be deleted'}" 
                     data-short-id="${img.id || ''}" 
-                    ${!isCustomImage ? 'disabled' : ''}>
+                    ${!isCustomImage ? 'aria-disabled="true"' : ''}>
                 <i class="fas fa-trash-alt"></i>
                 <i class="fas fa-check confirm-icon"></i>
             </button>
@@ -638,6 +656,27 @@ export function initShowcaseContent(carousel) {
     initMetadataPanelHandlers(carousel);
     initMediaControlHandlers(carousel);
     positionAllMediaControls(carousel);
+
+    // Click-to-view: open full-size media viewer when clicking showcase images/videos
+    const viewerElements = carousel.querySelectorAll('.media-wrapper img, .media-wrapper video');
+    const allItems = [];
+    const elementIndexMap = new Map();
+    viewerElements.forEach((el) => {
+        const isVideo = el.tagName === 'VIDEO';
+        const url = el.src || el.dataset.localSrc || el.dataset.remoteSrc;
+        if (url) {
+            elementIndexMap.set(el, allItems.length);
+            allItems.push({ url, type: isVideo ? 'video' : 'image' });
+        }
+    });
+    viewerElements.forEach((mediaEl) => {
+        const idx = elementIndexMap.get(mediaEl);
+        if (idx === undefined) return;
+        mediaEl.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openMediaViewer(allItems, idx);
+        });
+    });
 
     // Bind scroll-indicator click events
     bindScrollIndicatorEvents(carousel);

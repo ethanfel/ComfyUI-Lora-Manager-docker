@@ -3,8 +3,17 @@ import { describe, it, beforeEach, afterEach, expect, vi } from 'vitest';
 const showToastMock = vi.hoisted(() => vi.fn());
 const loadingManagerMock = vi.hoisted(() => ({
   showSimpleLoading: vi.fn(),
+  show: vi.fn(),
   hide: vi.fn(),
+  restoreProgressBar: vi.fn(),
 }));
+const virtualScrollerMock = vi.hoisted(() => ({
+  updateSingleItem: vi.fn(),
+  refreshWithData: vi.fn(),
+}));
+const getCurrentPageStateMock = vi.hoisted(() => vi.fn());
+const captureScrollPositionMock = vi.hoisted(() => vi.fn());
+const restoreScrollPositionMock = vi.hoisted(() => vi.fn());
 
 vi.mock('../../../static/js/utils/uiHelpers.js', () => {
   return {
@@ -20,17 +29,41 @@ vi.mock('../../../static/js/state/index.js', () => {
   return {
     state: {
       loadingManager: loadingManagerMock,
+      virtualScroller: virtualScrollerMock,
     },
-    getCurrentPageState: vi.fn(),
+    getCurrentPageState: getCurrentPageStateMock,
   };
 });
 
-import { RecipeSidebarApiClient } from '../../../static/js/api/recipeApi.js';
+vi.mock('../../../static/js/utils/infiniteScroll.js', () => ({
+  captureScrollPosition: captureScrollPositionMock,
+  restoreScrollPosition: restoreScrollPositionMock,
+}));
+
+import {
+  RecipeSidebarApiClient,
+  fetchRecipeDetails,
+  resetAndReload,
+  syncChanges,
+  updateRecipeMetadata
+} from '../../../static/js/api/recipeApi.js';
 
 describe('RecipeSidebarApiClient bulk operations', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     global.fetch = vi.fn();
+    getCurrentPageStateMock.mockReturnValue({
+      pageSize: 50,
+      currentPage: 1,
+      hasMore: true,
+      isLoading: false,
+      sortBy: 'date:desc',
+      showFavoritesOnly: false,
+      activeFolder: null,
+      searchOptions: { recursive: true },
+      customFilter: { active: false },
+      filters: {},
+    });
   });
 
   afterEach(() => {
@@ -110,5 +143,76 @@ describe('RecipeSidebarApiClient bulk operations', () => {
       failed_count: 0,
     });
     expect(loadingManagerMock.hide).toHaveBeenCalled();
+  });
+
+  it('encodes recipe IDs when fetching recipe details', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ id: 'abc' }),
+    });
+
+    await fetchRecipeDetails('recipe#1?name=foo%bar');
+
+    expect(global.fetch).toHaveBeenCalledWith('/api/lm/recipe/recipe%231%3Fname%3Dfoo%25bar');
+  });
+
+  it('updates the virtual scroller using the original list path when provided', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ success: true }),
+    });
+
+    await updateRecipeMetadata(
+      '/recipes/new-folder/recipe#1.webp',
+      { title: 'Updated Title' },
+      { listFilePath: '/recipes/old-folder/recipe#1.webp' }
+    );
+
+    expect(global.fetch).toHaveBeenCalledWith(
+      '/api/lm/recipe/recipe%231/update',
+      expect.objectContaining({ method: 'PUT' })
+    );
+    expect(virtualScrollerMock.updateSingleItem).toHaveBeenCalledWith(
+      '/recipes/old-folder/recipe#1.webp',
+      { title: 'Updated Title' }
+    );
+  });
+
+  it('reloads recipes without preserving scroll', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [{ id: 'recipe-1' }],
+        total: 1,
+        total_pages: 1,
+      }),
+    });
+
+    await resetAndReload(false);
+
+    expect(captureScrollPositionMock).not.toHaveBeenCalled();
+    expect(virtualScrollerMock.refreshWithData).toHaveBeenCalledWith(
+      [{ id: 'recipe-1' }],
+      1,
+      false
+    );
+    expect(restoreScrollPositionMock).not.toHaveBeenCalled();
+  });
+
+  it('uses scroll-free reloads for syncChanges', async () => {
+    global.fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        items: [],
+        total: 0,
+        total_pages: 0,
+      }),
+    });
+
+    await syncChanges();
+
+    expect(captureScrollPositionMock).not.toHaveBeenCalled();
+    expect(restoreScrollPositionMock).not.toHaveBeenCalled();
+    expect(loadingManagerMock.restoreProgressBar).toHaveBeenCalledTimes(1);
   });
 });

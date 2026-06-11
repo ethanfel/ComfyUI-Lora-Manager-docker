@@ -7,7 +7,7 @@
     gap: 4px;
 }
 
-/* 调整搜索框样式以匹配其他控件 */
+/* Match search input styles to other controls */
 .search-container input {
     width: 100%;
     padding: 6px 35px 6px 12px; /* Reduced right padding */
@@ -35,7 +35,7 @@
     line-height: 1;
 }
 
-/* 修改清空按钮样式 */
+/* Clear button styles */
 .search-clear {
     position: absolute;
     right: 105px; /* Adjusted further left to avoid overlapping */
@@ -71,7 +71,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color var(--transition-base), color var(--transition-base), border-color var(--transition-base);
     flex-shrink: 0;
 }
 
@@ -103,7 +103,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: background-color var(--transition-base), color var(--transition-base), border-color var(--transition-base);
     flex-shrink: 0;
     position: relative;
 }
@@ -145,11 +145,11 @@
     position: fixed;
     right: 20px;
     top: 50px; /* Position below header */
-    width: 320px;
+    width: 366px;
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     z-index: var(--z-overlay);
     padding: 16px;
     transition: transform 0.3s ease, opacity 0.3s ease;
@@ -197,6 +197,31 @@
     margin-bottom: 16px;
 }
 
+.filter-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 8px;
+    padding: 8px 10px;
+    border-radius: var(--border-radius-sm);
+    border: 1px solid var(--border-color);
+    background-color: var(--lora-surface);
+    color: var(--text-color);
+    font-size: 13px;
+}
+
+.filter-search-input:focus {
+    outline: none;
+    border-color: var(--lora-accent);
+    box-shadow: 0 0 0 2px rgba(var(--lora-accent-rgb, 76, 175, 80), 0.15);
+}
+
+.filter-empty-state {
+    margin-top: 8px;
+    font-size: 13px;
+    color: var(--text-color);
+    opacity: 0.7;
+}
+
 .filter-section h4 {
     margin: 0 0 8px 0;
     font-size: 14px;
@@ -218,7 +243,7 @@
     color: var(--text-color);
     font-size: 14px;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     user-select: none; /* Prevent text selection */
     -webkit-user-select: none; /* For Safari */
     -moz-user-select: none; /* For Firefox */
@@ -348,7 +373,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     flex-shrink: 0;
 }
 
@@ -377,7 +402,7 @@
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-base);
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-md);
     z-index: var(--z-overlay);
     padding: 16px;
     transition: transform 0.3s ease, opacity 0.3s ease;
@@ -445,7 +470,7 @@
     color: var(--text-color);
     font-size: 13px; /* Slightly smaller font size */
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     user-select: none;
     flex: 1;
     text-align: center;
@@ -491,7 +516,7 @@
     border-radius: var(--border-radius-sm);
     background-color: var(--lora-surface);
     border: 1px solid var(--border-color);
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     cursor: pointer;
 }
 
@@ -549,7 +574,7 @@
     align-items: center;
     justify-content: center;
     font-size: 11px;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     margin-left: auto;
 }
 
@@ -574,7 +599,7 @@
     font-size: 14px;
     border-radius: var(--border-radius-sm);
     cursor: pointer;
-    transition: all 0.25s ease;
+    transition: var(--transition-base);
 }
 
 /* Enabled state - visual cue that button is actionable */
@@ -701,7 +726,7 @@
     cursor: pointer;
     color: var(--text-color);
     opacity: 0.7;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     font-weight: 500;
 }
 

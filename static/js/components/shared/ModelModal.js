@@ -1,5 +1,6 @@
-import { showToast, openCivitai } from '../../utils/uiHelpers.js';
+import { showToast, openCivitai, sendLoraToWorkflow, sendModelPathToWorkflow, buildLoraSyntax } from '../../utils/uiHelpers.js';
 import { modalManager } from '../../managers/ModalManager.js';
+import { MODEL_TYPES } from '../../api/apiConfig.js';
 import {
     toggleShowcase,
     setupShowcaseScroll,
@@ -10,7 +11,8 @@ import { setupTabSwitching } from './ModelDescription.js';
 import {
     setupModelNameEditing,
     setupBaseModelEditing,
-    setupFileNameEditing
+    setupFileNameEditing,
+    setupVersionNameEditing
 } from './ModelMetadata.js';
 import { setupTagEditMode } from './ModelTags.js';
 import { getModelApiClient } from '../../api/modelApiFactory.js';
@@ -18,7 +20,7 @@ import { renderCompactTags, setupTagTooltip, formatFileSize, escapeAttribute, es
 import { renderTriggerWords, setupTriggerWordsEditMode } from './TriggerWords.js';
 import { parsePresets, renderPresetTags } from './PresetTags.js';
 import { initVersionsTab } from './ModelVersionsTab.js';
-import { loadRecipesForLora } from './RecipeTab.js';
+import { loadRecipesForModel } from './RecipeTab.js';
 import { translate } from '../../utils/i18nHelpers.js';
 import { state } from '../../state/index.js';
 
@@ -294,6 +296,17 @@ export async function showModelModal(model, modelType) {
         ].join('\n')
         : '';
     const headerActionItems = [];
+    
+    // Add send to ComfyUI button for all model types
+    const sendToWorkflowTitle = translate('modals.model.actions.sendToWorkflow', {}, 'Send to ComfyUI');
+    const sendToWorkflowButton = `
+        <button class="modal-send-btn" data-action="send-to-workflow" data-model-type="${modelType}" title="${sendToWorkflowTitle}">
+            <i class="fas fa-paper-plane"></i>
+            <span>${translate('modals.model.actions.sendToWorkflowText', {}, 'Send to ComfyUI')}</span>
+        </button>
+    `.trim();
+    headerActionItems.push(indentMarkup(sendToWorkflowButton, 20));
+    
     if (creatorActionsMarkup) {
         headerActionItems.push(creatorActionsMarkup);
     }
@@ -343,7 +356,9 @@ export async function showModelModal(model, modelType) {
                 ${versionsTabBadge}
             </button>`.trim();
 
-    const tabsContent = modelType === 'loras' ?
+    const supportsRecipesTab = modelType === 'loras' || modelType === 'checkpoints';
+
+    const tabsContent = supportsRecipesTab ?
         `<button class="tab-btn active" data-tab="showcase">${examplesText}</button>
             <button class="tab-btn" data-tab="description">${descriptionText}</button>
             ${versionsTabButton}
@@ -373,7 +388,7 @@ export async function showModelModal(model, modelType) {
                     </button>
                 </div>`.trim();
 
-    const tabPanesContent = modelType === 'loras' ?
+    const tabPanesContent = supportsRecipesTab ?
         `<div id="showcase-tab" class="tab-pane active">
             <div class="example-images-loading">
                 <i class="fas fa-spinner fa-spin"></i> ${loadingExampleImagesText}
@@ -452,7 +467,12 @@ export async function showModelModal(model, modelType) {
                     <div class="info-grid">
                         <div class="info-item">
                             <label>${translate('modals.model.metadata.version', {}, 'Version')}</label>
-                            <span>${modelWithFullData.civitai?.name || 'N/A'}</span>
+                            <div class="version-name-wrapper">
+                                <span class="version-name-content">${modelWithFullData.civitai?.name || 'N/A'}</span>
+                                <button class="edit-version-name-btn" title="${translate('modals.model.actions.editVersionName', {}, 'Edit version name')}">
+                                    <i class="fas fa-pencil-alt"></i>
+                                </button>
+                            </div>
                         </div>
                         <div class="info-item">
                             <label>${translate('modals.model.metadata.fileName', {}, 'File Name')}</label>
@@ -490,7 +510,12 @@ export async function showModelModal(model, modelType) {
                         </div>
                         ${typeSpecificContent}
                         <div class="info-item notes">
-                            <label>${translate('modals.model.metadata.additionalNotes', {}, 'Additional Notes')} <i class="fas fa-info-circle notes-hint" title="${translate('modals.model.metadata.notesHint', {}, 'Press Enter to save, Shift+Enter for new line')}"></i></label>
+                            <div class="notes-header">
+                                <label>${translate('modals.model.metadata.additionalNotes', {}, 'Additional Notes')} <i class="fas fa-info-circle notes-hint" title="${translate('modals.model.metadata.notesHint', {}, 'Press Enter to save, Shift+Enter for new line')}"></i></label>
+                                <button class="notes-toggle-btn" style="display:none" title="${translate('modals.model.notes.showMore', {}, 'Show more')}">
+                                    <i class="fas fa-chevron-down"></i>
+                                </button>
+                            </div>
                             <div class="editable-field">
                                 <div class="notes-content" contenteditable="true" spellcheck="false">${modelWithFullData.notes || translate('modals.model.metadata.addNotesPlaceholder', {}, 'Add your notes here...')}</div>
                             </div>
@@ -502,7 +527,7 @@ export async function showModelModal(model, modelType) {
                     </div>
                 </div>
 
-                <div class="showcase-section" data-model-hash="${modelWithFullData.sha256 || ''}" data-filepath="${escapedFilePathAttr}">
+                <div class="showcase-section" data-model-hash="${modelWithFullData.sha256 || ''}" data-model-name="${escapeAttribute(modelWithFullData.file_name || modelWithFullData.model_name || '')}" data-model-type="${modelType}" data-filepath="${escapedFilePathAttr}">
                     <div class="showcase-tabs">
                         ${tabsContent}
                     </div>
@@ -615,6 +640,14 @@ export async function showModelModal(model, modelType) {
     const activeModalElement = document.getElementById(modalId);
     if (activeModalElement) {
         activeModalElement.dataset.filePath = modelWithFullData.file_path || '';
+        // Store usage_tips for LoRA models
+        if (modelType === 'loras' && modelWithFullData.usage_tips) {
+            activeModalElement.dataset.usageTips = modelWithFullData.usage_tips;
+        }
+        // Store sub_type for checkpoint models
+        if (modelType === 'checkpoints' && modelWithFullData.sub_type) {
+            activeModalElement.dataset.subType = modelWithFullData.sub_type;
+        }
     }
     updateVersionsTabBadge(updateAvailabilityState.hasUpdateAvailable);
     const versionsTabController = initVersionsTab({
@@ -638,20 +671,30 @@ export async function showModelModal(model, modelType) {
     setupTagTooltip();
     setupTagEditMode(modelType);
     setupModelNameEditing(modelWithFullData.file_path);
+    setupVersionNameEditing(modelWithFullData.file_path);
     setupBaseModelEditing(modelWithFullData.file_path);
     setupFileNameEditing(modelWithFullData.file_path);
     setupEventHandlers(modelWithFullData.file_path, modelType);
     setupNavigationShortcuts(modelType);
     updateNavigationControls();
 
-    // LoRA specific setup
+    // Model-specific setup
     if (modelType === 'loras' || modelType === 'embeddings') {
         setupTriggerWordsEditMode();
+    }
 
-        if (modelType == 'loras') {
-            // Load recipes for this LoRA
-            loadRecipesForLora(modelWithFullData.model_name, modelWithFullData.sha256);
-        }
+    if (modelType === 'loras') {
+        loadRecipesForModel({
+            modelKind: 'lora',
+            displayName: modelWithFullData.model_name,
+            sha256: modelWithFullData.sha256,
+        });
+    } else if (modelType === 'checkpoints') {
+        loadRecipesForModel({
+            modelKind: 'checkpoint',
+            displayName: modelWithFullData.model_name,
+            sha256: modelWithFullData.sha256,
+        });
     }
 
     // Load example images asynchronously - merge regular and custom images
@@ -747,6 +790,9 @@ function setupEventHandlers(filePath, modelType) {
             case 'nav-next':
                 handleDirectionalNavigation('next', modelType);
                 break;
+            case 'send-to-workflow':
+                handleSendToWorkflow(target, modelType);
+                break;
         }
     }
 
@@ -796,10 +842,68 @@ function setupEditableFields(filePath, modelType) {
         });
     }
 
+    // Setup adaptive expand/collapse for notes
+    setupNotesExpand();
+
     // LoRA specific field setup
     if (modelType === 'loras') {
         setupLoraSpecificFields(filePath);
     }
+}
+
+/**
+ * Adaptive expand/collapse for the Additional Notes section.
+ * Measures content height synchronously after render (before first paint,
+ * so no visual flash). If notes fit within ~4 lines, no toggle is shown.
+ * If they exceed the threshold, the field collapses with a gradient fade
+ * and a "Show more" button appears.
+ */
+function setupNotesExpand() {
+    const notesContainer = document.querySelector('.info-item.notes');
+    if (!notesContainer) return;
+
+    const notesField = notesContainer.querySelector('.editable-field');
+    const notesContent = notesContainer.querySelector('.notes-content');
+    const toggleBtn = notesContainer.querySelector('.notes-toggle-btn');
+
+    if (!notesField || !notesContent || !toggleBtn) return;
+
+    const placeholderText = translate('modals.model.metadata.addNotesPlaceholder', {}, 'Add your notes here...');
+    const content = notesContent.textContent || '';
+    const isEmpty = !content.trim() || content === placeholderText;
+
+    if (isEmpty) {
+        return;
+    }
+
+    // CSS default has no constraints, so scrollHeight reflects full content
+    const contentHeight = notesContent.scrollHeight;
+    const collapsedThreshold = 95; // ~4 lines
+
+    if (contentHeight <= collapsedThreshold) {
+        return;
+    }
+
+    // Long content — collapse and show toggle
+    notesField.classList.add('collapsed');
+    toggleBtn.style.display = 'inline-flex';
+    toggleBtn.title = translate('modals.model.notes.showMore', {}, 'Show more');
+
+    const toggleIcon = toggleBtn.querySelector('i');
+
+    toggleBtn.addEventListener('click', function onClick() {
+        const isCollapsed = notesField.classList.contains('collapsed');
+        if (isCollapsed) {
+            notesField.classList.remove('collapsed');
+            toggleBtn.title = translate('modals.model.notes.showLess', {}, 'Show less');
+            toggleIcon.className = 'fas fa-chevron-up';
+            notesField.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        } else {
+            notesField.classList.add('collapsed');
+            toggleBtn.title = translate('modals.model.notes.showMore', {}, 'Show more');
+            toggleIcon.className = 'fas fa-chevron-down';
+        }
+    });
 }
 
 function setupLoraSpecificFields(filePath) {
@@ -1023,6 +1127,70 @@ async function openFileLocation(filePath) {
         }
     } catch (err) {
         showToast('modals.model.openFileLocation.failed', {}, 'error');
+    }
+}
+
+async function handleSendToWorkflow(target, modelType) {
+    const filePath = getModalFilePath();
+    if (!filePath) {
+        showToast('modals.model.sendToWorkflow.noFilePath', {}, 'error');
+        return;
+    }
+
+    // Get the current model data from the modal
+    const modalElement = document.getElementById('modelModal');
+    const currentFileName = modalElement?.querySelector('#file-name')?.textContent || '';
+    
+    if (modelType === 'loras') {
+        // For LoRA: Build syntax from usage tips and send
+        const usageTipsData = modalElement?.dataset?.usageTips;
+        const usageTips = usageTipsData ? JSON.parse(usageTipsData) : {};
+        const loraSyntax = buildLoraSyntax(currentFileName, usageTips);
+        await sendLoraToWorkflow(loraSyntax, false, 'lora');
+    } else if (modelType === 'checkpoints') {
+        // For Checkpoint: Send model path
+        const subtype = (modalElement?.dataset?.subType || 'checkpoint').toLowerCase();
+        const isDiffusionModel = subtype === 'diffusion_model';
+        const widgetName = isDiffusionModel ? 'unet_name' : 'ckpt_name';
+        const actionTypeText = translate(
+            isDiffusionModel ? 'uiHelpers.nodeSelector.diffusionModel' : 'uiHelpers.nodeSelector.checkpoint',
+            {},
+            isDiffusionModel ? 'Diffusion Model' : 'Checkpoint'
+        );
+        const successMessage = translate(
+            'uiHelpers.workflow.modelUpdated',
+            {},
+            'Model updated in workflow'
+        );
+        const failureMessage = translate(
+            'uiHelpers.workflow.modelFailed',
+            {},
+            'Failed to update model node'
+        );
+        const missingNodesMessage = translate(
+            'uiHelpers.workflow.noMatchingNodes',
+            {},
+            'No compatible nodes available in the current workflow'
+        );
+        const missingTargetMessage = translate(
+            'uiHelpers.workflow.noTargetNodeSelected',
+            {},
+            'No target node selected'
+        );
+
+        await sendModelPathToWorkflow(filePath, {
+            widgetName,
+            collectionType: MODEL_TYPES.CHECKPOINT,
+            actionTypeText,
+            successMessage,
+            failureMessage,
+            missingNodesMessage,
+            missingTargetMessage,
+        });
+    } else if (modelType === 'embeddings') {
+        // For Embedding: Send as LoRA syntax (embedding name only)
+        const embeddingSyntax = `<embed:${currentFileName}:1>`;
+        await sendLoraToWorkflow(embeddingSyntax, false, 'embedding');
     }
 }
 

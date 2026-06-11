@@ -29,6 +29,18 @@ if not standalone_mode:
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_CHECKPOINT_EXTENSIONS = {
+    ".ckpt",
+    ".pt",
+    ".pt2",
+    ".bin",
+    ".pth",
+    ".safetensors",
+    ".pkl",
+    ".sft",
+    ".gguf",
+}
+
 class UsageStats:
     """Track usage statistics for models and save to JSON"""
     
@@ -291,6 +303,151 @@ class UsageStats:
         # Process loras
         if LORAS in metadata and isinstance(metadata[LORAS], dict):
             await self._process_loras(metadata[LORAS], today)
+
+    def _increment_usage_counter(self, category: str, stat_key: str, today_date: str) -> None:
+        """Increment usage counters for a resolved stats key."""
+        if stat_key not in self.stats[category]:
+            self.stats[category][stat_key] = {
+                "total": 0,
+                "history": {}
+            }
+
+        self.stats[category][stat_key]["total"] += 1
+
+        if today_date not in self.stats[category][stat_key]["history"]:
+            self.stats[category][stat_key]["history"][today_date] = 0
+        self.stats[category][stat_key]["history"][today_date] += 1
+
+    def _normalize_model_lookup_name(self, model_name: str) -> str:
+        """Normalize a model reference to its base filename without extension."""
+        return os.path.splitext(os.path.basename(model_name))[0]
+
+    async def _find_cached_checkpoint_entry(self, checkpoint_scanner, model_name: str):
+        """Best-effort lookup for a checkpoint cache entry by filename/model name."""
+        get_cached_data = getattr(checkpoint_scanner, "get_cached_data", None)
+        if not callable(get_cached_data):
+            return None
+
+        cache = await get_cached_data()
+        raw_data = getattr(cache, "raw_data", None)
+        if not isinstance(raw_data, list):
+            return None
+
+        normalized_name = self._normalize_model_lookup_name(model_name)
+        for entry in raw_data:
+            if not isinstance(entry, dict):
+                continue
+
+            for candidate_key in ("file_name", "model_name", "file_path"):
+                candidate_value = entry.get(candidate_key)
+                if not candidate_value or not isinstance(candidate_value, str):
+                    continue
+                if self._normalize_model_lookup_name(candidate_value) == normalized_name:
+                    return entry
+
+        return None
+
+    async def _find_checkpoint_file_on_disk(self, checkpoint_scanner, model_name: str):
+        """Search checkpoint roots directly for a matching file.
+
+        This is used when usage tracking sees a checkpoint name before the cache has
+        been refreshed. The lookup is intentionally exact: we only match the model
+        basename and supported checkpoint extensions.
+        """
+        get_model_roots = getattr(checkpoint_scanner, "get_model_roots", None)
+        if not callable(get_model_roots):
+            return None
+
+        roots = [root for root in get_model_roots() if root]
+        if not roots:
+            return None
+
+        supported_extensions = getattr(
+            checkpoint_scanner, "file_extensions", _DEFAULT_CHECKPOINT_EXTENSIONS
+        )
+        if not isinstance(supported_extensions, (set, frozenset, list, tuple)):
+            supported_extensions = _DEFAULT_CHECKPOINT_EXTENSIONS
+
+        normalized_name = self._normalize_model_lookup_name(model_name)
+        matches: list[str] = []
+
+        for root_path in roots:
+            if not os.path.exists(root_path):
+                continue
+
+            for dirpath, _dirnames, filenames in os.walk(root_path):
+                for filename in filenames:
+                    extension = os.path.splitext(filename)[1].lower()
+                    if extension not in supported_extensions:
+                        continue
+
+                    if os.path.splitext(filename)[0] != normalized_name:
+                        continue
+
+                    matches.append(os.path.join(dirpath, filename).replace(os.sep, "/"))
+
+        if len(matches) > 1:
+            logger.warning(
+                "Multiple checkpoint files matched '%s'; skipping usage tracking: %s",
+                normalized_name,
+                ", ".join(matches),
+            )
+            return None
+
+        return matches[0] if matches else None
+
+    async def _resolve_checkpoint_hash(self, checkpoint_scanner, model_name: str):
+        """Resolve a checkpoint hash, calculating pending hashes on demand when needed."""
+        model_filename = self._normalize_model_lookup_name(model_name)
+        model_hash = checkpoint_scanner.get_hash_by_filename(model_filename)
+        if model_hash:
+            return model_hash
+
+        cached_entry = await self._find_cached_checkpoint_entry(checkpoint_scanner, model_name)
+        if cached_entry:
+            cached_hash = cached_entry.get("sha256")
+            if cached_hash:
+                return cached_hash
+
+            hash_status = cached_entry.get("hash_status")
+            if hash_status and hash_status != "pending":
+                logger.warning(
+                    "Checkpoint '%s' has hash_status=%s; skipping usage tracking",
+                    model_filename,
+                    hash_status,
+                )
+                return None
+
+        file_path = cached_entry.get("file_path") if cached_entry else None
+        if not file_path:
+            file_path = await self._find_checkpoint_file_on_disk(
+                checkpoint_scanner, model_name
+            )
+
+        if not file_path:
+            logger.warning(
+                f"No hash found for checkpoint '{model_filename}', skipping usage tracking"
+            )
+            return None
+
+        calculate_hash = getattr(checkpoint_scanner, "calculate_hash_for_model", None)
+        if not callable(calculate_hash):
+            logger.warning("Checkpoint scanner not available for usage tracking")
+            return None
+
+        logger.info(
+            "Calculating hash for checkpoint '%s' from %s",
+            model_filename,
+            file_path,
+        )
+        calculated_hash = await calculate_hash(file_path)
+        if calculated_hash:
+            return calculated_hash
+
+        logger.warning(
+            f"Failed to calculate hash for checkpoint '{model_filename}', skipping usage tracking"
+        )
+        return None
     
     async def _process_checkpoints(self, models_data, today_date):
         """Process checkpoint models from metadata"""
@@ -311,27 +468,12 @@ class UsageStats:
                     model_name = model_info.get("name")
                     if not model_name:
                         continue
-                    
-                    # Clean up filename (remove extension if present)
-                    model_filename = os.path.splitext(os.path.basename(model_name))[0]
-                    
-                    # Get hash for this checkpoint
-                    model_hash = checkpoint_scanner.get_hash_by_filename(model_filename)
-                    if model_hash:
-                        # Update stats for this checkpoint with date tracking
-                        if model_hash not in self.stats["checkpoints"]:
-                            self.stats["checkpoints"][model_hash] = {
-                                "total": 0,
-                                "history": {}
-                            }
-                        
-                        # Increment total count
-                        self.stats["checkpoints"][model_hash]["total"] += 1
-                        
-                        # Increment today's count
-                        if today_date not in self.stats["checkpoints"][model_hash]["history"]:
-                            self.stats["checkpoints"][model_hash]["history"][today_date] = 0
-                        self.stats["checkpoints"][model_hash]["history"][today_date] += 1
+
+                    model_hash = await self._resolve_checkpoint_hash(checkpoint_scanner, model_name)
+                    if not model_hash:
+                        continue
+
+                    self._increment_usage_counter("checkpoints", model_hash, today_date)
         except Exception as e:
             logger.error(f"Error processing checkpoint usage: {e}", exc_info=True)
     
@@ -360,21 +502,11 @@ class UsageStats:
                     
                     # Get hash for this LoRA
                     lora_hash = lora_scanner.get_hash_by_filename(lora_name)
-                    if lora_hash:
-                        # Update stats for this LoRA with date tracking
-                        if lora_hash not in self.stats["loras"]:
-                            self.stats["loras"][lora_hash] = {
-                                "total": 0,
-                                "history": {}
-                            }
-                        
-                        # Increment total count
-                        self.stats["loras"][lora_hash]["total"] += 1
-                        
-                        # Increment today's count
-                        if today_date not in self.stats["loras"][lora_hash]["history"]:
-                            self.stats["loras"][lora_hash]["history"][today_date] = 0
-                        self.stats["loras"][lora_hash]["history"][today_date] += 1
+                    if not lora_hash:
+                        logger.warning(f"No hash found for LoRA '{lora_name}', skipping usage tracking")
+                        continue
+
+                    self._increment_usage_counter("loras", lora_hash, today_date)
         except Exception as e:
             logger.error(f"Error processing LoRA usage: {e}", exc_info=True)
     

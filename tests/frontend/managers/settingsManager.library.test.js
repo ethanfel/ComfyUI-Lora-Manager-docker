@@ -42,6 +42,7 @@ vi.mock('../../../static/js/utils/constants.js', () => ({
         checkpoint: 'base, guide',
         embedding: 'hint',
     },
+    getMappableBaseModelsDynamic: () => [],
 }));
 
 vi.mock('../../../static/js/utils/i18nHelpers.js', () => ({
@@ -95,6 +96,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+    vi.useRealTimers();
     delete global.fetch;
     delete document.hidden;
     Object.defineProperty(window, 'location', {
@@ -203,5 +205,187 @@ describe('SettingsManager library controls', () => {
 
         expect(select.value).toBe('alpha');
         expect(activateSpy).not.toHaveBeenCalled();
+    });
+
+    it('loads recipes_path into the settings input', async () => {
+        const manager = createManager();
+        const input = document.createElement('input');
+        input.id = 'recipesPath';
+        document.body.appendChild(input);
+
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({
+                success: true,
+                isAvailable: false,
+                isEnabled: false,
+                databaseSize: 0,
+            }),
+        });
+
+        state.global.settings = {
+            recipes_path: '/custom/recipes',
+        };
+
+        await manager.loadSettingsToUI();
+
+        expect(input.value).toBe('/custom/recipes');
+    });
+
+    it('does not autofocus empty extra folder path rows during initial settings load', async () => {
+        vi.useFakeTimers();
+
+        const manager = createManager();
+        document.body.innerHTML = `
+            <div id="extraFolderPaths-loras"></div>
+            <div id="extraFolderPaths-checkpoints"></div>
+            <div id="extraFolderPaths-unet"></div>
+            <div id="extraFolderPaths-embeddings"></div>
+        `;
+
+        vi.spyOn(manager, 'loadMetadataArchiveSettings').mockResolvedValue();
+        vi.spyOn(manager, 'loadBackupSettings').mockResolvedValue();
+        vi.spyOn(manager, 'loadLibraries').mockResolvedValue();
+        vi.spyOn(manager, 'loadLoraRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadCheckpointRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadUnetRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadEmbeddingRoots').mockResolvedValue();
+
+        const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(() => {});
+
+        state.global.settings = {
+            extra_folder_paths: {},
+        };
+
+        await manager.loadSettingsToUI();
+        await vi.runAllTimersAsync();
+
+        expect(focusSpy).not.toHaveBeenCalled();
+    });
+
+    it('still focuses an extra folder path row when it is added explicitly', async () => {
+        vi.useFakeTimers();
+
+        const manager = createManager();
+        document.body.innerHTML = '<div id="extraFolderPaths-embeddings"></div>';
+
+        const focusSpy = vi.spyOn(HTMLElement.prototype, 'focus').mockImplementation(() => {});
+
+        manager.addExtraFolderPathRow('embeddings', '');
+        await vi.runAllTimersAsync();
+
+        expect(focusSpy).toHaveBeenCalledTimes(1);
+    });
+
+    it('shows loading while saving recipes_path', async () => {
+        const manager = createManager();
+        const input = document.createElement('input');
+        input.id = 'recipesPath';
+        input.value = '/custom/recipes';
+        document.body.appendChild(input);
+
+        state.global.settings = {
+            recipes_path: '',
+        };
+
+        global.fetch = vi.fn().mockResolvedValue({
+            ok: true,
+            json: async () => ({ success: true }),
+        });
+
+        await manager.saveInputSetting('recipesPath', 'recipes_path');
+
+        expect(state.loadingManager.showSimpleLoading).toHaveBeenCalledWith(
+            'Migrating recipes...'
+        );
+        expect(state.loadingManager.hide).toHaveBeenCalledTimes(1);
+        expect(showToast).toHaveBeenCalledWith(
+            'toast.settings.recipesPathUpdated',
+            {},
+            'success',
+        );
+    });
+
+    it('loads download backend settings and toggles the aria2 path field', () => {
+        const manager = createManager();
+        document.body.innerHTML = `
+            <select id="downloadBackend">
+                <option value="python">Python</option>
+                <option value="aria2">aria2</option>
+            </select>
+            <div id="aria2PathSetting" style="display: none;"></div>
+            <input id="aria2cPath" />
+        `;
+
+        state.global.settings = {
+            download_backend: 'aria2',
+            aria2c_path: '/usr/bin/aria2c',
+        };
+
+        const saveSpy = vi.spyOn(manager, 'saveSelectSetting').mockResolvedValue();
+
+        manager.loadDownloadBackendSettings();
+
+        const backendSelect = document.getElementById('downloadBackend');
+        const aria2PathSetting = document.getElementById('aria2PathSetting');
+        const aria2cPath = document.getElementById('aria2cPath');
+
+        expect(backendSelect.value).toBe('aria2');
+        expect(aria2cPath.value).toBe('/usr/bin/aria2c');
+        expect(aria2PathSetting.style.display).toBe('block');
+
+        backendSelect.value = 'python';
+        backendSelect.onchange();
+
+        expect(aria2PathSetting.style.display).toBe('none');
+        expect(saveSpy).toHaveBeenCalledWith('downloadBackend', 'download_backend');
+    });
+
+    it('loads example image remote-open settings and updates field visibility', async () => {
+        const manager = createManager();
+        document.body.innerHTML = `
+            <select id="exampleImagesOpenMode">
+                <option value="system">System</option>
+                <option value="clipboard">Clipboard</option>
+                <option value="uri_template">URI</option>
+            </select>
+            <div id="exampleImagesLocalRootSetting" style="display: none;"></div>
+            <div id="exampleImagesUriTemplateSetting" style="display: none;"></div>
+            <input id="exampleImagesLocalRoot" />
+            <input id="exampleImagesOpenUriTemplate" />
+        `;
+
+        vi.spyOn(manager, 'loadMetadataArchiveSettings').mockResolvedValue();
+        vi.spyOn(manager, 'loadBackupSettings').mockResolvedValue();
+        vi.spyOn(manager, 'loadLibraries').mockResolvedValue();
+        vi.spyOn(manager, 'loadLoraRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadCheckpointRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadUnetRoots').mockResolvedValue();
+        vi.spyOn(manager, 'loadEmbeddingRoots').mockResolvedValue();
+
+        state.global.settings = {
+            example_images_open_mode: 'uri_template',
+            example_images_local_root: '/Volumes/ComfyUI/examples',
+            example_images_open_uri_template: 'shortcuts://run-shortcut?text={{encoded_local_path}}',
+        };
+
+        await manager.loadSettingsToUI();
+
+        expect(document.getElementById('exampleImagesOpenMode').value).toBe('uri_template');
+        expect(document.getElementById('exampleImagesLocalRoot').value).toBe('/Volumes/ComfyUI/examples');
+        expect(document.getElementById('exampleImagesOpenUriTemplate').value)
+            .toBe('shortcuts://run-shortcut?text={{encoded_local_path}}');
+        expect(document.getElementById('exampleImagesLocalRootSetting').style.display).toBe('block');
+        expect(document.getElementById('exampleImagesUriTemplateSetting').style.display).toBe('block');
+
+        state.global.settings.example_images_open_mode = 'clipboard';
+        manager.updateExampleImagesOpenSettingsVisibility();
+        expect(document.getElementById('exampleImagesLocalRootSetting').style.display).toBe('block');
+        expect(document.getElementById('exampleImagesUriTemplateSetting').style.display).toBe('none');
+
+        state.global.settings.example_images_open_mode = 'system';
+        manager.updateExampleImagesOpenSettingsVisibility();
+        expect(document.getElementById('exampleImagesLocalRootSetting').style.display).toBe('none');
+        expect(document.getElementById('exampleImagesUriTemplateSetting').style.display).toBe('none');
     });
 });

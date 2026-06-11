@@ -10,7 +10,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
 }
 
 .settings-toggle:hover {
@@ -81,7 +81,7 @@
     font-weight: 500;
     cursor: pointer;
     border-radius: var(--border-radius-xs);
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     margin-bottom: 4px;
 }
 
@@ -102,6 +102,13 @@
     overflow-y: auto;
     padding: var(--space-3);
     scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+}
+
+@supports not (scrollbar-gutter: stable) {
+    .settings-content {
+        overflow-y: scroll;
+    }
 }
 
 .settings-content .settings-form {
@@ -147,7 +154,7 @@
     background-color: var(--lora-surface);
     color: var(--text-color);
     font-size: 0.9em;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
 }
 
 .settings-search-input:focus {
@@ -176,7 +183,7 @@
     justify-content: center;
     font-size: 0.7em;
     opacity: 0.6;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
 }
 
 .settings-search-clear:hover {
@@ -282,7 +289,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     text-decoration: none;
     position: relative;
 }
@@ -339,11 +346,13 @@
 .api-key-input input {
     width: 100%;
     padding: 6px 40px 6px 10px; /* Add left padding */
-    height: 20px;
+    height: 32px;
+    box-sizing: border-box;
     border-radius: var(--border-radius-xs);
     border: 1px solid var(--border-color);
     background-color: var(--lora-surface);
     color: var(--text-color);
+    font-size: 0.95em;
 }
 
 .api-key-input .toggle-visibility {
@@ -372,7 +381,8 @@
 .text-input-wrapper input {
     width: 100%;
     padding: 6px 10px;
-    height: 20px;
+    height: 32px;
+    box-sizing: border-box;
     border-radius: var(--border-radius-xs);
     border: 1px solid var(--border-color);
     background-color: var(--lora-surface);
@@ -428,6 +438,88 @@
 .auto-organize-exclusions-input {
     width: 100%;
     box-sizing: border-box;
+}
+
+.base-model-skip-toggle {
+    min-width: 220px;
+    justify-content: space-between;
+    gap: 10px;
+}
+
+.base-model-skip-toggle-label {
+    opacity: 0.75;
+    white-space: nowrap;
+}
+
+.base-model-skip-panel {
+    margin-top: var(--space-2);
+    padding: 12px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-xs);
+    background-color: var(--lora-surface);
+}
+
+.base-model-skip-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+}
+
+.base-model-skip-search {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--border-radius-xs);
+    border: 1px solid var(--border-color);
+    background-color: var(--settings-bg);
+    color: var(--text-color);
+}
+
+.base-model-skip-search:focus {
+    border-color: var(--lora-accent);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(var(--lora-accent-rgb, 79, 70, 229), 0.1);
+}
+
+.base-model-skip-list {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 8px;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.base-model-skip-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--border-radius-xs);
+    background-color: var(--settings-bg);
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+}
+
+.base-model-skip-option:hover {
+    border-color: var(--lora-accent);
+    background-color: rgba(var(--lora-accent-rgb, 79, 70, 229), 0.05);
+}
+
+.base-model-skip-option input {
+    margin: 0;
+}
+
+.base-model-skip-option span {
+    font-size: 0.9em;
+    line-height: 1.25;
+}
+
+.base-model-skip-empty {
+    padding: 8px 0 0;
+    font-size: 0.9em;
+    opacity: 0.75;
 }
 
 .priority-tags-input:focus {
@@ -490,7 +582,7 @@
 }
 
 .priority-tags-example code {
-    font-family: var(--code-font, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace);
+    font-family: var(--font-mono);
     background-color: rgba(var(--lora-accent-rgb, 79, 70, 229), 0.12);
     padding: 2px 6px;
     border-radius: var(--border-radius-xs);
@@ -522,7 +614,7 @@
     border-bottom: 2px solid transparent;
     color: var(--text-color);
     cursor: pointer;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     opacity: 0.7;
 }
 
@@ -671,10 +763,12 @@
 }
 
 .setting-control {
-    width: 60%; /* Decreased slightly from 65% */
+    flex: 0 0 60%;
+    max-width: 60%;
     margin-bottom: 0;
     display: flex;
     justify-content: flex-end; /* Right-align all controls */
+    min-width: 0;
 }
 
 /* Select Control Styles */
@@ -682,6 +776,13 @@
     width: 100%;
     display: flex;
     justify-content: flex-end;
+}
+
+.setting-control select,
+.setting-control input[type="text"],
+.setting-control input[type="password"],
+.setting-control input[type="number"] {
+    font-size: 0.95em;
 }
 
 .select-control select {
@@ -692,8 +793,8 @@
     border: 1px solid var(--border-color);
     background-color: var(--lora-surface);
     color: var(--text-color);
-    font-size: 0.95em;
     height: 32px;
+    box-sizing: border-box;
 }
 
 /* Fix dark theme select dropdown text color */
@@ -799,8 +900,8 @@ input:checked + .toggle-slider:before {
     border: 1px solid var(--border-color);
     background-color: var(--lora-surface);
     color: var(--text-color);
-    font-size: 0.95em;
     height: 32px;
+    box-sizing: border-box;
 }
 
 /* Add warning text style for settings */
@@ -826,19 +927,19 @@ input:checked + .toggle-slider:before {
 
 /* Path Template Settings Styles */
 .template-preview {
-    background: rgba(0, 0, 0, 0.03);
+    background: var(--surface-subtle);
     border: 1px solid rgba(0, 0, 0, 0.1);
     border-radius: var(--border-radius-xs);
     padding: var(--space-1);
     margin-top: 8px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     color: var(--lora-accent);
     display: none;
 }
 
 [data-theme="dark"] .template-preview {
-    background: rgba(255, 255, 255, 0.03);
+    background: var(--surface-subtle);
     border: 1px solid var(--lora-border);
 }
 
@@ -873,7 +974,7 @@ input:checked + .toggle-slider:before {
     border-radius: var(--border-radius-xs);
     cursor: pointer;
     font-size: 0.9em;
-    transition: all 0.2s;
+    transition: var(--transition-base);
     height: 32px; /* Match other control heights */
 }
 
@@ -929,7 +1030,7 @@ input:checked + .toggle-slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: var(--transition-base);
 }
 
 .remove-mapping-btn:hover {
@@ -1045,7 +1146,7 @@ input:checked + .toggle-slider:before {
     color: white;
     padding: 2px 6px;
     border-radius: 3px;
-    font-family: monospace;
+    font-family: var(--font-mono);
     font-size: 1em;
     font-weight: 500;
 }
@@ -1074,7 +1175,7 @@ input:checked + .toggle-slider:before {
     background-color: var(--lora-surface);
     color: var(--text-color);
     font-size: 0.95em;
-    font-family: monospace;
+    font-family: var(--font-mono);
     height: 24px;
     transition: border-color 0.2s;
 }
@@ -1176,7 +1277,7 @@ input:checked + .toggle-slider:before {
     border-radius: 6px;
     font-size: 14px;
     font-weight: normal;
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-family: var(--font-body);
     white-space: normal;
     max-width: 220px;
     width: max-content;
@@ -1186,7 +1287,7 @@ input:checked + .toggle-slider:before {
     pointer-events: none;
     z-index: 10000;
     line-height: 1.4;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--shadow-elevated);
     text-transform: none;
 }
 
@@ -1208,7 +1309,7 @@ input:checked + .toggle-slider:before {
 /* Dark theme adjustments for tooltip - Fully opaque */
 [data-theme="dark"] .info-icon[data-tooltip]::after {
     background: rgba(40, 40, 40, 0.95);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+    box-shadow: var(--shadow-dark-lg);
 }
 
 /* Extra Folder Paths - Single input layout */
@@ -1260,11 +1361,22 @@ input:checked + .toggle-slider:before {
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
+    transition: var(--transition-base);
     flex-shrink: 0;
 }
 
 .extra-folder-path-row .path-controls .remove-path-btn:hover {
     background: var(--lora-error);
     color: white;
+}
+
+/* Highlight animation for setting items targeted from Doctor actions */
+@keyframes settings-highlight-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(from var(--lora-accent) r g b / 0.4); }
+    50% { box-shadow: 0 0 0 4px rgba(from var(--lora-accent) r g b / 0.2); }
+}
+
+.settings-setting-highlight {
+    animation: settings-highlight-pulse 1.5s ease-in-out 3;
+    border-radius: var(--border-radius-xs);
 }

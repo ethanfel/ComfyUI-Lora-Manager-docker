@@ -18,7 +18,7 @@ Watch this quick tutorial to learn how to use the new one-click LoRA integration
 ## 🌐 Browser Extension
 Enhance your Civitai browsing experience with our companion browser extension! See which models you already have, download new ones with a single click, and manage your downloads efficiently.
 
-![LM Civitai Extension Preview](https://github.com/willmiao/ComfyUI-Lora-Manager/blob/main/wiki-images/civitai-models-page.png)
+![LM Civitai Extension Preview](https://raw.githubusercontent.com/wiki/willmiao/ComfyUI-Lora-Manager/wiki-images/civitai-models-page.png)
 
 <div>
   <a href="https://chromewebstore.google.com/detail/lm-civitai-extension/capigligggeijgmocnaflanlbghnamgm?utm_source=item-share-cb" style="display: inline-block; background-color: #4285F4; color: white; padding: 8px 16px; text-decoration: none; border-radius: 4px; font-weight: bold; margin: 10px 0;">
@@ -42,104 +42,19 @@ I'm incredibly grateful to everyone who has supported the development of this pr
 
 **dispenser**, **EbonEagle**, **DanielMagPizza**, **Scott R**
 
-### 💖 Supporters (620)
+### 💖 Supporters (784)
 
 <details>
 <summary>Click to view all awesome supporters</summary>
 <br>
 
-Insomnia Art Designs, megakirbs, Brennok, wackop, 2018cfh, Takkan, stone9k, $MetaSamsara, itismyelement, onesecondinosaur, Carl G., Rosenthal, Francisco Tatis, Tobi_Swagg, Andrew Wilson, Greybush, Gooohokrbe, Ricky Carter, JongWon Han, OldBones, VantAI, runte3221, FreelancerZ, Julian V, Edgar Tejeda, Birdy, Liam MacDougal, Fraser Cross, Polymorphic Indeterminate, Marc Whiffen, Kiba, Jorge Hussni, Reno Lam, Skalabananen, esthe, sig, Christian Byrne, DM, Sen314, Estragon, J\B/ 8r0wns0n, Snaggwort, Arlecchino Shion, ClockDaemon, KD, Omnidex, Tyler Trebuchon, Release Cabrakan, confiscated Zyra, SG, carozzz, James Dooley, zenbound, Buzzard, jmack, Adam Shaw, Tee Gee, Mark Corneglio, SarcasticHashtag, Anthony Rizzo, tarek helmi, Cosmosis, iamresist, RedrockVP, Wolffen, FloPro4Sho, James Todd, Steven Pfeiffer, Tim, Timmy, Johnny, Lisster, Michael Wong, Illrigger, whudunit, Tom Corrigan, JackieWang, fnkylove, Steven Owens, Yushio, Vik71it, lh qwe, Echo, Lilleman, Robert Stacey, PM, Todd Keck, Briton Heilbrun, Mozzel, Gingko Biloba, Felipe dos Santos, Penfore, BadassArabianMofo, Sterilized, Pascal Dahle, Markus, quarz, Greg, Douglas Gaspar, JSST, AlexDuKaNa, George, lmsupporter, Phil, Charles Blakemore, IamAyam, wfpearl, Rob Williams, Baekdoosixt, Jonathan Ross, Jack B Nimble, Nazono_hito, Melville Parrish, daniel dove, Lustre, JW Sin, contrite831, Alex, bh, Marlon Daniels, Starkselle, Aaron Bleuer, LacesOut!, Graham Colehour, M Postkasse, Tomohiro Baba, David Ortega, ASLPro3D, Jacob Hoehler, FinalyFree, Weasyl, Lex Song, Cory Paza, Tak, Gonzalo Andre Allendes Lopez, Zach Gonser, Big Red, Jimmy Ledbetter, Luc Job, dl0901dm, Philip Hempel, corde, Nick Walker, Bishoujoker, conner, aai, Yaboi, Tori, wildnut, Princess Bright Eyes, Damon Cunliffe, CryptoTraderJK, Davaitamin, AbstractAss, ViperC, Aleksander Wujczyk, AM Kuro, jean jahren, Ran C, tedcor, S Sang, MagnaInsomnia, Akira_HentAI, Karl P., Gordon Cole, yuxz69, MadSpin, andrew.tappan, dw, N/A, The Spawn, graysock, Greenmoustache, zounic, Gamalonia, fancypants, Vir, Joboshy, Digital, JaxMax, takyamtom, Bohemian Corporal, 奚明 刘, Dan, Seth Christensen, Jwk0205, Bro Xie, Draven T, yer fey, batblue, carey6409, Olive, 太郎 ゲーム, Some Guy Named Barry, jinxedx, Aquatic Coffee, Max Marklund, AELOX, Dankin, Nicfit23, Noora, ethanfel, wamekukyouzin, drum matthieu, Dogmaster, Matt Wenzel, Mattssn, Frank Nitty, John Saveas, Focuschannel, Christopher Michel, Serge Bekenkamp, LeoZero, Antonio Pontes, ApathyJones, nahinahi9, Anthony Faxlandez, Dustin Chen, dan, Blackfish95, Mouthlessman, Steam Steam, Paul Kroll, otaku fra, semicolon drainpipe, Thesharingbrother, Fotek Design, Bas Imagineer, Pat Hen, ResidentDeviant, Adam Taylor, JC, Weird_With_A_Beard, Prompt Pirate, Pozadine1, uwutismxd, Qarob, AIGooner, inbijiburu, decoy, Luc, ProtonPrince, DiffDuck, elu3199, Nick “Loadstone” D, Hasturkun, Jon Sandman, Ubivis, CloudValley, thesoftwaredruid, wundershark, mr_dinosaur, Tyrswood, linnfrey, zenobeus, Jackthemind, Stryker, Pkrsky, raf8osz, blikkies, Josef Lanzl, Griffin Dahlberg, 준희 김, Error_Rule34_Not_found, Gerald Welly, Shock Shockor, Roslynd, Geolog, Goldwaters, Neco28, Zude, Cristian Vazquez, Kyler, Magic Noob, aRtFuL_DodGeR, X, DougPeterson, Jeff, Bruce, CrimsonDX, Kevin John Duck, Kevin Christopher, Ouro Boros, DarkSunset, dd, Billy Gladky, Probis, shrshpp, Dušan Ryban, ItsGeneralButtNaked, sjon kreutz, Nimess, John Statham, Youguang, Nihongasuki, Metryman55, andrewzpong, FrxzenSnxw, BossGame, Ray Wing, Ranzitho, Gus, 地獄の禄, MJG, David LaVallee, ae, Tr4shP4nda, WRL_SPR, capn, Joseph, lrdchs, Mirko Katzula, dan, Piccio08, kumakichi, cppbel, starbugx, Moon Knight, 몽타주, Kland, Hailshem, ryoma, John Martin, Chris, Brian M, Nerezza, sanborondon, moranqianlong, Taylor Funk, aezin, Thought2Form, jcay015, Kevin Picco, Erik Lopez, Mateo Curić, Haru Yotu, Eris3D, m, Pierce McBride, Joshua Gray, Mikko Hemilä, Matura Arbeit, Jamie Ogletree, TBitz33, Emil Bernhoff, a _, SendingRavens, James Coleman, Martial, battu, Emil Andersson, Chad Idk, Michael Docherty, Yuji Kaneko, elitassj, Jacob Winter, Jordan Shaw, Sam, Rops Alot, SRDB, g unit, Ace Ventura, David, Meilo, Pen Bouryoung, shinonomeiro, Snille, MaartenAlbers, khanh duy, xybrightsummer, jreedatchison, PhilW, momokai, Janik, kudari, Naomi Hale Danchi, dc7431, ken, Inversity, Crocket, AIVORY3D, epicgamer0020690, Joshua Porrata, Cruel, keemun, SuBu, RedPIXel, MRBlack, Kevinj, Wind, Nexus, Mitchell Robson, Ramneek“Guy”Ashok, squid_actually, Nat_20, Kiyoe, Edward Weeks, kyoumei, RadStorm04, JohnDoe42054, BillyHill, humptynutz, emyth, michael.isaza, Kalnei, chriphost, KitKatM, socrasteeze, ResidentDeviant, Scott, gzmzmvp, Welkor, hayden, Richard, ahoystan, Leland Saunders, Andrew, Bob Barker, Robert Wegemund, Littlehuggy, Gregory Kozhemiak, mrjuan, Aeternyx, Brian Buie, YOU SINWOO, Sadlip, ja s, Eric Whitney, Doug Mason, Joey Callahan, Ivan Tadic, y2Rxy7FdXzWo, Jeremy Townsend, Mike Simone, Sean voets, Owen Gwosdz, Morgandel, Thomas Wanner, Kyron Mahan, Theerat Jiramate, Noah, Jacob McDaniel, kevin stoddard, Sloan Steddy, Jack Dole, Ezokewn, Temikus, Artokun, Michael Taylor, Derek Baker, Michael Anthony Scott, Atilla Berke Pekduyar, Maso, Nathan, Decx _, Kevin Wallace, Matheus Couto, Paul Hartsuyker, ChicRic, mercur, J C, Distortik, Yves Poezevara, Teriak47, Just me, Raf Stahelin, Вячеслав Маринин, Cola Matthew, OniNoKen, Iain Wisely, Zertens, NOHOW, Apo, nekotxt, choowkee, Clusters, ibrahim, Highlandrise, philcoraz, mztn, ImagineerNL, MrAcrtosSursus, al300680, pixl, Robin, chahknoir, Marcus thronico, nd, keno94d, James Melzer, Bartleby, Renvertere, Rahuy, Hermann003, D, Foolish, RevyHiep, Captain_Swag, obkircher, Tree Tagger, gwyar, D, edgecase, Neoxena, mrmhalo, dg, Whitepinetrader, Maarten Harms, OrganicArtifact, 四糸凜音, MudkipMedkitz, Israel, deanbrian, POPPIN, Muratoraccio, SelfishMedic, Ginnie, Alex Wortman, Cody, adderleighn, Raku, smart.edge5178, emadsultan, InformedViewz, CHKeeho80, Bubbafett, leaf, Menard, Skyfire83, Adam Rinehart, D, Pitpe11, TheD1rtyD03, EnragedAntelope, moonpetal, SomeDude, g9p0o, nanana, TheHolySheep, Monte Won, SpringBootisTrash, carsten, ikok, Buecyb99, 4IXplr0r3r, Coeur+de+cochon, David Schenck, han b, Nico, Wolfe7D1, Banana Joe, _ G3n, Donovan Jenkins, Ink Temptation, edk, Michael Eid, beersandbacon, Maximilian Pyko, Invis, Kalli Core, Justin Houston, james, elleshar666, OrochiNights, Michael Zhu, ACTUALLY_the_Real_Willem_Dafoe, gonzalo, Seraphy, 雨の心 落, AllTimeNoobie, jumpd, John C, Kauffy, Rim, Dismem, EpicElric, John J Linehan, Xan Dionysus, Nathan lee, Mewtora, Elliot E, Middo, Forbidden Atelier, Edward Kennedy, Justin Blaylock, Adictedtohumping, Devil Lude, Nick Kage, Towelie, Vane Holzer, psytrax, Cyrus Fett, Jean-françois SEMA, Kurt, hexxish, giani kidd, CptNeo, notedfakes, Chase Kwon, Goober719, Eric Ketchum, Chad Barnes, NICHOLAS BAXLEY, Michael Scott, James Ming, vanditking, kripitonga, Rizzi, nimin, OMAR LUCIANO, Jo+Example, BrentBertram, eumelzocker, dxjaymz, L C, Dude
+Insomnia Art Designs, 2018cfh, megakirbs, Brennok, W+K+White, wackop, Phil, Carl G., Arlecchino Shion, Charles Blakemore, Rob Williams, stone9k, itismyelement, $MetaSamsara, onesecondinosaur, Rosenthal, Francisco Tatis, Tobi_Swagg, Andrew Wilson, Greybush, Ricky Carter, JongWon Han, VantAI, runte3221, FreelancerZ, Edgar Tejeda, Fraser Cross, Liam MacDougal, Polymorphic Indeterminate, Marc Whiffen, Skalabananen, Birdy, Kiba, Mozzel, Gingko Biloba, Reno Lam, sig, Christian Byrne, DM, Sen314, Estragon, J\B/ 8r0wns0n, Snaggwort, Takkan, Matt+J, ClockDaemon, KD, Omnidex, Tyler Trebuchon, Release Cabrakan, SG, carozzz, James Dooley, zenbound, Buzzard, jmack, Adam Shaw, Mark Corneglio, SarcasticHashtag, Anthony Rizzo, iamresist, RedrockVP, Wolffen, James Todd, Steven Pfeiffer, Tim, Timmy, Johnny, Lisster, Michael Wong, Illrigger, whudunit, Tom Corrigan, JackieWang, fnkylove, Yushio, Vik71it, Echo, Lilleman, Robert Stacey, PM, Todd Keck, Briton Heilbrun, Jorge Hussni, Sterilized, BadassArabianMofo, Pascal Dahle, quarz, Greg, JSST, lmsupporter, zounic, wfpearl, Baekdoosixt, Jonathan Ross, Jack B Nimble, Nazono_hito, Melville Parrish, daniel dove, Lustre, JW Sin, contrite831, Alex, bh, Marlon Daniels, Starkselle, Aaron Bleuer, LacesOut!, greebles, M Postkasse, Gooohokrbe, Wicked Choices by ASLPro3D, OldBones, Jacob Hoehler, FinalyFree, Weasyl, Lex Song, Cory Paza, Tak, Gonzalo Andre Allendes Lopez, Zach Gonser, Big Red, Jimmy Ledbetter, Luc Job, dl0901dm, Philip Hempel, corde, Nick Walker, Bishoujoker, aai, Tori, wildnut, jean jahren, Aleksander Wujczyk, AM Kuro, Ran C, ViperC, Penfore, Sangheili460, MagnaInsomnia, Karl P., Akira_HentAI, Gordon Cole, AbstractAss, andrew.tappan, N/A, The Spawn, graysock, Greenmoustache, fancypants, Eldithor, Joboshy, Digital, JaxMax, takyamtom, Bohemian Corporal, Dan, Jwk0205, Bro Xie, yer fey, batblue, carey6409, Olive, 太郎 ゲーム, Some Guy Named Barry, jinxedx, Cosmosis, AELOX, Dankin, Nicfit23, FloPro4Sho, wamekukyouzin, drum matthieu, Dogmaster, Matt Wenzel, Frank Nitty, Christopher Michel, Serge Bekenkamp, LeoZero, Antonio Pontes, ApathyJones, Julian V, Steven Owens, nahinahi9, Dustin Chen, dan, Blackfish95, Mouthlessman, Paul Kroll, otaku fra, MiraiKuriyamaSy, Bas Imagineer, yuxz69, Adam Taylor, Weird_With_A_Beard, esthe, Pozadine1, Qarob, AIGooner, Luc, ProtonPrince, DiffDuck, elu3199, Hasturkun, Jon Sandman, Ubivis, CloudValley, thesoftwaredruid, wundershark, mr_dinosaur, Tyrswood, linnfrey, IamAyam, skaterb949, Josef Lanzl, confiscated Zyra, Error_Rule34_Not_found, Gerald Welly, Roslynd, Tee Gee, Geolog, tarek helmi, Neco28, Max Marklund, David Ortega, Cristian Vazquez, Magic Noob, Pronredn, DougPeterson, Jeff, Bruce, lh qwe, Kevin John Duck, conner, Kevin Christopher, dd, Princess Bright Eyes, Dušan Ryban, Felipe dos Santos, John Statham, Douglas Gaspar, Metryman55, AlexDuKaNa, George, dw, decoy, Ray Wing, Ranzitho, Gus, 地獄の禄, MJG, David LaVallee, ae, Tr4shP4nda, Gamalonia, WRL_SPR, capn, Joseph, Mirko Katzula, dan, Piccio08, kumakichi, cppbel, Moon Knight, 몽타주, Kland, Hailshem, 奚明 刘, Brian M, Nerezza, sanborondon, 준희 김, Taylor Funk, aezin, Thought2Form, jcay015, Kevin Picco, Erik Lopez, Mateo Curić, Eris3D, Tomohiro Baba, m, Noora, Pierce McBride, Joshua Gray, Mattssn, Mikko Hemilä, Jamie Ogletree, a _, James Coleman, Martial, Emil Andersson, Ouro Boros, Chad Idk, Steam Steam, CryptoTraderJK, Yuji Kaneko, Davaitamin, Rops Alot, tedcor, Sam, Fotek Design, sjon kreutz, Ace Ventura, MadSpin, inbijiburu, Nick “Loadstone” D, momokai, starbugx, kudari, Naomi Hale Danchi, dc7431, ken, epicgamer0020690, Joshua Porrata, keemun, SuBu, RedPIXel, Wind, Nexus, Ramneek“Guy”Ashok, squid_actually, Nat_20, Edward Weeks, kyoumei, RadStorm04, JohnDoe42054, BillyHill, emyth, chriphost, KitKatM, socrasteeze, OrganicArtifact, Vir, gzmzmvp, Richard, Andrew, Robert Wegemund, Littlehuggy, Gregory Kozhemiak, Draven T, mrjuan, Brian Buie, Sadlip, Eric Whitney, Joey Callahan, Aquatic Coffee, Ivan Tadic, Mike Simone, ethanfel, Elliot E, Morgandel, Theerat Jiramate, Focuschannel, Noah, Jacob McDaniel, X, Sloan Steddy, Temikus, Artokun, Michael Taylor, Derek Baker, Anthony Faxlandez, battu, Michael Anthony Scott, Atilla Berke Pekduyar, Nathan, Decx _, Pat Hen, Jordan Shaw, Srdb, 四糸凜音, Nihongasuki, LarsesFPC, JC, Prompt Pirate, uwutismxd, FrxzenSnxw, zenobeus, Crocket, Jackthemind, ryoma, Stryker, ResidentDeviant, MudkipMedkitz, deanbrian, Alex Wortman, Cody, Raku, smart.edge5178, InformedViewz, CHKeeho80, Bubbafett, leaf, Menard, Skyfire83, Adam Rinehart, Pitpe11, TheD1rtyD03, moonpetal, SomeDude, g9p0o, Pkrsky, TheHolySheep, raf8osz, Monte Won, SpringBootisTrash, carsten, ikok, ElitaSSJ4, David Schenck, Wolfe7D1, blikkies, Chris, elleshar666, Shock Shockor, ACTUALLY_the_Real_Willem_Dafoe, Goldwaters, Kauffy, Zude, John J Linehan, Kyler, Edward Kennedy, Justin Blaylock, aRtFuL_DodGeR, Nick Kage, Vane Holzer, psytrax, Cyrus Fett, hexxish, notedfakes, Billy Gladky, NICHOLAS BAXLEY, Michael Scott, Probis, Ed Wang, Wes Sims, ItsGeneralButtNaked, Donor4115, g unit, Distortik, Filippo Ferrari, Youguang, Saya, andrewzpong, BossGame, lrdchs, Tree Tagger, Inversity, AIVORY3D, Kevinj, Mitchell Robson, Whitepinetrader, POPPIN, Ginnie, emadsultan, nanana, g, J, Alan+Cano, FeralOpticsAI, Pavlaki, Doug+Rintoul, Noor, Yorunai, quantenmecha, Jason+Nash, BillyBoy84, DarkRoast, letzte, Nasty+Hobbit, Sora+Yori, lrdchs2, Duk3+Rand0m, Nathen+Choi, T, cocona, Buecyb99, Welkor, John Martin, Ink Temptation, JBsuede, moranqianlong, Kalli Core, Time Valentine, Михал Михалыч, Matt, Frogmilk, SPJ, Kyron Mahan, Bryan Rutkowski, TBitz33, Anonym dkjglfleeoeldldldlkf, Ezokewn, SendingRavens, Xenon Xue, JackJohnnyJim, Edward Ten Eyck, Michael Docherty, Paul Hartsuyker, Henrique Faiolli, elitassj, Solixer, Jacob Winter, Ryan Presley Ng, jinksta187, Andrew Wilkinson, Manu Thetug, Karlanx, Lyavph, David, Meilo, operationancut, shinonomeiro, Snille, MaartenAlbers, khanh duy, xybrightsummer, jreedatchison, PhilW, Marcus thronico, Janik, Cruel, MRBlack, Kiyoe, humptynutz, michael.isaza, Kalnei, Scott, Muratoraccio, D, low9, Winged, YassineKhaled, Y, MatteKey, Flob, ShiroSenpai, Inkognito, G, Tan+Huynh, D, Dark_Pest, Alex, Jacky+Ho, Karru, ghoulars, ChaChanoKo, null, Beau, redcarrot, powerbot99, Fthehappy, generic404, abattoirblues, zounik, 4IXplr0r3r, hayden, ahoystan, Bob Barker, edk, Tú Nguyễn Lý Hoàng, Ronan Delevacq, Christian Schäfer, りん あめ, ja s, Doug Mason, Jeremy Townsend, Dave Abraham, Joaquin Hierrezuelo, Locrospiel, Sean voets, Owen Gwosdz, Jarrid Lee, Kor, Joseph Hanson, John Rednoulf, Boba Smith, Devil Lude, David Murcko, MR.Bear, Jack Dole, max blo, Sauv, Steven, CptNeo, TenaciousD, Dmitry Ryzhov, Khánh Đặng, Maso, Eric Ketchum, Kevin Wallace, Jimmy Borup, ChicRic, Tigon, BastardSama, mercur, Pete Pain, RHopkirk, Yavizu3d, Maxim, Yves Poezevara, Teriak47, Just me, Raf Stahelin, Вячеслав Маринин, Cola Matthew, OniNoKen, Iain Wisely, Zertens, NOHOW, Apo, nekotxt, choowkee, Clusters, ibrahim, Highlandrise, philcoraz, mztn, ImagineerNL, MrAcrtosSursus, al300680, pixl, Robin, chahknoir, nd, keno94d, James Melzer, Bartleby, Renvertere, Rahuy, Hermann003, D, Foolish, RevyHiep, Captain_Swag, obkircher, gwyar, ResidentDeviant, D, edgecase, Neoxena, mrmhalo, dg, Maarten Harms, Israel, SelfishMedic, adderleighn, EnragedAntelope, SRCRCOSS, imer, Akkas+Haque, Kachac, tyrant2811, Kevin, Rune+Osnes, jcx29, cloudghost, Yongkwan+Lee, PoorStudent, lucites, Alex+Zaw, Mobius2020, ExLightSaber, YaboiRay, Drizzly, Sildoren, Darvidous, Seon+Song, 2turbo, balut+omelette, Nebuleux, Dmitry+Viznesenskiy, Tanjin90, Somebody, sternenkrieger, eriick, Join+Chun, Pascalou, lighthawke, Terraformer, GDS+DEV, 4rt+r3d, you+halo9, Somebody, Somebody, Crescent~San, AiGirlTS, datasl4ve, Somebody, koopa990, The+Forgetful+Dev, Mateusz+Kosela, Bula, KUJYAKU, Coeur+de+cochon, Obsidian.Studios, han b, Zomba Mann, Aquaneo, Nico, Maximilian Krischan, Banana Joe, _ G3n, Donovan Jenkins, Hans Meier, shira1011, sicarius, Michael Eid, beersandbacon, Neko Desco, Bob barker, Ben D, Ninja Tom, G, karim ben brik, Vinarus, Michael Zhu, Nemisu, Seraphy, 雨の心 落, AllTimeNoobie, Leslie Andrew Ridings, jumpd, John C, Rim, Jairus Knudsen, Poophead27 Blyat, Xan Dionysus, Nathan lee, Lyle Liston, Middo, Forbidden Atelier, Thomas Sankowski, Spire, DrB, AZ Party Oasis, Adictedtohumping, Towelie, TheFusion, matt, dsffsdfsdfsdfsdfsdf, somethingtosay8, Jean-françois SEMA, 3zS4QNQ4, Terminuz, Kurt, ivistorm, Matt M., Ivan Imes, Faburizu, Jack Lawfield, jimyjomson, Borte, Chase Kwon, Ted Cart, Sage Himeros, Inyoshu, Chad Barnes, Person Y, David Spearing, James Ming, vanditking, kripitonga, Rizzi, nimin, OMAR LUCIANO, Somebody, CoffeeMage, Ken+Suzuki, hannibal, Jo+Example, BrentBertram, inusanorthcape, eumelzocker, dxjaymz, L C, Dude, Somebody, CK
 
 </details>
 
 <!-- SUPPORTERS-END -->
 
-## Release Notes
 
-### v1.0.0
-* **Extra Folder Paths Support** - Added support for additional model root paths exclusive to LoRA Manager. This allows loading LoRAs from extra locations outside ComfyUI's standard folders, helping avoid performance issues when working with large model libraries.
-* **Settings UI Overhaul** - Redesigned the Settings interface with a more organized layout, making it easier to find and configure application settings.
-* **Lazy Hash Computation** - Implemented lazy hash calculation for large model files (checkpoints and diffusion models). Hashes are now computed only when strictly necessary, minimizing redundant disk I/O and significantly accelerating application initialization.
-* **Milestone & Supporter Recognition** - Updated the Supporter window to show appreciation for all project supporters as this v1.0.0 milestone is reached. Great thanks to the community for the ongoing support!
-* **Bug Fixes & UX Enhancements** - Various bug fixes and user experience improvements for a smoother workflow.
-
-### v0.9.16
-* **Duplicate Detection Enhancement** - The model duplicates mode now respects filter configurations, making it easier to find duplicate groups within specific filtered results.
-* **Tag Logic Toggle** - Added OR/AND toggle for include tags filtering in the filters panel, providing more flexible tag-based model searches.
-* **Metadata Refresh Skip Paths** - New setting to exclude specific paths from metadata refresh operations. Models under these paths will be skipped when fetching metadata from remote sources.
-* **Dynamic Trigger Words in Prompt Node** - Prompt node now supports dynamic numbers of trigger word inputs for greater flexibility.
-* **Early Access Updates** - Model updates now display Early Access information, with a new setting to ignore Early Access updates if desired.
-* **LM Civitai Extension Integration** - Added integration with the LM Civitai Extension. Clicking the download button in model updates now sends downloads to the extension's download queue for seamless one-click downloads.
-
-### v0.9.15
-* **Filter Presets** - Save filter combinations as presets for quick switching and reapplication.
-* **Bug Fixes** - Fixed various bugs for improved stability.
-
-### v0.9.14
-* **LoRA Cycler Node** - Introduced a new LoRA Cycler node that enables iteration through specified LoRAs with support for repeat count and pause iteration functionality. Refer to the new "Lora Cycler" template workflow for concrete example.
-* **Enhanced Prompt Node with Tag Autocomplete** - Enhanced the Prompt node with comprehensive tag autocomplete based on merged Danbooru + e621 tags. Supports tag search and autocomplete functionality. Implemented a command system with shortcuts like `/char` or `/artist` for category-specific tag searching. Added `/ac` or `/noac` commands to quickly enable or disable autocomplete. Refer to the "Lora Manager Basic" template workflow in ComfyUI -> Templates -> ComfyUI-Lora-Manager for detailed tips.
-* **Bug Fixes & Stability** - Addressed multiple bugs and improved overall stability.
-
-### v0.9.12
-* **LoRA Randomizer System** - Introduced a comprehensive LoRA randomization system featuring LoRA Pool and LoRA Randomizer nodes for flexible and dynamic generation workflows.
-* **LoRA Randomizer Template** - Refer to the new "LoRA Randomizer" template workflow for detailed examples of flexible randomization modes, lock & reuse options, and other features.
-* **Recipe Folders** - Introduced a folder system for the Recipes page, allowing users to freely organize recipes just like they do with models.
-* **Recipe Bulk Operations** - Added bulk mode support for batch moving, deleting, and setting base models for selected recipes with intuitive controls like click-and-drag selection, drag-to-folder, and Ctrl+A (Select All).
-* **Prompt Search & Sorting** - Search recipes by prompt content and sort by Recipe Name, Imported Date, or LoRA Count for better browsing.
-* **Recipe Favorites** - Mark specific recipes as favorites for quick access.
-* **Video Recipe Support** - Enabled support for video recipes (import via LM extension or URL; video file import not supported).
-* **Performance Improvements** - Fixed performance issues for dramatically improved startup and loading speed. After first scan, subsequent loads are instant regardless of collection size.
-* **ComfyUI Nodes 2.0 Support** - Basic support for ComfyUI Nodes 2.0.
-
-### v0.9.10
-* **Smarter Update Matching** - Users can now choose to check and group updates by matching base model only or with no base-model constraint; version lists also support toggling between same-base versions or all versions.
-* **Flexible Tag Filtering** - The filter panel now supports tag exclusion: click a tag to include, click again to exclude, and click a third time to clear, enabling stronger and more flexible tag filters.
-* **License Visibility & Controls** - Model detail headers and ComfyUI preview popups now show Civitai license icons. The filter panel gains license include/exclude options, and a new global context menu action, "Refresh license metadata," fetches missing license data.
-* **Recipe Improvements** - Recipes now allow importing with zero LoRAs, and recipe detail pages show the related checkpoint for easier reference.
-* **Better ZIP Downloads** - When downloading models packaged in ZIPs, model files are extracted into the target model folder; ZIPs containing multiple model files (e.g., WanVideo high/low LoRA pairs) are added as separate models.
-* **Template Workflow Update** - Refreshed the "Illustrious Pony Example" template workflow with usage guidance for each LoRA Manager node.
-* **Bug Fixes & Stability** - General fixes and stability improvements.
-
-### v0.9.9
-* **Check for Updates Feature** - Users can now check for updates for all models or selected models in bulk mode. Models with available updates will display an "update available" badge on their model card, and users can filter to show only models with updates.
-* **Model Versions Management** - Added a new Versions tab in the model modal that centralizes all versions of a model, providing download, delete, and ignore update functions.
-* **Send Checkpoint to ComfyUI** - Users can now click the send button on a checkpoint card to send the checkpoint directly to the current workflow's checkpoint or diffusion model loader node in ComfyUI.
-* **Customizable Model Card Display** - Added a new setting that allows users to choose whether to display the model name or filename on model cards.
-* **New Path Template Placeholders** - Added new path template placeholders: `{model_name}` and `{version_name}` for more flexible organization.
-* **ComfyUI Auto Path Correction Setting** - Added a new setting within ComfyUI to enable or disable the auto path correction feature.
-
-### v0.9.8
-* **Full CivArchive API Support** - Added complete support for the CivArchive API as a fallback metadata source beyond Civitai API. Models deleted from Civitai can now still retrieve metadata through the CivArchive API.
-* **Download Models from CivArchive** - Added support for downloading models directly from CivArchive, similar to downloading from Civitai. Simply click the Download button and paste the model URL to download the corresponding model.
-* **Custom Priority Tags** - Introduced Custom Priority Tags feature, allowing users to define custom priority tags. These tags will appear as suggestions when editing tags or during auto organization/download using default paths, providing more precise and controlled folder organization. [Guide](https://github.com/willmiao/ComfyUI-Lora-Manager/wiki/Priority-Tags-Configuration-Guide)
-* **Drag and Drop Tag Reordering** - Added drag and drop functionality to reorder tags in the tags edit mode for improved usability.
-* **Download Control in Example Images Panel** - Added stop control in the Download Example Images Panel for better download management.
-* **Prompt (LoraManager) Node with Autocomplete** - Added new Prompt (LoraManager) node with autocomplete feature for adding embeddings.
-* **Lora Manager Nodes in Subgraphs** - Lora Manager nodes now support being placed within subgraphs for more flexible workflow organization.
-
-### v0.9.6
-* **Metadata Archive Database Support** - Added the ability to download and utilize a metadata archive database, enabling access to metadata for models that have been deleted from CivitAI.
-* **App-Level Proxy Settings** - Introduced support for configuring a global proxy within the application, making it easier to use the manager behind network restrictions.
-* **Bug Fixes** - Various bug fixes for improved stability and reliability.
-
-### v0.9.2
-* **Bulk Auto-Organization Action** - Added a new bulk auto-organization feature. You can now select multiple models and automatically organize them according to your current path template settings for streamlined management.
-* **Bug Fixes** - Addressed several bugs to improve stability and reliability.
-
-### v0.9.1
-* **Enhanced Bulk Operations** - Improved bulk operations with Marquee Selection and a bulk operation context menu, providing a more intuitive, desktop-application-like user experience.
-* **New Bulk Actions** - Added bulk operations for adding tags and setting base models to multiple models simultaneously.
-
-### v0.9.0
-* **UI Overhaul for Enhanced Navigation** - Replaced the top flat folder tags with a new folder sidebar and breadcrumb navigation system for a more intuitive folder browsing and selection experience.
-* **Dual-Mode Folder Sidebar** - The new folder sidebar offers two display modes: 'List Mode,' which mirrors the classic folder view, and 'Tree Mode,' which presents a hierarchical folder structure for effortless navigation through nested directories.
-* **Internationalization Support** - Introduced multi-language support, now available in English, Simplified Chinese, Traditional Chinese, Spanish, Japanese, Korean, French, Russian, and German. Feedback from native speakers is welcome to improve the translations.
-* **Automatic Filename Conflict Resolution** - Implemented automatic file renaming (`original name + short hash`) to prevent conflicts when downloading or moving models.
-* **Performance Optimizations & Bug Fixes** - Various performance improvements and bug fixes for a more stable and responsive experience.
-
-[View Update History](./update_logs.md)
-
----
 
 ## **⚠ Important Note**: To use the CivitAI download feature, you'll need to:
 
@@ -179,6 +94,8 @@ Insomnia Art Designs, megakirbs, Brennok, wackop, 2018cfh, Takkan, stone9k, $Met
   - Context menu for quick actions
   - Custom notes and usage tips
   - Multi-folder support
+  - Configurable mature blur threshold (`PG13` / `R` / `X` / `XXX`, default `R+`)
+    - Example: setting threshold to `PG13` blurs `PG13`, `R`, `X`, and `XXX` previews when blur is enabled
   - Visual progress indicators during initialization
 
 ---
@@ -194,7 +111,7 @@ Insomnia Art Designs, megakirbs, Brennok, wackop, 2018cfh, Takkan, stone9k, $Met
 
 ### Option 2: **Portable Standalone Edition** (No ComfyUI required)
 
-1. Download the [Portable Package](https://github.com/willmiao/ComfyUI-Lora-Manager/releases/download/v1.0.0/lora_manager_portable.7z)
+1. Download the [Portable Package](https://github.com/willmiao/ComfyUI-Lora-Manager/releases/download/v1.0.10/lora_manager_portable.7z)
 2. Copy the provided `settings.json.example` file to create a new file named `settings.json` in `comfyui-lora-manager` folder.
 3. Edit the new `settings.json` to include your correct model folder paths and CivitAI API key
    - Set `"use_portable_settings": true` if you want the configuration to remain inside the repository folder instead of your user settings directory.
@@ -226,6 +143,41 @@ pip install -r requirements.txt
    - Click copy button or use right-click menu "Copy LoRA syntax"
    - Paste into the Lora Loader node's text input
    - The node will automatically apply preset strength and trigger words
+
+### Wildcards for TextLM / PromptLM
+
+`Text (LoraManager)` and `Prompt (LoraManager)` support `/wildcard` autocomplete plus runtime wildcard expansion.
+
+- Wildcard files live in `{settings folder}/wildcards/`
+- When you type `/wildcard` and no wildcard files exist yet, the autocomplete dropdown shows the exact folder path and lets you open it
+- Supported formats: `.txt`, `.yaml`, `.yml`, `.json`
+
+Format rules:
+
+- `wildcards/animals/cat.txt` becomes `__animals/cat__`
+- `.txt` files use one option per line
+- YAML / JSON files use nested keys that end in string arrays
+
+Examples:
+
+```txt
+# wildcards/color.txt
+red
+blue
+green
+```
+
+Use it as `__color__`.
+
+```yaml
+# wildcards/colors.yaml
+palette:
+  warm:
+    - red
+    - orange
+```
+
+Use it as `__palette/warm__`.
 
 ### Filename Format Patterns for Save Image Node
 
@@ -321,6 +273,12 @@ npm run test:coverage
 
 ---
 
+## Documentation
+
+- **[metadata.json Schema Documentation](docs/metadata-json-schema.md)** — Complete reference for the `.metadata.json` sidecar file format, including all fields, types, and examples for LoRA, Checkpoint, and Embedding models.
+
+---
+
 ## Contributing
 
 Thank you for your interest in contributing to ComfyUI LoRA Manager! As this project is currently in its early stages and undergoing rapid development and refactoring, we are temporarily not accepting pull requests.
@@ -338,6 +296,7 @@ We appreciate your understanding and look forward to potentially accepting code 
 
 This project has been inspired by and benefited from other excellent ComfyUI extensions:
 
+- [ComfyUI-QwenImageLoraLoader](https://github.com/ussoewwin/ComfyUI-QwenImageLoraLoader) - For the experimental Nunchaku Qwen-Image LoRA support
 - [ComfyUI-SaveImageWithMetaData](https://github.com/nkchocoai/ComfyUI-SaveImageWithMetaData) - For the image metadata functionality
 - [rgthree-comfy](https://github.com/rgthree/rgthree-comfy) - For the lora loader functionality
 

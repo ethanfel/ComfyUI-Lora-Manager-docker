@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 # We define these here to help with spec= if needed
 class MockCivitaiClient:
-    async def get_image_info(self, image_id):
+    async def get_image_info(self, image_id, source_url=None):
         pass
 
 class MockPersistenceService:
@@ -77,7 +77,7 @@ async def test_repair_all_recipes_with_enriched_checkpoint_id(setup_scanner):
     recipe = {
         "id": "r1",
         "title": "Old Recipe",
-        "source_url": "https://civitai.com/images/12345",
+        "source_path": "https://civitai.com/images/12345",
         "checkpoint": None,
         "gen_params": {"prompt": ""}
     }
@@ -94,7 +94,7 @@ async def test_repair_all_recipes_with_enriched_checkpoint_id(setup_scanner):
         "id": 5678,
         "modelId": 1234,
         "name": "v1.0",
-        "model": {"name": "Full Model Name"},
+        "model": {"name": "Full Model Name", "type": "Checkpoint"},
         "baseModel": "SDXL 1.0",
         "images": [{"url": "https://image.url/thumb.jpg"}],
         "files": [{"type": "Model", "hashes": {"SHA256": "ABCDEF"}, "name": "full_filename.safetensors"}]
@@ -119,6 +119,50 @@ async def test_repair_all_recipes_with_enriched_checkpoint_id(setup_scanner):
     assert "hash" not in checkpoint
     assert "file_name" not in checkpoint
 
+
+@pytest.mark.asyncio
+async def test_repair_all_recipes_supports_civitai_red_source_url(setup_scanner):
+    recipe_scanner, mock_civitai_client, mock_metadata_provider = setup_scanner
+
+    recipe = {
+        "id": "r1",
+        "title": "Red Recipe",
+        "source_path": "https://civitai.red/images/12345",
+        "checkpoint": None,
+        "gen_params": {"prompt": ""},
+    }
+    recipe_scanner._cache = SimpleNamespace(raw_data=[recipe])
+
+    mock_civitai_client.get_image_info.return_value = {
+        "modelVersionId": 5678,
+        "meta": {"prompt": "from red"},
+    }
+    mock_metadata_provider.get_model_version_info.return_value = (
+        {
+            "id": 5678,
+            "modelId": 1234,
+            "name": "v1.0",
+            "model": {"name": "Full Model Name", "type": "Checkpoint"},
+            "baseModel": "SDXL 1.0",
+            "images": [{"url": "https://image.url/thumb.jpg"}],
+            "files": [
+                {
+                    "type": "Model",
+                    "hashes": {"SHA256": "ABCDEF"},
+                    "name": "full_filename.safetensors",
+                }
+            ],
+        },
+        None,
+    )
+
+    results = await recipe_scanner.repair_all_recipes()
+
+    assert results["repaired"] == 1
+    mock_civitai_client.get_image_info.assert_called_with(
+        "12345", source_url="https://civitai.red/images/12345"
+    )
+
 @pytest.mark.asyncio
 async def test_repair_all_recipes_with_enriched_checkpoint_hash(setup_scanner):
     recipe_scanner, mock_civitai_client, mock_metadata_provider = setup_scanner
@@ -139,7 +183,7 @@ async def test_repair_all_recipes_with_enriched_checkpoint_hash(setup_scanner):
         "id": 999,
         "modelId": 888,
         "name": "v2.0",
-        "model": {"name": "Hashed Model"},
+        "model": {"name": "Hashed Model", "type": "Checkpoint"},
         "baseModel": "SD 1.5",
         "files": [{"type": "Model", "hashes": {"SHA256": "hash123"}, "name": "hashed.safetensors"}]
     }, None)

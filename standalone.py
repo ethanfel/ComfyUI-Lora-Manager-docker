@@ -113,6 +113,8 @@ import asyncio
 import logging
 from aiohttp import web
 
+from py.utils.session_logging import setup_standalone_session_logging
+
 # Increase allowable header size to align with in-ComfyUI configuration.
 HEADER_SIZE_LIMIT = 16384
 
@@ -124,6 +126,8 @@ logger = logging.getLogger("lora-manager-standalone")
 
 # Configure aiohttp access logger to be less verbose
 logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
+
+setup_standalone_session_logging(ensure_settings_file(logger))
 
 
 # Add specific suppression for connection reset errors
@@ -345,6 +349,7 @@ class StandaloneLoraManager(LoraManager):
             "/ws/download-progress", ws_manager.handle_download_connection
         )
         app.router.add_get("/ws/init-progress", ws_manager.handle_init_connection)
+        app.router.add_get("/ws/batch-import-progress", ws_manager.handle_connection)
 
         # Schedule service initialization
         app.on_startup.append(lambda app: cls._initialize_services())

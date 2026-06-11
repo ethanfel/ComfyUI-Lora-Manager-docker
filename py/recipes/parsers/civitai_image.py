@@ -6,6 +6,7 @@ from typing import Dict, Any, Union
 from ..base import RecipeMetadataParser
 from ..constants import GEN_PARAM_KEYS
 from ...services.metadata_service import get_default_metadata_provider
+from ...config import config
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,7 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
                 "height",
                 "Model",
                 "Model hash",
+                "modelVersionIds",
             )
             return any(key in payload for key in civitai_image_fields)
 
@@ -72,7 +74,8 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
         return False
 
     async def parse_metadata(  # type: ignore[override]
-        self, user_comment, recipe_scanner=None, civitai_client=None
+        self, user_comment, recipe_scanner=None, civitai_client=None,
+        local_cache: dict[str, Any] | None = None,
     ) -> Dict[str, Any]:
         """Parse metadata from Civitai image format
 
@@ -80,6 +83,8 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
             user_comment: The metadata from the image (dict)
             recipe_scanner: Optional recipe scanner service
             civitai_client: Optional Civitai API client (deprecated, use metadata_provider instead)
+            local_cache: Optional dict mapping sha256/autov3 hash → scanner cache item.
+                         When provided, matching models skip CivitAI API calls.
 
         Returns:
             Dict containing parsed recipe data
@@ -184,8 +189,77 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
             # Process standard resources array
             if "resources" in metadata and isinstance(metadata["resources"], list):
                 for resource in metadata["resources"]:
+                    resource_type = resource.get("type", "lora")
+
+                    # Track resources with type "model" — these are checkpoint models.
+                    # The resources array is the most reliable source for checkpoint
+                    # identification because it has an explicit type field and hash,
+                    # unlike modelVersionIds which is a flat list with no type info.
+                    if resource_type == "model":
+                        checkpoint_entry = {
+                            "id": 0,
+                            "modelId": 0,
+                            "name": resource.get("name", "Unknown Model"),
+                            "version": "",
+                            "type": resource.get("type", "model"),
+                            "existsLocally": False,
+                            "localPath": None,
+                            "file_name": resource.get("name", ""),
+                            "hash": resource.get("hash", "") or "",
+                            "thumbnailUrl": "/loras_static/images/no-preview.png",
+                            "baseModel": "",
+                            "size": 0,
+                            "downloadUrl": "",
+                            "isDeleted": False,
+                        }
+
+                        # Try to look up base model from the checkpoint hash
+                        cp_hash = checkpoint_entry.get("hash")
+                        if cp_hash and metadata_provider:
+                            local_cached = local_cache.get(cp_hash) if local_cache else None
+                            if local_cached:
+                                self._populate_entry_from_cache(
+                                    checkpoint_entry, local_cached
+                                )
+                                bm = checkpoint_entry.get("baseModel", "")
+                                if bm and not result["base_model"]:
+                                    result["base_model"] = bm
+                            else:
+                                try:
+                                    civitai_info = (
+                                        await metadata_provider.get_model_by_hash(
+                                            cp_hash
+                                        )
+                                    )
+                                    civitai_data, error_msg = (
+                                        (civitai_info, None)
+                                        if not isinstance(civitai_info, tuple)
+                                        else civitai_info
+                                    )
+                                    if civitai_data and error_msg != "Model not found":
+                                        if 'model' in civitai_data and 'name' in civitai_data['model']:
+                                            checkpoint_entry['name'] = civitai_data['model']['name']
+                                        checkpoint_entry['id'] = civitai_data.get('id', 0)
+                                        checkpoint_entry['modelId'] = civitai_data.get('modelId', 0)
+                                        if 'name' in civitai_data:
+                                            checkpoint_entry['version'] = civitai_data['name']
+                                        base_model = civitai_data.get('baseModel', '')
+                                        if base_model:
+                                            checkpoint_entry['baseModel'] = base_model
+                                            if not result['base_model']:
+                                                result['base_model'] = base_model
+                                except Exception as e:
+                                    logger.error(
+                                        f"Error fetching checkpoint info for hash "
+                                        f"{cp_hash}: {e}"
+                                    )
+
+                        if result["model"] is None:
+                            result["model"] = checkpoint_entry
+                        continue
+
                     # Modified to process resources without a type field as potential LoRAs
-                    if resource.get("type", "lora") == "lora":
+                    if resource_type == "lora":
                         lora_hash = resource.get("hash", "")
 
                         # Try to get hash from the hashes field if not present in resource
@@ -219,34 +293,45 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
                         }
 
                         # Try to get info from Civitai if hash is available
-                        if lora_entry["hash"] and metadata_provider:
-                            try:
-                                civitai_info = (
-                                    await metadata_provider.get_model_by_hash(lora_hash)
+                        if lora_hash and metadata_provider:
+                            local_cached = local_cache.get(lora_hash) if local_cache else None
+                            if local_cached:
+                                self._populate_entry_from_cache(
+                                    lora_entry, local_cached
                                 )
-
-                                populated_entry = await self.populate_lora_from_civitai(
-                                    lora_entry,
-                                    civitai_info,
-                                    recipe_scanner,
-                                    base_model_counts,
-                                    lora_hash,
-                                )
-
-                                if populated_entry is None:
-                                    continue  # Skip invalid LoRA types
-
-                                lora_entry = populated_entry
-
-                                # If we have a version ID from Civitai, track it for deduplication
-                                if "id" in lora_entry and lora_entry["id"]:
+                                # Track by version ID for deduplication
+                                if lora_entry.get("id"):
                                     added_loras[str(lora_entry["id"])] = len(
                                         result["loras"]
                                     )
-                            except Exception as e:
-                                logger.error(
-                                    f"Error fetching Civitai info for LoRA hash {lora_entry['hash']}: {e}"
-                                )
+                            else:
+                                try:
+                                    civitai_info = (
+                                        await metadata_provider.get_model_by_hash(lora_hash)
+                                    )
+
+                                    populated_entry = await self.populate_lora_from_civitai(
+                                        lora_entry,
+                                        civitai_info,
+                                        recipe_scanner,
+                                        base_model_counts,
+                                        lora_hash,
+                                    )
+
+                                    if populated_entry is None:
+                                        continue  # Skip invalid LoRA types
+
+                                    lora_entry = populated_entry
+
+                                    # If we have a version ID from Civitai, track it for deduplication
+                                    if "id" in lora_entry and lora_entry["id"]:
+                                        added_loras[str(lora_entry["id"])] = len(
+                                            result["loras"]
+                                        )
+                                except Exception as e:
+                                    logger.error(
+                                        f"Error fetching Civitai info for LoRA hash {lora_entry['hash']}: {e}"
+                                    )
 
                         # Track by hash if we have it
                         if lora_hash:
@@ -429,6 +514,65 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
 
                         result["loras"].append(lora_entry)
 
+            # Process modelVersionIds from Civitai image API
+            # These are model version IDs returned at root level when meta doesn't contain resources
+            if "modelVersionIds" in metadata and isinstance(
+                metadata["modelVersionIds"], list
+            ):
+                for version_id in metadata["modelVersionIds"]:
+                    version_id_str = str(version_id)
+
+                    # Skip if we've already added this LoRA by version ID
+                    if version_id_str in added_loras:
+                        continue
+
+                    # Initialize lora entry with version ID
+                    lora_entry = {
+                        "id": version_id,
+                        "modelId": 0,
+                        "name": "Unknown LoRA",
+                        "version": "",
+                        "type": "lora",
+                        "weight": 1.0,
+                        "existsLocally": False,
+                        "thumbnailUrl": "/loras_static/images/no-preview.png",
+                        "baseModel": "",
+                        "size": 0,
+                        "downloadUrl": "",
+                        "isDeleted": False,
+                    }
+
+                    # Fetch model info from Civitai
+                    if metadata_provider and version_id_str:
+                        try:
+                            civitai_info = (
+                                await metadata_provider.get_model_version_info(
+                                    version_id_str
+                                )
+                            )
+
+                            populated_entry = await self.populate_lora_from_civitai(
+                                lora_entry,
+                                civitai_info,
+                                recipe_scanner,
+                                base_model_counts,
+                            )
+
+                            if populated_entry is None:
+                                continue  # Skip invalid LoRA types
+
+                            lora_entry = populated_entry
+                        except Exception as e:
+                            logger.error(
+                                f"Error fetching Civitai info for model version {version_id}: {e}"
+                            )
+
+                    # Track this LoRA for deduplication
+                    if version_id_str:
+                        added_loras[version_id_str] = len(result["loras"])
+
+                    result["loras"].append(lora_entry)
+
             # If we found LoRA hashes in the metadata but haven't already
             # populated entries for them, fall back to creating LoRAs from
             # the hashes section. Some Civitai image responses only include
@@ -565,3 +709,41 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
         except Exception as e:
             logger.error(f"Error parsing Civitai image metadata: {e}", exc_info=True)
             return {"error": str(e), "loras": []}
+
+    @staticmethod
+    def _populate_entry_from_cache(
+        entry: dict[str, Any],
+        cache_item: dict[str, Any],
+    ) -> None:
+        """Fill a lora/checkpoint entry from a scanner cache item.
+
+        Avoids CivitAI API calls for models that exist locally.
+        Mirrors the population logic in
+        ``RecipeMetadataParser.populate_lora_from_civitai()`` but operates
+        entirely on cached data.
+        """
+        civ = cache_item.get("civitai") or {}
+        if isinstance(civ, dict):
+            if civ.get("id") is not None:
+                entry["id"] = civ["id"]
+            if civ.get("modelId") is not None:
+                entry["modelId"] = civ["modelId"]
+            if civ.get("name"):
+                entry["version"] = civ["name"]
+            cached_name = cache_item.get("model_name")
+            if cached_name:
+                entry["name"] = cached_name
+        entry["existsLocally"] = True
+        local_path = cache_item.get("file_path")
+        if local_path:
+            entry["localPath"] = local_path
+        sha256 = cache_item.get("sha256")
+        if sha256:
+            entry["hash"] = sha256
+        if "preview_url" in cache_item:
+            entry["thumbnailUrl"] = config.get_preview_static_url(
+                cache_item["preview_url"]
+            )
+        base_model = cache_item.get("base_model", "")
+        if base_model:
+            entry["baseModel"] = base_model

@@ -1,19 +1,112 @@
 // Recipe Modal Component
-import { showToast, copyToClipboard, sendModelPathToWorkflow, openCivitaiByMetadata } from '../utils/uiHelpers.js';
+import { showToast, copyToClipboard, sendLoraToWorkflow, sendModelPathToWorkflow, openCivitaiByMetadata } from '../utils/uiHelpers.js';
 import { translate } from '../utils/i18nHelpers.js';
 import { state } from '../state/index.js';
-import { setSessionItem, removeSessionItem } from '../utils/storageHelpers.js';
-import { updateRecipeMetadata } from '../api/recipeApi.js';
+import { setSessionItem, removeSessionItem, getStorageItem, setStorageItem } from '../utils/storageHelpers.js';
+import { fetchRecipeDetails, updateRecipeMetadata } from '../api/recipeApi.js';
 import { downloadManager } from '../managers/DownloadManager.js';
 import { MODEL_TYPES } from '../api/apiConfig.js';
+import { openMediaViewer } from './shared/MediaViewer.js';
+
+const ALLOWED_GEN_PARAM_KEYS = new Set([
+    'prompt',
+    'negative_prompt',
+    'steps',
+    'sampler',
+    'cfg_scale',
+    'seed',
+    'size',
+    'clip_skip',
+    'denoising_strength',
+]);
+
+const GEN_PARAM_NORMALIZATION = {
+    cfg: 'cfg_scale',
+    cfgScale: 'cfg_scale',
+    clipSkip: 'clip_skip',
+    negativePrompt: 'negative_prompt',
+    Sampler: 'sampler',
+    sampler_name: 'sampler',
+    scheduler: 'sampler',
+    Steps: 'steps',
+    Seed: 'seed',
+    Size: 'size',
+    Prompt: 'prompt',
+    'Negative prompt': 'negative_prompt',
+    'Cfg scale': 'cfg_scale',
+    'Clip skip': 'clip_skip',
+    'Denoising strength': 'denoising_strength',
+};
 
 class RecipeModal {
     constructor() {
+        this.promptEditorState = {};
+        this.recipeHydrationRequestId = 0;
+        this.resetLocalEditState();
         this.init();
+    }
+
+    createLocalEditState() {
+        return {
+            title: { commitVersion: 0, isDirty: false },
+            tags: { commitVersion: 0, isDirty: false },
+            prompt: { commitVersion: 0, isDirty: false },
+            negative_prompt: { commitVersion: 0, isDirty: false },
+            source_path: { commitVersion: 0, isDirty: false },
+        };
+    }
+
+    resetLocalEditState() {
+        this.localEditState = this.createLocalEditState();
+        this.sourceUrlEditState = this.localEditState.source_path;
+    }
+
+    getLocalEditState(field) {
+        if (!this.localEditState[field]) {
+            this.localEditState[field] = { commitVersion: 0, isDirty: false };
+        }
+        return this.localEditState[field];
+    }
+
+    markFieldDirty(field) {
+        this.getLocalEditState(field).isDirty = true;
+    }
+
+    clearFieldDirty(field) {
+        this.getLocalEditState(field).isDirty = false;
+    }
+
+    commitField(field) {
+        const fieldState = this.getLocalEditState(field);
+        fieldState.isDirty = false;
+        fieldState.commitVersion += 1;
+    }
+
+    captureLocalEditVersions() {
+        return Object.fromEntries(
+            Object.entries(this.localEditState).map(([field, state]) => [
+                field,
+                state.commitVersion,
+            ])
+        );
+    }
+
+    shouldPreserveField(field, requestVersions) {
+        const fieldState = this.getLocalEditState(field);
+        const requestVersion = requestVersions?.[field] ?? fieldState.commitVersion;
+        return fieldState.isDirty || fieldState.commitVersion !== requestVersion;
+    }
+
+    hasFieldCommittedSinceRequest(field, requestVersions) {
+        const fieldState = this.getLocalEditState(field);
+        const requestVersion = requestVersions?.[field] ?? fieldState.commitVersion;
+        return fieldState.commitVersion !== requestVersion;
     }
 
     init() {
         this.setupCopyButtons();
+        this.setupStripLoraToggle();
+        this.setupPromptEditors();
         // Set up tooltip positioning handlers after DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
             this.setupTooltipPositioning();
@@ -21,6 +114,23 @@ class RecipeModal {
 
         // Set up document click handler to close edit fields
         document.addEventListener('click', (event) => {
+            const recipeModal = document.getElementById('recipeModal');
+            if (recipeModal && recipeModal.style.display !== 'none') {
+                const mediaEl = event.target.closest('.recipe-preview-media');
+                if (mediaEl && mediaEl.tagName) {
+                    event.stopPropagation();
+                    const isVideo = mediaEl.tagName === 'VIDEO';
+                    const url = mediaEl.src || mediaEl.currentSrc;
+                    if (url) {
+                        openMediaViewer(url, {
+                            type: isVideo ? 'video' : 'image',
+                            title: document.getElementById('recipeModalTitle')?.textContent || ''
+                        });
+                    }
+                    return;
+                }
+            }
+
             // Handle title edit
             const titleEditor = document.getElementById('recipeTitleEditor');
             if (titleEditor && titleEditor.classList.contains('active') &&
@@ -85,19 +195,22 @@ class RecipeModal {
     }
 
     showRecipeDetails(recipe) {
+        const hydratedRecipe = recipe || {};
+        this.resetLocalEditState();
         // Store the full recipe for editing
-        this.currentRecipe = recipe;
+        this.currentRecipe = hydratedRecipe;
+        this.resetPromptEditors();
 
         // Set modal title with edit icon
         const modalTitle = document.getElementById('recipeModalTitle');
         if (modalTitle) {
             modalTitle.innerHTML = `
                 <div class="editable-content">
-                    <span class="content-text">${recipe.title || 'Recipe Details'}</span>
+                    <span class="content-text">${hydratedRecipe.title || 'Recipe Details'}</span>
                     <button class="edit-icon" title="Edit recipe name"><i class="fas fa-pencil-alt"></i></button>
                 </div>
                 <div id="recipeTitleEditor" class="content-editor">
-                    <input type="text" class="title-input" value="${recipe.title || ''}">
+                    <input type="text" class="title-input" value="${hydratedRecipe.title || ''}">
                 </div>
             `;
 
@@ -119,8 +232,9 @@ class RecipeModal {
         }
 
         // Store the recipe ID for copy syntax API call
-        this.recipeId = recipe.id;
-        this.filePath = recipe.file_path;
+        this.recipeId = hydratedRecipe.id;
+        this.filePath = hydratedRecipe.file_path;
+        this.listFilePath = hydratedRecipe.file_path;
 
         // Set recipe tags if they exist
         const tagsCompactElement = document.getElementById('recipeTagsCompact');
@@ -140,11 +254,11 @@ class RecipeModal {
 
             const tagsDisplay = tagsCompactElement.querySelector('.tags-display');
 
-            if (recipe.tags && recipe.tags.length > 0) {
+            if (hydratedRecipe.tags && hydratedRecipe.tags.length > 0) {
                 // Limit displayed tags to 5, show a "+X more" button if needed
                 const maxVisibleTags = 5;
-                const visibleTags = recipe.tags.slice(0, maxVisibleTags);
-                const remainingTags = recipe.tags.length > maxVisibleTags ? recipe.tags.slice(maxVisibleTags) : [];
+                const visibleTags = hydratedRecipe.tags.slice(0, maxVisibleTags);
+                const remainingTags = hydratedRecipe.tags.length > maxVisibleTags ? hydratedRecipe.tags.slice(maxVisibleTags) : [];
 
                 // Add visible tags
                 visibleTags.forEach(tag => {
@@ -181,7 +295,7 @@ class RecipeModal {
                     // Add all tags to tooltip
                     if (tagsTooltipContent) {
                         tagsTooltipContent.innerHTML = '';
-                        recipe.tags.forEach(tag => {
+                        hydratedRecipe.tags.forEach(tag => {
                             const tooltipTag = document.createElement('div');
                             tooltipTag.className = 'tooltip-tag';
                             tooltipTag.textContent = tag;
@@ -198,8 +312,8 @@ class RecipeModal {
             const tagsInput = tagsCompactElement.querySelector('.tags-input');
 
             // Set current tags in the input
-            if (recipe.tags && recipe.tags.length > 0) {
-                tagsInput.value = recipe.tags.join(', ');
+            if (hydratedRecipe.tags && hydratedRecipe.tags.length > 0) {
+                tagsInput.value = hydratedRecipe.tags.join(', ');
             }
 
             editTagsIcon.addEventListener('click', () => this.showTagsEditor());
@@ -219,49 +333,15 @@ class RecipeModal {
         // Set recipe image
         const mediaContainer = document.getElementById('recipePreviewContainer');
         if (mediaContainer) {
-            // Stop any playing video before replacing content
-            const existingVideo = mediaContainer.querySelector('video');
-            if (existingVideo) {
-                existingVideo.pause();
-                existingVideo.currentTime = 0;
-            }
-
-            // Clear the container
-            mediaContainer.innerHTML = '';
-
-            // Ensure file_url exists, fallback to file_path if needed
-            const imageUrl = recipe.file_url ||
-                (recipe.file_path ? `/loras_static/root1/preview/${recipe.file_path.split('/').pop()}` :
-                    '/loras_static/images/no-preview.png');
-
-            // Check if the file is a video (mp4)
-            const isVideo = imageUrl.toLowerCase().endsWith('.mp4');
-
-            if (isVideo) {
-                const videoElement = document.createElement('video');
-                videoElement.id = 'recipeModalVideo';
-                videoElement.src = imageUrl;
-                videoElement.controls = true;
-                videoElement.autoplay = false;
-                videoElement.loop = true;
-                videoElement.muted = true;
-                videoElement.className = 'recipe-preview-media';
-                videoElement.alt = recipe.title || 'Recipe Preview';
-                mediaContainer.appendChild(videoElement);
-            } else {
-                const imgElement = document.createElement('img');
-                imgElement.id = 'recipeModalImage';
-                imgElement.src = imageUrl;
-                imgElement.className = 'recipe-preview-media';
-                imgElement.alt = recipe.title || 'Recipe Preview';
-                mediaContainer.appendChild(imgElement);
-            }
+            this.syncPreviewMedia(hydratedRecipe);
+            mediaContainer.querySelector('.source-url-container')?.remove();
+            mediaContainer.querySelector('.source-url-editor')?.remove();
 
             // Add source URL container if the recipe has a source_path
             const sourceUrlContainer = document.createElement('div');
             sourceUrlContainer.className = 'source-url-container';
-            const hasSourceUrl = recipe.source_path && recipe.source_path.trim().length > 0;
-            const sourceUrl = hasSourceUrl ? recipe.source_path : '';
+            const hasSourceUrl = hydratedRecipe.source_path && hydratedRecipe.source_path.trim().length > 0;
+            const sourceUrl = hasSourceUrl ? hydratedRecipe.source_path : '';
             const isValidUrl = hasSourceUrl && (sourceUrl.startsWith('http://') || sourceUrl.startsWith('https://'));
 
             sourceUrlContainer.innerHTML = `
@@ -290,41 +370,299 @@ class RecipeModal {
             mediaContainer.appendChild(sourceUrlContainer);
             mediaContainer.appendChild(sourceUrlEditor);
 
-            // Set up event listeners for source URL functionality
+            // Delay binding slightly so modal layout is stable, but skip if this render was torn down.
+            const sourceUrlContainerRef = sourceUrlContainer;
+            const sourceUrlEditorRef = sourceUrlEditor;
             setTimeout(() => {
+                if (!document.body.contains(sourceUrlContainerRef) || !document.body.contains(sourceUrlEditorRef)) {
+                    return;
+                }
                 this.setupSourceUrlHandlers();
             }, 50);
         }
 
-        // Set generation parameters
+        this.syncGenerationParams(hydratedRecipe.gen_params);
+        this.syncResourcesSection(hydratedRecipe);
+        this.syncSourceUrlAction();
+
+        // Show the modal
+        modalManager.showModal('recipeModal');
+
+        if (this.recipeId) {
+            const hydrationRequestId = ++this.recipeHydrationRequestId;
+            const requestEditVersions = this.captureLocalEditVersions();
+            this.hydrateRecipeDetails(
+                this.recipeId,
+                hydrationRequestId,
+                requestEditVersions
+            );
+        }
+    }
+
+    async hydrateRecipeDetails(recipeId, requestId, requestEditVersions = {}) {
+        try {
+            const fullRecipe = await fetchRecipeDetails(recipeId);
+            if (requestId !== this.recipeHydrationRequestId || !fullRecipe) {
+                return;
+            }
+
+            const nextRecipe = { ...this.currentRecipe };
+
+            if (!this.hasFieldCommittedSinceRequest('title', requestEditVersions) && fullRecipe.title !== undefined) {
+                nextRecipe.title = fullRecipe.title;
+            }
+
+            if (!this.hasFieldCommittedSinceRequest('tags', requestEditVersions) && fullRecipe.tags !== undefined) {
+                nextRecipe.tags = Array.isArray(fullRecipe.tags) ? [...fullRecipe.tags] : fullRecipe.tags;
+            }
+
+            if (!this.hasFieldCommittedSinceRequest('source_path', requestEditVersions)) {
+                nextRecipe.source_path = fullRecipe.source_path || '';
+            }
+
+            const previousFilePath = nextRecipe.file_path;
+            if (fullRecipe.file_path !== undefined) {
+                nextRecipe.file_path = fullRecipe.file_path;
+            }
+            if (fullRecipe.file_url !== undefined) {
+                nextRecipe.file_url = fullRecipe.file_url;
+            }
+            if (fullRecipe.preview_url !== undefined) {
+                nextRecipe.preview_url = fullRecipe.preview_url;
+            }
+            if (
+                fullRecipe.file_path !== undefined &&
+                fullRecipe.file_path !== previousFilePath &&
+                fullRecipe.file_url === undefined &&
+                fullRecipe.preview_url === undefined
+            ) {
+                delete nextRecipe.file_url;
+                delete nextRecipe.preview_url;
+            }
+
+            if (fullRecipe.gen_params !== undefined) {
+                const previousGenParams = nextRecipe.gen_params || {};
+                const incomingGenParams = { ...(fullRecipe.gen_params || {}) };
+                for (const [key, value] of Object.entries(previousGenParams)) {
+                    if (this.hasFieldCommittedSinceRequest(key, requestEditVersions)) {
+                        incomingGenParams[key] = value;
+                    }
+                }
+                nextRecipe.gen_params = incomingGenParams;
+            } else {
+                const previousGenParams = nextRecipe.gen_params || {};
+                const preservedGenParams = {};
+                for (const [key, value] of Object.entries(previousGenParams)) {
+                    if (this.hasFieldCommittedSinceRequest(key, requestEditVersions)) {
+                        preservedGenParams[key] = value;
+                    }
+                }
+                nextRecipe.gen_params = preservedGenParams;
+            }
+
+            if (fullRecipe.checkpoint !== undefined) {
+                nextRecipe.checkpoint = fullRecipe.checkpoint;
+            } else {
+                delete nextRecipe.checkpoint;
+            }
+            if (fullRecipe.loras !== undefined) {
+                nextRecipe.loras = Array.isArray(fullRecipe.loras) ? [...fullRecipe.loras] : fullRecipe.loras;
+            } else {
+                delete nextRecipe.loras;
+            }
+
+            this.currentRecipe = nextRecipe;
+            this.filePath = this.currentRecipe.file_path || this.filePath;
+
+            this.syncHydratedRecipeFields(requestEditVersions);
+        } catch (error) {
+            // Keep the cached recipe visible if hydration fails.
+            console.warn('Failed to hydrate recipe details:', error);
+        }
+    }
+
+    syncHydratedRecipeFields(requestEditVersions = {}) {
+        this.syncPreviewMedia(this.currentRecipe);
+
+        if (!this.shouldPreserveField('title', requestEditVersions)) {
+            this.syncTitleDisplay(this.currentRecipe?.title || '');
+        }
+
+        if (!this.shouldPreserveField('tags', requestEditVersions)) {
+            this.syncTagsDisplay(this.currentRecipe?.tags || []);
+        }
+
+        if (!this.shouldPreserveField('prompt', requestEditVersions)) {
+            this.syncPromptField(
+                'prompt',
+                this.currentRecipe?.gen_params?.prompt || '',
+                'No prompt information available'
+            );
+        }
+
+        if (!this.shouldPreserveField('negative_prompt', requestEditVersions)) {
+            this.syncPromptField(
+                'negative_prompt',
+                this.currentRecipe?.gen_params?.negative_prompt || '',
+                'No negative prompt information available'
+            );
+        }
+
+        this.syncGenerationParams(this.currentRecipe?.gen_params, { promptFieldsOnly: true });
+        this.syncResourcesSection(this.currentRecipe);
+
+        if (!this.shouldPreserveField('source_path', requestEditVersions)) {
+            this.updateSourceUrlDisplay(this.currentRecipe.source_path || '', { forceInputSync: true });
+        } else {
+            this.updateSourceUrlDisplay(this.currentRecipe.source_path || '');
+        }
+        this.syncSourceUrlAction();
+    }
+
+    getPreviewMediaUrl(recipe = {}) {
+        return recipe.file_url ||
+            recipe.preview_url ||
+            (recipe.file_path ? `/loras_static/root1/preview/${recipe.file_path.split('/').pop()}` :
+                '/loras_static/images/no-preview.png');
+    }
+
+    syncPreviewMedia(recipe = {}) {
+        const mediaContainer = document.getElementById('recipePreviewContainer');
+        if (!mediaContainer) {
+            return;
+        }
+
+        const previewUrl = this.getPreviewMediaUrl(recipe);
+        const isVideo = previewUrl.toLowerCase().endsWith('.mp4');
+        const expectedElementId = isVideo ? 'recipeModalVideo' : 'recipeModalImage';
+        let previewElement = mediaContainer.querySelector(`#${expectedElementId}`);
+        const existingPreviewElement = mediaContainer.querySelector('.recipe-preview-media');
+
+        if (!previewElement || (existingPreviewElement && existingPreviewElement !== previewElement)) {
+            if (existingPreviewElement?.tagName === 'VIDEO') {
+                const existingVideo = existingPreviewElement;
+                existingVideo.pause();
+                existingVideo.currentTime = 0;
+            }
+
+            existingPreviewElement?.remove();
+            previewElement = document.createElement(isVideo ? 'video' : 'img');
+            previewElement.id = expectedElementId;
+            previewElement.className = 'recipe-preview-media';
+            mediaContainer.prepend(previewElement);
+        }
+
+        previewElement.src = previewUrl;
+        previewElement.alt = recipe.title || 'Recipe Preview';
+
+        if (isVideo) {
+            previewElement.controls = true;
+            previewElement.autoplay = false;
+            previewElement.loop = true;
+            previewElement.muted = true;
+        }
+    }
+
+    getMetadataUpdateOptions() {
+        return this.listFilePath ? { listFilePath: this.listFilePath } : {};
+    }
+
+    syncTitleDisplay(title) {
+        const titleContainer = document.getElementById('recipeModalTitle');
+        if (!titleContainer) {
+            return;
+        }
+
+        const contentText = titleContainer.querySelector('.content-text');
+        if (contentText) {
+            contentText.textContent = title || 'Recipe Details';
+        }
+
+        const titleInput = titleContainer.querySelector('.title-input');
+        if (titleInput) {
+            titleInput.value = title || '';
+        }
+    }
+
+    syncSourceUrlAction() {
+        const actionsContainer = document.getElementById('recipeHeaderActions');
+        if (!actionsContainer) {
+            return;
+        }
+
+        actionsContainer.innerHTML = '';
+
+        const sourcePath = this.currentRecipe?.source_path || '';
+        const isValidUrl = sourcePath.startsWith('http://') || sourcePath.startsWith('https://');
+        if (!isValidUrl) {
+            return;
+        }
+
+        const btn = document.createElement('button');
+        btn.className = 'recipe-source-url-btn';
+        btn.title = sourcePath;
+        btn.innerHTML = '<i class="fas fa-globe"></i> Open Source URL';
+        btn.addEventListener('click', () => {
+            window.open(sourcePath, '_blank');
+        });
+        actionsContainer.appendChild(btn);
+    }
+
+    syncTagsDisplay(tags) {
+        const tagsContainer = document.getElementById('recipeTagsCompact');
+        if (!tagsContainer) {
+            return;
+        }
+
+        this.updateTagsDisplay(tagsContainer, tags || []);
+
+        const tagsInput = tagsContainer.querySelector('.tags-input');
+        if (tagsInput) {
+            tagsInput.value = tags && tags.length > 0 ? tags.join(', ') : '';
+        }
+    }
+
+    syncPromptField(field, value, placeholder) {
+        const contentId = field === 'prompt' ? 'recipePrompt' : 'recipeNegativePrompt';
+        const editorId = field === 'prompt' ? 'recipePromptEditor' : 'recipeNegativePromptEditor';
+        const inputId = field === 'prompt' ? 'recipePromptInput' : 'recipeNegativePromptInput';
+
+        this.renderPromptContent(document.getElementById(contentId), value, placeholder);
+
+        const input = document.getElementById(inputId);
+        if (input) {
+            input.value = value || '';
+        }
+    }
+
+    syncGenerationParams(genParams, options = {}) {
         const promptElement = document.getElementById('recipePrompt');
         const negativePromptElement = document.getElementById('recipeNegativePrompt');
         const otherParamsElement = document.getElementById('recipeOtherParams');
+        const promptInput = document.getElementById('recipePromptInput');
+        const negativePromptInput = document.getElementById('recipeNegativePromptInput');
+        const promptFieldsOnly = options.promptFieldsOnly === true;
+        const sanitizedGenParams = this.sanitizeGenParams(genParams);
 
-        if (recipe.gen_params) {
-            // Set prompt
-            if (promptElement && recipe.gen_params.prompt) {
-                promptElement.textContent = recipe.gen_params.prompt;
-            } else if (promptElement) {
-                promptElement.textContent = 'No prompt information available';
+        if (sanitizedGenParams) {
+            if (!promptFieldsOnly) {
+                this.renderPromptContent(promptElement, sanitizedGenParams.prompt, 'No prompt information available');
+                this.renderPromptContent(negativePromptElement, sanitizedGenParams.negative_prompt, 'No negative prompt information available');
+
+                if (promptInput) {
+                    promptInput.value = sanitizedGenParams.prompt || '';
+                }
+
+                if (negativePromptInput) {
+                    negativePromptInput.value = sanitizedGenParams.negative_prompt || '';
+                }
             }
 
-            // Set negative prompt
-            if (negativePromptElement && recipe.gen_params.negative_prompt) {
-                negativePromptElement.textContent = recipe.gen_params.negative_prompt;
-            } else if (negativePromptElement) {
-                negativePromptElement.textContent = 'No negative prompt information available';
-            }
-
-            // Set other parameters
             if (otherParamsElement) {
-                // Clear previous params
                 otherParamsElement.innerHTML = '';
-
-                // Add all other parameters except prompt and negative_prompt
                 const excludedParams = ['prompt', 'negative_prompt'];
 
-                for (const [key, value] of Object.entries(recipe.gen_params)) {
+                for (const [key, value] of Object.entries(sanitizedGenParams)) {
                     if (!excludedParams.includes(key) && value !== undefined && value !== null) {
                         const paramTag = document.createElement('div');
                         paramTag.className = 'param-tag';
@@ -336,20 +674,68 @@ class RecipeModal {
                     }
                 }
 
-                // If no other params, show a message
                 if (otherParamsElement.children.length === 0) {
                     otherParamsElement.innerHTML = '<div class="no-params">No additional parameters available</div>';
                 }
             }
-        } else {
-            // No generation parameters available
-            if (promptElement) promptElement.textContent = 'No prompt information available';
-            if (negativePromptElement) promptElement.textContent = 'No negative prompt information available';
-            if (otherParamsElement) otherParamsElement.innerHTML = '<div class="no-params">No parameters available</div>';
+            return;
         }
 
+        if (!promptFieldsOnly) {
+            this.renderPromptContent(promptElement, '', 'No prompt information available');
+            this.renderPromptContent(negativePromptElement, '', 'No negative prompt information available');
+            if (promptInput) promptInput.value = '';
+            if (negativePromptInput) negativePromptInput.value = '';
+        }
+
+        if (otherParamsElement) {
+            otherParamsElement.innerHTML = '<div class="no-params">No parameters available</div>';
+        }
+    }
+
+    sanitizeGenParams(genParams) {
+        if (!genParams || typeof genParams !== 'object') {
+            return null;
+        }
+
+        const sanitized = {};
+
+        for (const [key, value] of Object.entries(genParams)) {
+            if (value === undefined || value === null || value === '') {
+                continue;
+            }
+
+            if (!ALLOWED_GEN_PARAM_KEYS.has(key)) {
+                continue;
+            }
+
+            sanitized[key] = value;
+        }
+
+        for (const [key, value] of Object.entries(genParams)) {
+            if (value === undefined || value === null || value === '') {
+                continue;
+            }
+
+            const normalizedKey = GEN_PARAM_NORMALIZATION[key] || key;
+            if (!ALLOWED_GEN_PARAM_KEYS.has(normalizedKey)) {
+                continue;
+            }
+
+            if (sanitized[normalizedKey] === undefined || sanitized[normalizedKey] === null || sanitized[normalizedKey] === '') {
+                sanitized[normalizedKey] = value;
+            }
+        }
+
+        return sanitized;
+    }
+
+    syncResourcesSection(recipe = {}) {
         const checkpointContainer = document.getElementById('recipeCheckpoint');
         const resourceDivider = document.getElementById('recipeResourceDivider');
+        const lorasListElement = document.getElementById('recipeLorasList');
+        const lorasCountElement = document.getElementById('recipeLorasCount');
+        const loras = Array.isArray(recipe.loras) ? recipe.loras : [];
 
         if (checkpointContainer) {
             checkpointContainer.innerHTML = '';
@@ -360,59 +746,43 @@ class RecipeModal {
             }
         }
 
-        // Set LoRAs list and count
-        const lorasListElement = document.getElementById('recipeLorasList');
-        const lorasCountElement = document.getElementById('recipeLorasCount');
-
-        // Check all LoRAs status
         let allLorasAvailable = true;
         let missingLorasCount = 0;
         let deletedLorasCount = 0;
 
-        if (recipe.loras && recipe.loras.length > 0) {
-            recipe.loras.forEach(lora => {
-                if (lora.isDeleted) {
-                    deletedLorasCount++;
-                } else if (!lora.inLibrary) {
-                    allLorasAvailable = false;
-                    missingLorasCount++;
-                }
-            });
-        }
+        loras.forEach(lora => {
+            if (lora.isDeleted) {
+                deletedLorasCount++;
+            } else if (!lora.inLibrary) {
+                allLorasAvailable = false;
+                missingLorasCount++;
+            }
+        });
 
-        // Set LoRAs count and status
-        if (lorasCountElement && recipe.loras) {
-            const totalCount = recipe.loras.length;
-
-            // Create status indicator based on LoRA states
+        if (lorasCountElement) {
+            const totalCount = loras.length;
             let statusHTML = '';
             if (totalCount > 0) {
                 if (allLorasAvailable && deletedLorasCount === 0) {
-                    // All LoRAs are available
                     statusHTML = `<div class="recipe-status ready"><i class="fas fa-check-circle"></i> Ready to use</div>`;
                 } else if (missingLorasCount > 0) {
-                    // Some LoRAs are missing (prioritize showing missing over deleted)
                     statusHTML = `<div class="recipe-status missing">
                         <i class="fas fa-exclamation-triangle"></i> ${missingLorasCount} missing
                         <div class="missing-tooltip">Click to download missing LoRAs</div>
                     </div>`;
                 } else if (deletedLorasCount > 0 && missingLorasCount === 0) {
-                    // Some LoRAs are deleted but none are missing
                     statusHTML = `<div class="recipe-status partial"><i class="fas fa-info-circle"></i> ${deletedLorasCount} deleted</div>`;
                 }
             }
 
             lorasCountElement.innerHTML = `<i class="fas fa-layer-group"></i> ${totalCount} LoRAs ${statusHTML}`;
 
-            // Add event listeners for buttons and status indicators
             setTimeout(() => {
-                // Set up click handler for View LoRAs button
                 const viewRecipeLorasBtn = document.getElementById('viewRecipeLorasBtn');
                 if (viewRecipeLorasBtn) {
                     viewRecipeLorasBtn.addEventListener('click', () => this.navigateToLorasPage());
                 }
 
-                // Add click handler for missing LoRAs status
                 const missingStatus = document.querySelector('.recipe-status.missing');
                 if (missingStatus && missingLorasCount > 0) {
                     missingStatus.classList.add('clickable');
@@ -421,13 +791,12 @@ class RecipeModal {
             }, 100);
         }
 
-        if (lorasListElement && recipe.loras && recipe.loras.length > 0) {
-            lorasListElement.innerHTML = recipe.loras.map(lora => {
+        if (lorasListElement && loras.length > 0) {
+            lorasListElement.innerHTML = loras.map(lora => {
                 const existsLocally = lora.inLibrary;
                 const isDeleted = lora.isDeleted;
                 const localPath = lora.localPath || '';
 
-                // Create status badge based on LoRA state
                 let localStatus;
                 if (existsLocally) {
                     localStatus = `
@@ -437,7 +806,7 @@ class RecipeModal {
                         </div>`;
                 } else if (isDeleted) {
                     localStatus = `
-                        <div class="deleted-badge reconnectable" data-lora-index="${recipe.loras.indexOf(lora)}">
+                        <div class="deleted-badge reconnectable" data-lora-index="${loras.indexOf(lora)}">
                             <span class="badge-text"><i class="fas fa-trash-alt"></i> Deleted</span>
                             <div class="reconnect-tooltip">Click to reconnect with a local LoRA</div>
                         </div>`;
@@ -448,7 +817,6 @@ class RecipeModal {
                         </div>`;
                 }
 
-                // Check if preview is a video
                 const isPreviewVideo = lora.preview_url && lora.preview_url.toLowerCase().endsWith('.mp4');
                 const previewMedia = isPreviewVideo ?
                     `<video class="thumbnail-video" autoplay loop muted playsinline>
@@ -456,7 +824,6 @@ class RecipeModal {
                      </video>` :
                     `<img src="${lora.preview_url || '/loras_static/images/no-preview.png'}" alt="LoRA preview">`;
 
-                // Determine CSS class based on LoRA state
                 let loraItemClass = 'recipe-lora-item';
                 if (existsLocally) {
                     loraItemClass += ' exists-locally';
@@ -467,7 +834,7 @@ class RecipeModal {
                 }
 
                 return `
-                    <div class="${loraItemClass}" data-lora-index="${recipe.loras.indexOf(lora)}">
+                    <div class="${loraItemClass}" data-lora-index="${loras.indexOf(lora)}">
                         <div class="recipe-lora-thumbnail">
                             ${previewMedia}
                         </div>
@@ -481,7 +848,7 @@ class RecipeModal {
                                 <div class="recipe-lora-weight">Weight: ${lora.strength || 1.0}</div>
                                 ${lora.baseModel ? `<div class="base-model">${lora.baseModel}</div>` : ''}
                             </div>
-                            <div class="lora-reconnect-container" data-lora-index="${recipe.loras.indexOf(lora)}">
+                            <div class="lora-reconnect-container" data-lora-index="${loras.indexOf(lora)}">
                                 <div class="reconnect-instructions">
                                     <p>Enter LoRA Syntax or Name to Reconnect:</p>
                                     <small>Example: <code>&lt;lora:Boris_Vallejo_BV_flux_D:1&gt;</code> or just <code>Boris_Vallejo_BV_flux_D</code></small>
@@ -499,15 +866,12 @@ class RecipeModal {
                 `;
             }).join('');
 
-            // Add event listeners for reconnect functionality
             setTimeout(() => {
                 this.setupReconnectButtons();
                 this.setupLoraItemsClickable();
             }, 100);
 
-            // Generate recipe syntax for copy button (this is now a placeholder, actual syntax will be fetched from the API)
             this.recipeLorasSyntax = '';
-
         } else if (lorasListElement) {
             lorasListElement.innerHTML = '<div class="no-loras">No LoRAs associated with this recipe</div>';
             this.recipeLorasSyntax = '';
@@ -518,9 +882,31 @@ class RecipeModal {
             const hasLoraItems = lorasListElement && lorasListElement.querySelector('.recipe-lora-item');
             resourceDivider.style.display = hasCheckpoint && hasLoraItems ? 'block' : 'none';
         }
+    }
 
-        // Show the modal
-        modalManager.showModal('recipeModal');
+    updateSourceUrlDisplay(sourcePath, options = {}) {
+        const sourceUrlContainer = document.querySelector('.source-url-container');
+        const sourceUrlEditor = document.querySelector('.source-url-editor');
+        if (!sourceUrlContainer || !sourceUrlEditor) {
+            return;
+        }
+
+        const sourceUrlText = sourceUrlContainer.querySelector('.source-url-text');
+        const sourceUrlInput = sourceUrlEditor.querySelector('.source-url-input');
+        if (!sourceUrlText || !sourceUrlInput) {
+            return;
+        }
+
+        const normalizedSourcePath = typeof sourcePath === 'string' ? sourcePath.trim() : '';
+        const isValidUrl = normalizedSourcePath.startsWith('http://') || normalizedSourcePath.startsWith('https://');
+
+        sourceUrlText.textContent = normalizedSourcePath || 'No source URL';
+        sourceUrlText.title = normalizedSourcePath
+            ? (isValidUrl ? 'Click to open source URL' : 'No valid URL')
+            : 'No valid URL';
+        if (options.forceInputSync || !sourceUrlEditor.classList.contains('active') || !this.sourceUrlEditState.isDirty) {
+            sourceUrlInput.value = normalizedSourcePath;
+        }
     }
 
     // Title editing methods
@@ -531,6 +917,7 @@ class RecipeModal {
             const editor = titleContainer.querySelector('#recipeTitleEditor');
             editor.classList.add('active');
             const input = editor.querySelector('input');
+            input.oninput = () => this.markFieldDirty('title');
             input.focus();
             input.select();
         }
@@ -549,19 +936,23 @@ class RecipeModal {
                 titleContainer.querySelector('.content-text').textContent = newTitle;
 
                 // Update the recipe on the server
-                updateRecipeMetadata(this.filePath, { title: newTitle })
+                updateRecipeMetadata(this.filePath, { title: newTitle }, this.getMetadataUpdateOptions())
                     .then(data => {
                         // Show success toast
                         showToast('toast.recipes.nameUpdated', {}, 'success');
 
                         // Update the current recipe object
                         this.currentRecipe.title = newTitle;
+                        this.commitField('title');
                     })
                     .catch(error => {
                         // Error is handled in the API function
                         // Reset the UI if needed
                         titleContainer.querySelector('.content-text').textContent = this.currentRecipe.title || '';
+                        this.clearFieldDirty('title');
                     });
+            } else {
+                this.clearFieldDirty('title');
             }
 
             // Hide editor
@@ -577,6 +968,7 @@ class RecipeModal {
             const editor = titleContainer.querySelector('#recipeTitleEditor');
             const input = editor.querySelector('input');
             input.value = this.currentRecipe.title || '';
+            this.clearFieldDirty('title');
 
             // Hide editor
             editor.classList.remove('active');
@@ -592,6 +984,7 @@ class RecipeModal {
             const editor = tagsContainer.querySelector('#recipeTagsEditor');
             editor.classList.add('active');
             const input = editor.querySelector('input');
+            input.oninput = () => this.markFieldDirty('tags');
             input.focus();
         }
     }
@@ -619,20 +1012,24 @@ class RecipeModal {
 
             if (tagsChanged) {
                 // Update the recipe on the server
-                updateRecipeMetadata(this.filePath, { tags: newTags })
+                updateRecipeMetadata(this.filePath, { tags: newTags }, this.getMetadataUpdateOptions())
                     .then(data => {
                         // Show success toast
                         showToast('toast.recipes.tagsUpdated', {}, 'success');
 
                         // Update the current recipe object
                         this.currentRecipe.tags = newTags;
+                        this.commitField('tags');
 
                         // Update tags in the UI
                         this.updateTagsDisplay(tagsContainer, newTags);
                     })
                     .catch(error => {
                         // Error is handled in the API function
+                        this.clearFieldDirty('tags');
                     });
+            } else {
+                this.clearFieldDirty('tags');
             }
 
             // Hide editor
@@ -704,6 +1101,7 @@ class RecipeModal {
             const editor = tagsContainer.querySelector('#recipeTagsEditor');
             const input = editor.querySelector('input');
             input.value = this.currentRecipe.tags ? this.currentRecipe.tags.join(', ') : '';
+            this.clearFieldDirty('tags');
 
             // Hide editor
             editor.classList.remove('active');
@@ -711,15 +1109,206 @@ class RecipeModal {
         }
     }
 
+    setupPromptEditors() {
+        const promptConfigs = [
+            {
+                editButtonId: 'editPromptBtn',
+                contentId: 'recipePrompt',
+                editorId: 'recipePromptEditor',
+                inputId: 'recipePromptInput',
+                field: 'prompt',
+                placeholder: 'No prompt information available',
+                successKey: 'toast.recipes.promptUpdated',
+                successFallback: 'Prompt updated successfully',
+            },
+            {
+                editButtonId: 'editNegativePromptBtn',
+                contentId: 'recipeNegativePrompt',
+                editorId: 'recipeNegativePromptEditor',
+                inputId: 'recipeNegativePromptInput',
+                field: 'negative_prompt',
+                placeholder: 'No negative prompt information available',
+                successKey: 'toast.recipes.negativePromptUpdated',
+                successFallback: 'Negative prompt updated successfully',
+            }
+        ];
+
+        promptConfigs.forEach((config) => {
+            const editButton = document.getElementById(config.editButtonId);
+            const input = document.getElementById(config.inputId);
+
+            if (editButton) {
+                editButton.addEventListener('click', () => this.showPromptEditor(config));
+            }
+
+            if (input) {
+                input.addEventListener('input', () => this.markFieldDirty(config.field));
+                input.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.cancelPromptEdit(config);
+                        return;
+                    }
+
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        this.promptEditorState[config.field] = {
+                            ...(this.promptEditorState[config.field] || {}),
+                            skipBlurSave: true,
+                        };
+                        this.savePromptEdit(config);
+                    }
+                });
+                input.addEventListener('blur', () => {
+                    const promptState = this.promptEditorState[config.field] || {};
+                    if (promptState.skipBlurSave) {
+                        this.promptEditorState[config.field] = {
+                            ...promptState,
+                            skipBlurSave: false,
+                        };
+                        return;
+                    }
+
+                    this.savePromptEdit(config);
+                });
+            }
+        });
+    }
+
+    renderPromptContent(element, value, placeholder) {
+        if (!element) {
+            return;
+        }
+
+        const text = value || '';
+        if (text) {
+            element.textContent = text;
+            element.classList.remove('is-placeholder');
+        } else {
+            element.textContent = placeholder;
+            element.classList.add('is-placeholder');
+        }
+    }
+
+    resetPromptEditors() {
+        this.hidePromptEditor({ contentId: 'recipePrompt', editorId: 'recipePromptEditor' });
+        this.hidePromptEditor({ contentId: 'recipeNegativePrompt', editorId: 'recipeNegativePromptEditor' });
+    }
+
+    showPromptEditor(config) {
+        const content = document.getElementById(config.contentId);
+        const editor = document.getElementById(config.editorId);
+        const input = document.getElementById(config.inputId);
+
+        if (!content || !editor || !input) {
+            return;
+        }
+
+        const currentValue = this.currentRecipe?.gen_params?.[config.field] || '';
+        input.value = currentValue;
+        this.promptEditorState[config.field] = {
+            initialValue: currentValue,
+            skipBlurSave: false,
+            isSaving: false,
+        };
+        content.classList.add('hide');
+        editor.classList.add('active');
+        input.focus();
+        input.setSelectionRange(input.value.length, input.value.length);
+    }
+
+    async savePromptEdit(config) {
+        const content = document.getElementById(config.contentId);
+        const editor = document.getElementById(config.editorId);
+        const input = document.getElementById(config.inputId);
+
+        if (!content || !editor || !input || !this.currentRecipe) {
+            return;
+        }
+
+        const promptState = this.promptEditorState[config.field] || {};
+        if (promptState.isSaving) {
+            return;
+        }
+
+        const currentGenParams = this.currentRecipe.gen_params || {};
+        const nextValue = input.value.trim() === '' ? '' : input.value;
+        const currentValue = this.sanitizeGenParams(currentGenParams)?.[config.field] || '';
+
+        if (nextValue === currentValue) {
+            this.clearFieldDirty(config.field);
+            this.hidePromptEditor(config);
+            return;
+        }
+
+        const nextGenParams = {
+            ...currentGenParams,
+            [config.field]: nextValue,
+        };
+
+        try {
+            this.promptEditorState[config.field] = {
+                ...promptState,
+                isSaving: true,
+            };
+            await updateRecipeMetadata(this.filePath, { gen_params: nextGenParams }, this.getMetadataUpdateOptions());
+            this.currentRecipe.gen_params = nextGenParams;
+            this.renderPromptContent(content, nextValue, config.placeholder);
+            showToast(config.successKey, {}, 'success', config.successFallback);
+            this.commitField(config.field);
+        } catch (error) {
+            this.renderPromptContent(content, currentValue, config.placeholder);
+            input.value = currentValue;
+            this.clearFieldDirty(config.field);
+        } finally {
+            this.clearFieldDirty(config.field);
+            this.hidePromptEditor(config);
+        }
+    }
+
+    cancelPromptEdit(config) {
+        const input = document.getElementById(config.inputId);
+        if (input) {
+            input.value = this.currentRecipe?.gen_params?.[config.field] || '';
+        }
+
+        this.clearFieldDirty(config.field);
+        this.hidePromptEditor(config);
+    }
+
+    hidePromptEditor(config) {
+        const content = document.getElementById(config.contentId);
+        const editor = document.getElementById(config.editorId);
+
+        if (content) {
+            content.classList.remove('hide');
+        }
+
+        if (editor) {
+            editor.classList.remove('active');
+        }
+
+        delete this.promptEditorState[config.field];
+    }
+
     // Setup source URL handlers
     setupSourceUrlHandlers() {
         const sourceUrlContainer = document.querySelector('.source-url-container');
         const sourceUrlEditor = document.querySelector('.source-url-editor');
+        if (!sourceUrlContainer || !sourceUrlEditor) {
+            return;
+        }
         const sourceUrlText = sourceUrlContainer.querySelector('.source-url-text');
         const sourceUrlEditBtn = sourceUrlContainer.querySelector('.source-url-edit-btn');
         const sourceUrlCancelBtn = sourceUrlEditor.querySelector('.source-url-cancel-btn');
         const sourceUrlSaveBtn = sourceUrlEditor.querySelector('.source-url-save-btn');
         const sourceUrlInput = sourceUrlEditor.querySelector('.source-url-input');
+
+        if (!sourceUrlText || !sourceUrlEditBtn || !sourceUrlCancelBtn || !sourceUrlSaveBtn || !sourceUrlInput) {
+            return;
+        }
 
         // Show editor on edit button click
         sourceUrlEditBtn.addEventListener('click', () => {
@@ -728,11 +1317,16 @@ class RecipeModal {
             sourceUrlInput.focus();
         });
 
+        sourceUrlInput.addEventListener('input', () => {
+            this.sourceUrlEditState.isDirty = true;
+        });
+
         // Cancel editing
         sourceUrlCancelBtn.addEventListener('click', () => {
             sourceUrlEditor.classList.remove('active');
             sourceUrlContainer.classList.remove('hide');
-            sourceUrlInput.value = this.currentRecipe.source_path || '';
+            this.updateSourceUrlDisplay(this.currentRecipe.source_path || '', { forceInputSync: true });
+            this.clearFieldDirty('source_path');
         });
 
         // Save new source URL
@@ -740,23 +1334,25 @@ class RecipeModal {
             const newSourceUrl = sourceUrlInput.value.trim();
             if (newSourceUrl !== this.currentRecipe.source_path) {
                 // Update the recipe on the server
-                updateRecipeMetadata(this.filePath, { source_path: newSourceUrl })
+                updateRecipeMetadata(this.filePath, { source_path: newSourceUrl }, this.getMetadataUpdateOptions())
                     .then(data => {
                         // Show success toast
                         showToast('toast.recipes.sourceUrlUpdated', {}, 'success');
 
                         // Update source URL in the UI
-                        sourceUrlText.textContent = newSourceUrl || 'No source URL';
-                        sourceUrlText.title = newSourceUrl && (newSourceUrl.startsWith('http://') ||
-                            newSourceUrl.startsWith('https://')) ?
-                            'Click to open source URL' : 'No valid URL';
+                        this.commitField('source_path');
+                        this.updateSourceUrlDisplay(newSourceUrl, { forceInputSync: true });
+                        this.syncSourceUrlAction();
 
                         // Update the current recipe object
                         this.currentRecipe.source_path = newSourceUrl;
                     })
                     .catch(error => {
                         // Error is handled in the API function
+                        this.clearFieldDirty('source_path');
                     });
+            } else {
+                this.clearFieldDirty('source_path');
             }
 
             // Hide editor
@@ -778,17 +1374,24 @@ class RecipeModal {
         const copyPromptBtn = document.getElementById('copyPromptBtn');
         const copyNegativePromptBtn = document.getElementById('copyNegativePromptBtn');
         const copyRecipeSyntaxBtn = document.getElementById('copyRecipeSyntaxBtn');
+        const sendRecipeBtn = document.getElementById('sendRecipeBtn');
 
         if (copyPromptBtn) {
             copyPromptBtn.addEventListener('click', () => {
-                const promptText = document.getElementById('recipePrompt').textContent;
+                let promptText = this.currentRecipe?.gen_params?.prompt || '';
+                if (this.shouldStripLoraOnCopy()) {
+                    promptText = RecipeModal.stripLoraTags(promptText);
+                }
                 this.copyToClipboard(promptText, 'Prompt copied to clipboard');
             });
         }
 
         if (copyNegativePromptBtn) {
             copyNegativePromptBtn.addEventListener('click', () => {
-                const negativePromptText = document.getElementById('recipeNegativePrompt').textContent;
+                let negativePromptText = this.currentRecipe?.gen_params?.negative_prompt || '';
+                if (this.shouldStripLoraOnCopy()) {
+                    negativePromptText = RecipeModal.stripLoraTags(negativePromptText);
+                }
                 this.copyToClipboard(negativePromptText, 'Negative prompt copied to clipboard');
             });
         }
@@ -799,6 +1402,50 @@ class RecipeModal {
                 this.fetchAndCopyRecipeSyntax();
             });
         }
+
+        if (sendRecipeBtn) {
+            sendRecipeBtn.addEventListener('click', () => {
+                // Send recipe to ComfyUI workflow
+                this.sendRecipeToWorkflow();
+            });
+        }
+    }
+
+    /**
+     * Strip <lora:...> tags from prompt text and clean up residual punctuation/whitespace.
+     * Handles both unescaped (<lora:...>) and HTML-escaped (&lt;lora:...&gt;) variants.
+     * Cleans up artifacts like leading ", ", double commas, and extra whitespace.
+     */
+    static stripLoraTags(text) {
+        return text
+            .replace(/<lora:[^>]*>/gi, '')
+            .replace(/&lt;lora:[^&]*&gt;/gi, '')
+            .replace(/,(\s*,)+/g, ',')
+            .replace(/^,\s*/, '')
+            .replace(/,\s*$/, '')
+            .replace(/\s{2,}/g, ' ')
+            .trim();
+    }
+
+    shouldStripLoraOnCopy() {
+        const toggle = document.getElementById('stripLoraOnCopyToggle');
+        return toggle ? toggle.checked : false;
+    }
+
+    setupStripLoraToggle() {
+        const toggle = document.getElementById('stripLoraOnCopyToggle');
+        if (!toggle) return;
+
+        const stored = getStorageItem('strip_lora_on_copy');
+        if (stored !== null) {
+            toggle.checked = stored === true;
+        }
+
+        toggle.addEventListener('change', () => {
+            const checked = toggle.checked;
+            setStorageItem('strip_lora_on_copy', checked);
+            state.global.settings.strip_lora_on_copy = checked;
+        });
     }
 
     // Fetch recipe syntax from backend and copy to clipboard
@@ -833,6 +1480,35 @@ class RecipeModal {
     // Helper method to copy text to clipboard
     copyToClipboard(text, successMessage) {
         copyToClipboard(text, successMessage);
+    }
+
+    // Send recipe to ComfyUI workflow
+    async sendRecipeToWorkflow() {
+        if (!this.recipeId) {
+            showToast('toast.recipes.noRecipeId', {}, 'error');
+            return;
+        }
+
+        try {
+            // Fetch recipe syntax from backend
+            const response = await fetch(`/api/lm/recipe/${this.recipeId}/syntax`);
+
+            if (!response.ok) {
+                throw new Error(`Failed to get recipe syntax: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success && data.syntax) {
+                // Send the recipe syntax to ComfyUI workflow
+                await sendLoraToWorkflow(data.syntax, false, 'recipe');
+            } else {
+                throw new Error(data.error || 'No syntax returned from server');
+            }
+        } catch (error) {
+            console.error('Error sending recipe to workflow:', error);
+            showToast('toast.recipes.sendToWorkflowFailed', { message: error.message }, 'error');
+        }
     }
 
     // Add new method to handle downloading missing LoRAs
@@ -1059,7 +1735,7 @@ class RecipeModal {
                     this.showRecipeDetails(this.currentRecipe);
                 }, 500);
 
-                state.virtualScroller.updateSingleItem(this.currentRecipe.file_path, {
+                state.virtualScroller.updateSingleItem(this.listFilePath || this.currentRecipe.file_path, {
                     loras: this.currentRecipe.loras
                 });
             } else {
@@ -1188,14 +1864,14 @@ class RecipeModal {
             isDiffusionModel ? 'Diffusion Model' : 'Checkpoint'
         );
         const successMessage = translate(
-            isDiffusionModel ? 'uiHelpers.workflow.diffusionModelUpdated' : 'uiHelpers.workflow.checkpointUpdated',
+            'uiHelpers.workflow.modelUpdated',
             {},
-            isDiffusionModel ? 'Diffusion model updated in workflow' : 'Checkpoint updated in workflow'
+            'Model updated in workflow'
         );
         const failureMessage = translate(
-            isDiffusionModel ? 'uiHelpers.workflow.diffusionModelFailed' : 'uiHelpers.workflow.checkpointFailed',
+            'uiHelpers.workflow.modelFailed',
             {},
-            isDiffusionModel ? 'Failed to update diffusion model node' : 'Failed to update checkpoint node'
+            'Failed to update model node'
         );
         const missingNodesMessage = translate(
             'uiHelpers.workflow.noMatchingNodes',
@@ -1259,7 +1935,7 @@ class RecipeModal {
             const versionId = checkpoint.id || checkpoint.modelVersionId;
             const modelName = checkpoint.name || checkpoint.modelName || checkpoint.file_name;
 
-            if (modelId || modelName) {
+            if (modelId || versionId || modelName) {
                 openCivitaiByMetadata(modelId, versionId, modelName);
                 return;
             }
@@ -1299,7 +1975,6 @@ class RecipeModal {
 
     // New method to navigate to the LoRAs page
     navigateToLorasPage(specificLoraIndex = null) {
-        debugger;
         // Close the current modal
         modalManager.closeModal('recipeModal');
 
@@ -1318,7 +1993,7 @@ class RecipeModal {
                 const versionId = lora.id || lora.modelVersionId;
                 const modelName = lora.modelName || lora.name || lora.file_name;
 
-                if (modelId || modelName) {
+                if (modelId || versionId || modelName) {
                     openCivitaiByMetadata(modelId, versionId, modelName);
                     return;
                 }

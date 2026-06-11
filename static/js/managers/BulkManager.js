@@ -3,7 +3,7 @@ import { showToast, copyToClipboard, sendLoraToWorkflow, buildLoraSyntax, getNSF
 import { updateCardsForBulkMode } from '../components/shared/ModelCard.js';
 import { modalManager } from './ModalManager.js';
 import { getModelApiClient, resetAndReload } from '../api/modelApiFactory.js';
-import { RecipeSidebarApiClient } from '../api/recipeApi.js';
+import { RecipeSidebarApiClient, updateRecipeMetadata, extractRecipeId } from '../api/recipeApi.js';
 import { MODEL_TYPES, MODEL_CONFIG } from '../api/apiConfig.js';
 import { BASE_MODEL_CATEGORIES } from '../utils/constants.js';
 import { getPriorityTagSuggestions } from '../utils/priorityTagHelpers.js';
@@ -41,7 +41,9 @@ export class BulkManager {
                 autoOrganize: true,
                 deleteAll: true,
                 setContentRating: true,
-                skipMetadataRefresh: true
+                skipMetadataRefresh: true,
+                setFavorite: true,
+                unfavorite: true
             },
             [MODEL_TYPES.EMBEDDING]: {
                 addTags: true,
@@ -53,7 +55,9 @@ export class BulkManager {
                 autoOrganize: true,
                 deleteAll: true,
                 setContentRating: false,
-                skipMetadataRefresh: true
+                skipMetadataRefresh: true,
+                setFavorite: true,
+                unfavorite: true
             },
             [MODEL_TYPES.CHECKPOINT]: {
                 addTags: true,
@@ -65,10 +69,12 @@ export class BulkManager {
                 autoOrganize: true,
                 deleteAll: true,
                 setContentRating: true,
-                skipMetadataRefresh: true
+                skipMetadataRefresh: true,
+                setFavorite: true,
+                unfavorite: true
             },
             recipes: {
-                addTags: false,
+                addTags: true,
                 sendToWorkflow: false,
                 copyAll: false,
                 refreshAll: false,
@@ -77,7 +83,11 @@ export class BulkManager {
                 autoOrganize: false,
                 deleteAll: true,
                 setContentRating: false,
-                skipMetadataRefresh: false
+                skipMetadataRefresh: false,
+                setFavorite: true,
+                unfavorite: true,
+                repairMetadata: true,
+                reimportMetadata: true
             }
         };
 
@@ -240,9 +250,7 @@ export class BulkManager {
      */
     handleGlobalKeyboard(e) {
         // Skip if modal is open (handled by event manager conditions)
-        // Skip if search input is focused
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput && document.activeElement === searchInput) {
+        if (this.isEditingTextInputContext(e.target)) {
             return false; // Don't handle, allow default behavior
         }
 
@@ -264,6 +272,26 @@ export class BulkManager {
         }
 
         return false; // Continue with other handlers
+    }
+
+    isEditingTextInputContext(target) {
+        const activeElement = document.activeElement;
+        const candidate = target instanceof Element ? target : activeElement;
+        if (!candidate) {
+            return false;
+        }
+
+        const tagName = candidate.tagName?.toLowerCase();
+        if (
+            candidate.isContentEditable
+            || tagName === 'input'
+            || tagName === 'textarea'
+            || tagName === 'select'
+        ) {
+            return true;
+        }
+
+        return Boolean(candidate.closest?.('#filterPanel'));
     }
 
     toggleBulkMode() {
@@ -520,9 +548,23 @@ export class BulkManager {
             return;
         }
 
-        const countElement = document.getElementById('bulkDeleteCount');
-        if (countElement) {
-            countElement.textContent = state.selectedModels.size;
+        const count = state.selectedModels.size;
+        const isRecipes = state.currentPageType === 'recipes';
+        const keyPrefix = isRecipes ? 'modals.bulkDeleteRecipes' : 'modals.bulkDelete';
+
+        const titleEl = document.querySelector('#bulkDeleteModal h2');
+        if (titleEl) {
+            titleEl.textContent = translate(`${keyPrefix}.title`);
+        }
+
+        const messageEl = document.querySelector('#bulkDeleteModal .delete-message');
+        if (messageEl) {
+            messageEl.textContent = translate(`${keyPrefix}.message`);
+        }
+
+        const countInfoEl = document.querySelector('#bulkDeleteModal .delete-model-info p');
+        if (countInfoEl) {
+            countInfoEl.innerHTML = `<span id="bulkDeleteCount">${count}</span> ${translate(`${keyPrefix}.countMessage`)}`;
         }
 
         modalManager.showModal('bulkDeleteModal');
@@ -613,6 +655,157 @@ export class BulkManager {
 
         if (this.isStripVisible) {
             this.updateThumbnailStrip();
+        }
+    }
+
+    async reimportSelectedRecipes() {
+        if (state.selectedModels.size === 0) {
+            showToast('toast.recipes.noRecipesSelected', {}, 'warning');
+            return;
+        }
+
+        if (state.currentPageType !== 'recipes') {
+            showToast('This operation is only available for recipes', {}, 'warning');
+            return;
+        }
+
+        const filePaths = Array.from(state.selectedModels);
+        const total = filePaths.length;
+        let completed = 0;
+        let failed = 0;
+
+        const recipeMap = new Map();
+        if (state.virtualScroller?.items) {
+            for (const item of state.virtualScroller.items) {
+                if (item.file_path && item.id) {
+                    recipeMap.set(item.file_path, item);
+                }
+            }
+        }
+
+        const progressUI = state.loadingManager.showEnhancedProgress(
+            `Re-importing recipe 1/${total}...`
+        );
+
+        try {
+            for (let i = 0; i < filePaths.length; i++) {
+                const filePath = filePaths[i];
+                const recipeItem = recipeMap.get(filePath);
+                const recipeId = recipeItem?.id;
+                const recipeName = recipeItem?.title || recipeId || 'Unknown';
+
+                progressUI.updateProgress(
+                    Math.floor((i / total) * 100),
+                    recipeName,
+                    `Re-importing recipe ${Math.min(i + 1, total)}/${total}...`
+                );
+
+                if (!recipeId) {
+                    failed++;
+                    continue;
+                }
+
+                try {
+                    const response = await fetch(
+                        `/api/lm/recipe/${recipeId}/reimport`,
+                        { method: 'POST' }
+                    );
+                    const result = await response.json();
+                    if (result.success) {
+                        completed++;
+                    } else {
+                        failed++;
+                    }
+                } catch {
+                    failed++;
+                }
+            }
+            if (completed > 0) {
+                await progressUI.complete(
+                    `Re-import complete: ${completed} re-imported, ${failed} failed`
+                );
+            } else {
+                state.loadingManager.hide();
+                showToast('toast.recipes.reimportBulkFailed', {}, 'error');
+            }
+
+            const { resetAndReload: recipeResetAndReload } = await import('../api/recipeApi.js');
+            recipeResetAndReload(false, { preserveScroll: true });
+            this.clearSelection();
+        } catch (error) {
+            console.error('[reimportSelectedRecipes] outer catch:', error);
+            state.loadingManager.hide();
+            showToast('toast.recipes.reimportBulkFailed', {}, 'error');
+        }
+    }
+
+    async repairSelectedRecipes() {
+        if (state.selectedModels.size === 0) {
+            showToast('toast.recipes.noRecipesSelected', {}, 'warning');
+            return;
+        }
+
+        if (state.currentPageType !== 'recipes') {
+            showToast('This operation is only available for recipes', {}, 'warning');
+            return;
+        }
+
+        try {
+            const apiClient = this.getActiveApiClient();
+            const filePaths = Array.from(state.selectedModels);
+
+            if (typeof apiClient.repairBulkModels !== 'function') {
+                showToast('Bulk repair is not supported for this model type', {}, 'error');
+                return;
+            }
+
+            state.loadingManager.showSimpleLoading('Repairing recipe metadata...');
+
+            const result = await apiClient.repairBulkModels(filePaths);
+
+            if (result.success) {
+                const total = result.total || filePaths.length;
+                const repaired = result.repaired || 0;
+                const skipped = result.skipped || 0;
+
+                const recipes = result.recipes || [];
+                for (const recipe of recipes) {
+                    if (recipe.file_path) {
+                        state.virtualScroller.updateSingleItem(
+                            recipe.file_path,
+                            recipe
+                        );
+                    }
+                }
+
+                if (repaired > 0) {
+                    showToast(
+                        'toast.recipes.repairBulkComplete',
+                        { repaired, skipped, total },
+                        'success'
+                    );
+                } else {
+                    showToast(
+                        'toast.recipes.repairBulkSkipped',
+                        { total },
+                        'info'
+                    );
+                }
+
+                this.clearSelection();
+            } else {
+                throw new Error(result.error || 'Bulk repair failed');
+            }
+        } catch (error) {
+            console.error('Error during bulk recipe repair:', error);
+            showToast('toast.recipes.repairBulkFailed', { message: error.message }, 'error');
+        } finally {
+            if (state.loadingManager?.hide) {
+                state.loadingManager.hide();
+            }
+            if (typeof state.loadingManager?.restoreProgressBar === 'function') {
+                state.loadingManager.restoreProgressBar();
+            }
         }
     }
 
@@ -745,6 +938,7 @@ export class BulkManager {
         // Setup tag input behavior
         const tagInput = document.querySelector('.bulk-metadata-input');
         if (tagInput) {
+            tagInput.focus();
             tagInput.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') {
                     e.preventDefault();
@@ -968,7 +1162,17 @@ export class BulkManager {
 
     async saveBulkTags(mode = 'append') {
         const tagElements = document.querySelectorAll('#bulkTagsItems .metadata-item');
-        const tags = Array.from(tagElements).map(tag => tag.dataset.tag);
+        let tags = Array.from(tagElements).map(tag => tag.dataset.tag);
+
+        // Flush uncommitted input as a tag so it's not silently lost on save
+        const tagInput = document.querySelector('.bulk-metadata-input');
+        if (tagInput) {
+            const pendingTag = tagInput.value.trim().toLowerCase();
+            if (pendingTag && !tags.includes(pendingTag)) {
+                tags.push(pendingTag);
+            }
+            tagInput.value = '';
+        }
 
         if (tags.length === 0) {
             showToast('toast.models.noTagsToAdd', {}, 'warning');
@@ -992,6 +1196,8 @@ export class BulkManager {
                 cancelled = true;
             });
 
+            const isRecipes = state.currentPageType === 'recipes';
+
             // Add or replace tags for each selected model based on mode
             for (const filePath of filePaths) {
                 if (cancelled) {
@@ -999,7 +1205,9 @@ export class BulkManager {
                     break;
                 }
                 try {
-                    if (mode === 'replace') {
+                    if (isRecipes) {
+                        await this._saveRecipeTags(filePath, tags, mode);
+                    } else if (mode === 'replace') {
                         await apiClient.saveModelMetadata(filePath, { tags: tags });
                     } else {
                         await apiClient.addTags(filePath, { tags: tags });
@@ -1038,6 +1246,35 @@ export class BulkManager {
         }
     }
 
+    async _saveRecipeTags(filePath, newTags, mode) {
+        const recipeId = extractRecipeId(filePath);
+        if (!recipeId) throw new Error('Unable to determine recipe ID');
+
+        let finalTags = newTags;
+        if (mode === 'append') {
+            const recipeItem = state.virtualScroller?.items?.find(
+                item => item.file_path === filePath
+            );
+            const existingTags = recipeItem?.tags || [];
+            finalTags = [...new Set([...existingTags, ...newTags])];
+        }
+
+        const response = await fetch(
+            `/api/lm/recipe/${encodeURIComponent(recipeId)}/update`,
+            {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tags: finalTags }),
+            }
+        );
+        const data = await response.json();
+        if (!data.success) {
+            throw new Error(data.error || 'Failed to update recipe tags');
+        }
+
+        state.virtualScroller.updateSingleItem(filePath, { tags: finalTags });
+    }
+
     cleanupBulkAddTagsModal() {
         // Clear tags container
         const tagsContainer = document.getElementById('bulkTagsItems');
@@ -1069,6 +1306,60 @@ export class BulkManager {
             if (dropdown) {
                 dropdown.remove();
             }
+        }
+    }
+
+    async setBulkFavorites(value) {
+        if (state.selectedModels.size === 0) {
+            showToast('toast.models.noModelsSelected', {}, 'warning');
+            return;
+        }
+
+        const totalCount = state.selectedModels.size;
+        const isRecipesPage = state.currentPageType === 'recipes';
+
+        state.loadingManager.showSimpleLoading(
+            translate(value ? 'toast.models.bulkFavoriteUpdating' : 'toast.models.bulkUnfavoriteUpdating', { count: totalCount })
+        );
+        let cancelled = false;
+        state.loadingManager.showCancelButton(() => {
+            cancelled = true;
+        });
+
+        let successCount = 0;
+        let failureCount = 0;
+
+        try {
+            for (const filePath of state.selectedModels) {
+                if (cancelled) {
+                    showToast('toast.api.operationCancelled', {}, 'info');
+                    break;
+                }
+                try {
+                    if (isRecipesPage) {
+                        await updateRecipeMetadata(filePath, { favorite: value });
+                    } else {
+                        const apiClient = getModelApiClient();
+                        await apiClient.saveModelMetadata(filePath, { favorite: value });
+                    }
+                    successCount++;
+                } catch (error) {
+                    failureCount++;
+                    console.error(`Failed to set favorite=${value} for ${filePath}:`, error);
+                }
+            }
+        } finally {
+            state.loadingManager?.hide?.();
+        }
+
+        if (successCount === totalCount) {
+            const toastKey = value ? 'modelCard.favorites.added' : 'modelCard.favorites.removed';
+            showToast(toastKey, {}, 'success');
+        } else if (successCount > 0) {
+            const toastKey = value ? 'toast.models.bulkFavoritePartialAdded' : 'toast.models.bulkFavoritePartialRemoved';
+            showToast(toastKey, { success: successCount, failed: failureCount }, 'warning');
+        } else {
+            showToast('toast.models.bulkFavoriteFailed', {}, 'error');
         }
     }
 

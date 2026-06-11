@@ -9,6 +9,7 @@ import { moveManager } from './managers/MoveManager.js';
 import { bulkManager } from './managers/BulkManager.js';
 import { ExampleImagesManager } from './managers/ExampleImagesManager.js';
 import { helpManager } from './managers/HelpManager.js';
+import { doctorManager } from './managers/DoctorManager.js';
 import { bannerService } from './managers/BannerService.js';
 import { initTheme, initBackToTop } from './utils/uiHelpers.js';
 import { initializeInfiniteScroll } from './utils/infiniteScroll.js';
@@ -17,6 +18,8 @@ import { onboardingManager } from './managers/OnboardingManager.js';
 import { BulkContextMenu } from './components/ContextMenu/BulkContextMenu.js';
 import { createPageContextMenu, createGlobalContextMenu } from './components/ContextMenu/index.js';
 import { initializeEventManagement } from './utils/eventManagementInit.js';
+import { civitaiBaseModelApi } from './api/civitaiBaseModelApi.js';
+import { setDynamicBaseModels } from './utils/constants.js';
 
 // Core application class
 export class AppCore {
@@ -42,6 +45,10 @@ export class AppCore {
         await settingsManager.waitForInitialization();
         console.log('AppCore: Settings initialized');
         
+        // Initialize dynamic base models (async, non-blocking)
+        console.log('AppCore: Initializing dynamic base models...');
+        this.initializeDynamicBaseModels();
+        
         // Initialize managers
         state.loadingManager = new LoadingManager();
         modalManager.initialize();
@@ -52,6 +59,7 @@ export class AppCore {
         const exampleImagesManager = new ExampleImagesManager();
         window.exampleImagesManager = exampleImagesManager;
         window.helpManager = helpManager;
+        window.doctorManager = doctorManager;
         window.moveManager = moveManager;
         window.bulkManager = bulkManager;
         
@@ -71,6 +79,7 @@ export class AppCore {
         exampleImagesManager.initialize();
         // Initialize the help manager
         helpManager.initialize();
+        doctorManager.initialize();
 
         const cardInfoDisplay = state.global.settings.card_info_display || 'always';
         document.body.classList.toggle('hover-reveal', cardInfoDisplay === 'hover');
@@ -114,6 +123,21 @@ export class AppCore {
 
         if (!window.globalContextMenuInstance) {
             window.globalContextMenuInstance = createGlobalContextMenu();
+        }
+    }
+    
+    // Initialize dynamic base models from Civitai API
+    // This is non-blocking - runs in background
+    async initializeDynamicBaseModels() {
+        try {
+            const result = await civitaiBaseModelApi.getBaseModels();
+            if (result && result.models) {
+                setDynamicBaseModels(result.models, result.last_updated);
+                console.log(`AppCore: Loaded ${result.merged_count} base models (${result.hardcoded_count} hardcoded + ${result.remote_count} remote)`);
+            }
+        } catch (error) {
+            console.warn('AppCore: Failed to load dynamic base models:', error);
+            // Non-critical error - app continues with hardcoded models
         }
     }
 }

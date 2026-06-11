@@ -4,7 +4,7 @@ import { showModelModal } from './ModelModal.js';
 import { toggleShowcase } from './showcase/ShowcaseView.js';
 import { bulkManager } from '../../managers/BulkManager.js';
 import { modalManager } from '../../managers/ModalManager.js';
-import { NSFW_LEVELS, getBaseModelAbbreviation, getSubTypeAbbreviation, MODEL_SUBTYPE_DISPLAY_NAMES } from '../../utils/constants.js';
+import { NSFW_LEVELS, getBaseModelAbbreviation, getSubTypeAbbreviation, getMatureBlurThreshold, MODEL_SUBTYPE_DISPLAY_NAMES } from '../../utils/constants.js';
 import { MODEL_TYPES } from '../../api/apiConfig.js';
 import { getModelApiClient } from '../../api/modelApiFactory.js';
 import { showDeleteModal } from '../../utils/modalUtils.js';
@@ -166,7 +166,9 @@ async function toggleFavorite(card) {
 function handleSendToWorkflow(card, replaceMode, modelType) {
     if (modelType === MODEL_TYPES.LORA) {
         const usageTips = JSON.parse(card.dataset.usage_tips || '{}');
-        const loraSyntax = buildLoraSyntax(card.dataset.file_name, usageTips);
+        const folder = card.dataset.folder || '';
+        const loraName = folder ? `${folder}/${card.dataset.file_name}` : card.dataset.file_name;
+        const loraSyntax = buildLoraSyntax(loraName, usageTips);
         sendLoraToWorkflow(loraSyntax, replaceMode, 'lora');
     } else if (modelType === MODEL_TYPES.CHECKPOINT) {
         const modelPath = card.dataset.filepath;
@@ -185,14 +187,14 @@ function handleSendToWorkflow(card, replaceMode, modelType) {
             isDiffusionModel ? 'Diffusion Model' : 'Checkpoint'
         );
         const successMessage = translate(
-            isDiffusionModel ? 'uiHelpers.workflow.diffusionModelUpdated' : 'uiHelpers.workflow.checkpointUpdated',
+            'uiHelpers.workflow.modelUpdated',
             {},
-            isDiffusionModel ? 'Diffusion model updated in workflow' : 'Checkpoint updated in workflow'
+            'Model updated in workflow'
         );
         const failureMessage = translate(
-            isDiffusionModel ? 'uiHelpers.workflow.diffusionModelFailed' : 'uiHelpers.workflow.checkpointFailed',
+            'uiHelpers.workflow.modelFailed',
             {},
-            isDiffusionModel ? 'Failed to update diffusion model node' : 'Failed to update checkpoint node'
+            'Failed to update model node'
         );
         const missingNodesMessage = translate(
             'uiHelpers.workflow.noMatchingNodes',
@@ -433,10 +435,11 @@ export function createModelCard(model, modelType) {
     card.dataset.usage_count = String(model.usage_count);
     card.dataset.notes = model.notes || '';
     card.dataset.base_model = model.base_model || 'Unknown';
-        card.dataset.favorite = model.favorite ? 'true' : 'false';
-        const hasUpdateAvailable = Boolean(model.update_available);
-        card.dataset.update_available = hasUpdateAvailable ? 'true' : 'false';
-        card.dataset.skip_metadata_refresh = model.skip_metadata_refresh ? 'true' : 'false';
+    card.dataset.favorite = model.favorite ? 'true' : 'false';
+    card.dataset.exclude = model.exclude ? 'true' : 'false';
+    const hasUpdateAvailable = Boolean(model.update_available);
+    card.dataset.update_available = hasUpdateAvailable ? 'true' : 'false';
+    card.dataset.skip_metadata_refresh = model.skip_metadata_refresh ? 'true' : 'false';
 
     // To only show usage_count when sorting by usage. 
     const pageState = getCurrentPageState();
@@ -478,13 +481,17 @@ export function createModelCard(model, modelType) {
     card.dataset.nsfwLevel = nsfwLevel;
 
     // Determine if the preview should be blurred based on NSFW level and user settings
-    const shouldBlur = state.settings.blur_mature_content && nsfwLevel > NSFW_LEVELS.PG13;
+    const matureBlurThreshold = getMatureBlurThreshold(state.settings);
+    const shouldBlur = state.settings.blur_mature_content && nsfwLevel >= matureBlurThreshold;
     if (shouldBlur) {
         card.classList.add('nsfw-content');
     }
 
     if (model.skip_metadata_refresh) {
         card.classList.add('skip-refresh');
+    }
+    if (model.exclude) {
+        card.classList.add('excluded-model');
     }
 
     // Apply selection state if in bulk mode and this card is in the selected set (LoRA only)
@@ -618,6 +625,11 @@ export function createModelCard(model, modelType) {
                             <i class="fas fa-ban"></i>
                         </span>
                     ` : ''}
+                    ${model.exclude ? `
+                        <span class="model-excluded-badge" title="${translate('globalContextMenu.manageExcludedModels.label', {}, 'Excluded Models')}">
+                            <i class="fas fa-eye-slash"></i>
+                        </span>
+                    ` : ''}
                 </div>
                 <div class="card-actions">
                     ${actionIcons}
@@ -634,8 +646,23 @@ export function createModelCard(model, modelType) {
             <div class="card-footer">
                 <div class="model-info">
                     <span class="model-name" title="${getDisplayName(model).replace(/"/g, '&quot;')}">${getDisplayName(model)}</span>
-                    <div>
-                        ${model.civitai?.name ? `<span class="version-name">${model.civitai.name}</span>` : ''}
+                    <div class="version-row">
+                        ${(() => {
+                            const autoTags = model.auto_tags || [];
+                            const hlTags = autoTags.filter(t => t === 'HIGH' || t === 'LOW');
+                            const hasVersionName = model.civitai?.name;
+                            if (!hlTags.length && !hasVersionName) return '';
+                            const density = state.global.settings.display_density || 'default';
+                            const shortLabels = density === 'medium' || density === 'compact';
+                            const badges = hlTags.map(t => {
+                                const cls = t === 'HIGH' ? 'hl-badge hl-badge--high' : 'hl-badge hl-badge--low';
+                                const label = shortLabels ? (t === 'HIGH' ? 'H' : 'L') : t;
+                                const titleAttr = shortLabels ? ` title="${t}"` : '';
+                                return `<span class="${cls}"${titleAttr}>${label}</span>`;
+                            }).join('');
+                            const versionHtml = hasVersionName ? `<span class="version-name civitai-version">${model.civitai.name}</span>` : '';
+                            return `<span class="badge-version-unit">${badges}${versionHtml}</span>`;
+                        })()}
                         ${hasUsageCount ? `<span class="version-name" title="${translate('modelCard.usage.timesUsed', {}, 'Times used')}">${model.usage_count}×</span>` : ''}
                     </div>
                 </div>

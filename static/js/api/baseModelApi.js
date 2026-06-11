@@ -51,6 +51,7 @@ export class BaseModelApiClient {
     async fetchModelsPage(page = 1, pageSize = null) {
         const pageState = this.getPageState();
         const actualPageSize = pageSize || pageState.pageSize || this.apiConfig.config.defaultPageSize;
+        const isExcludedView = pageState.viewMode === 'excluded';
 
         try {
             const params = this._buildQueryParams({
@@ -71,7 +72,10 @@ export class BaseModelApiClient {
                 };
             }
 
-            const response = await fetch(`${this.apiConfig.endpoints.list}?${params}`);
+            const endpoint = isExcludedView
+                ? this.apiConfig.endpoints.excluded
+                : this.apiConfig.endpoints.list;
+            const response = await fetch(`${endpoint}?${params}`);
             if (!response.ok) {
                 throw new Error(`Failed to fetch ${this.apiConfig.config.displayName}s: ${response.statusText}`);
             }
@@ -84,7 +88,7 @@ export class BaseModelApiClient {
                 totalPages: data.total_pages,
                 currentPage: page,
                 hasMore: page < data.total_pages,
-                folders: data.folders
+                folders: data.folders || []
             };
 
         } catch (error) {
@@ -212,6 +216,50 @@ export class BaseModelApiClient {
         }
     }
 
+    async unexcludeModel(filePath) {
+        try {
+            state.loadingManager.showSimpleLoading(`Restoring ${this.apiConfig.config.singularName}...`);
+
+            const response = await fetch(this.apiConfig.endpoints.unexclude, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ file_path: filePath })
+            });
+
+            if (!response.ok) {
+                throw new Error(`Failed to restore ${this.apiConfig.config.singularName}: ${response.statusText}`);
+            }
+
+            const data = await response.json();
+
+            if (data.success) {
+                if (state.virtualScroller) {
+                    state.virtualScroller.removeItemByFilePath(filePath);
+                }
+                showToast(
+                    'toast.api.restoreSuccess',
+                    { type: this.apiConfig.config.displayName },
+                    'success',
+                    `Restored ${this.apiConfig.config.displayName}`
+                );
+                return true;
+            }
+
+            throw new Error(data.error || `Failed to restore ${this.apiConfig.config.singularName}`);
+        } catch (error) {
+            console.error(`Error restoring ${this.apiConfig.config.singularName}:`, error);
+            showToast(
+                'toast.api.restoreFailed',
+                { type: this.apiConfig.config.singularName, message: error.message },
+                'error',
+                `Failed to restore ${this.apiConfig.config.singularName}: ${error.message}`
+            );
+            return false;
+        } finally {
+            state.loadingManager.hide();
+        }
+    }
+
     async renameModelFile(filePath, newFileName) {
         try {
             state.loadingManager.showSimpleLoading(`Renaming ${this.apiConfig.config.singularName} file...`);
@@ -251,7 +299,7 @@ export class BaseModelApiClient {
     replaceModelPreview(filePath) {
         const input = document.createElement('input');
         input.type = 'file';
-        input.accept = 'image/*,video/mp4';
+        input.accept = 'image/*,image/webp,video/mp4';
 
         input.onchange = async () => {
             if (!input.files || !input.files[0]) return;
@@ -374,8 +422,12 @@ export class BaseModelApiClient {
                 throw new Error('Failed to save metadata');
             }
 
-            state.virtualScroller.updateSingleItem(filePath, data);
-            return response.json();
+            const result = await response.json();
+            state.virtualScroller.updateSingleItem(filePath, {
+                ...data,
+                auto_tags: result.auto_tags,
+            });
+            return result;
         } finally {
             state.loadingManager.hide();
         }
@@ -400,7 +452,10 @@ export class BaseModelApiClient {
             const result = await response.json();
 
             if (result.success && result.tags) {
-                state.virtualScroller.updateSingleItem(filePath, { tags: result.tags });
+                state.virtualScroller.updateSingleItem(filePath, {
+                    tags: result.tags,
+                    auto_tags: result.auto_tags,
+                });
             }
 
             return result;
@@ -711,6 +766,49 @@ export class BaseModelApiClient {
         }
     }
 
+    async refreshUpdatesForFolder(folderPath, { force = false } = {}) {
+        if (!folderPath) {
+            throw new Error('No folder path provided');
+        }
+
+        try {
+            state.loadingManager.show('Checking for updates...', 0);
+            state.loadingManager.showCancelButton(() => this.cancelTask());
+
+            const response = await fetch(this.apiConfig.endpoints.refreshUpdates, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    folder_path: folderPath,
+                    force
+                })
+            });
+
+            let payload = {};
+            try {
+                payload = await response.json();
+            } catch (error) {
+                console.warn('Unable to parse refresh updates response as JSON', error);
+            }
+
+            if (!response.ok || payload?.success !== true) {
+                if (payload?.status === 'cancelled') {
+                    showToast('toast.api.operationCancelled', {}, 'info');
+                    return null;
+                }
+                const message = payload?.error || response.statusText || 'Failed to refresh updates';
+                throw new Error(message);
+            }
+
+            return payload;
+        } catch (error) {
+            console.error('Error refreshing updates for folder:', error);
+            throw error;
+        } finally {
+            state.loadingManager.hide();
+        }
+    }
+
     async fetchCivitaiVersions(modelId, source = null) {
         try {
             let requestUrl = `${this.apiConfig.endpoints.civitaiVersions}/${modelId}`;
@@ -854,7 +952,7 @@ export class BaseModelApiClient {
         }
     }
 
-    async downloadModel(modelId, versionId, modelRoot, relativePath, useDefaultPaths = false, downloadId, source = null) {
+    async downloadModel(modelId, versionId, modelRoot, relativePath, useDefaultPaths = false, downloadId, source = null, fileParams = null) {
         try {
             const response = await fetch(DOWNLOAD_ENDPOINTS.download, {
                 method: 'POST',
@@ -866,7 +964,8 @@ export class BaseModelApiClient {
                     relative_path: relativePath,
                     use_default_paths: useDefaultPaths,
                     download_id: downloadId,
-                    ...(source ? { source } : {})
+                    ...(source ? { source } : {}),
+                    ...(fileParams ? { file_params: fileParams } : {})
                 })
             });
 
@@ -883,20 +982,21 @@ export class BaseModelApiClient {
 
     _buildQueryParams(baseParams, pageState) {
         const params = new URLSearchParams(baseParams);
+        const isExcludedView = pageState.viewMode === 'excluded';
 
-        if (pageState.activeFolder !== null) {
+        if (!isExcludedView && pageState.activeFolder !== null) {
             params.append('folder', pageState.activeFolder);
         }
 
-        if (pageState.showFavoritesOnly) {
+        if (!isExcludedView && pageState.showFavoritesOnly) {
             params.append('favorites_only', 'true');
         }
 
-        if (pageState.showUpdateAvailableOnly) {
+        if (!isExcludedView && pageState.showUpdateAvailableOnly) {
             params.append('update_available_only', 'true');
         }
 
-        if (this.apiConfig.config.supportsLetterFilter && pageState.activeLetterFilter) {
+        if (!isExcludedView && this.apiConfig.config.supportsLetterFilter && pageState.activeLetterFilter) {
             params.append('first_letter', pageState.activeLetterFilter);
         }
 
@@ -918,13 +1018,23 @@ export class BaseModelApiClient {
 
         params.append('recursive', pageState.searchOptions.recursive ? 'true' : 'false');
 
-        if (pageState.filters) {
+        if (!isExcludedView && pageState.filters) {
             if (pageState.filters.tags && Object.keys(pageState.filters.tags).length > 0) {
                 Object.entries(pageState.filters.tags).forEach(([tag, state]) => {
                     if (state === 'include') {
                         params.append('tag_include', tag);
                     } else if (state === 'exclude') {
                         params.append('tag_exclude', tag);
+                    }
+                });
+            }
+
+            if (pageState.filters.autoTags && Object.keys(pageState.filters.autoTags).length > 0) {
+                Object.entries(pageState.filters.autoTags).forEach(([tag, state]) => {
+                    if (state === 'include') {
+                        params.append('auto_tag_include', tag);
+                    } else if (state === 'exclude') {
+                        params.append('auto_tag_exclude', tag);
                     }
                 });
             }
@@ -981,7 +1091,9 @@ export class BaseModelApiClient {
             }
         }
 
-        this._addModelSpecificParams(params, pageState);
+        if (!isExcludedView) {
+            this._addModelSpecificParams(params, pageState);
+        }
 
         return params;
     }

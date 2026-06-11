@@ -11,6 +11,7 @@ from typing import Dict, List
 
 from ..utils.settings_paths import ensure_settings_file
 from ..services.downloader import get_downloader
+from ..services.service_registry import ServiceRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -212,8 +213,19 @@ class UpdateRoutes:
 
             zip_path = tmp_zip_path
 
-            # Skip both settings.json, civitai and model cache folder
-            UpdateRoutes._clean_plugin_folder(plugin_root, skip_files=['settings.json', 'civitai', 'model_cache'])
+            # Close the downloaded-versions SQLite connection before cleaning,
+            # so that shutil.rmtree() does not fail on Windows (the process
+            # cannot delete a file with an outstanding open handle).
+            try:
+                history_svc = ServiceRegistry._services.get("downloaded_version_history_service")
+                if history_svc is not None:
+                    history_svc.close()
+                    logger.info("Closed downloaded-version history database connection")
+            except Exception:
+                logger.debug("Could not close downloaded-version history database", exc_info=True)
+
+            # Skip settings.json, civitai, model cache and runtime cache folders
+            UpdateRoutes._clean_plugin_folder(plugin_root, skip_files=['settings.json', 'civitai', 'model_cache', 'cache', 'wildcards', 'backups'])
 
             # Extract ZIP to temp dir
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -222,16 +234,17 @@ class UpdateRoutes:
                     # Find extracted folder (GitHub ZIP contains a root folder)
                     extracted_root = next(os.scandir(tmp_dir)).path
 
-                    # Copy files, skipping settings.json and civitai folder
+                    # Copy files, skipping user data that should be preserved
+                    skip_items = {'settings.json', 'civitai', 'wildcards', 'backups'}
                     for item in os.listdir(extracted_root):
-                        if item == 'settings.json' or item == 'civitai':
+                        if item in skip_items:
                             continue
                         src = os.path.join(extracted_root, item)
                         dst = os.path.join(plugin_root, item)
                         if os.path.isdir(src):
                             if os.path.exists(dst):
                                 shutil.rmtree(dst)
-                            shutil.copytree(src, dst, ignore=shutil.ignore_patterns('settings.json', 'civitai'))
+                            shutil.copytree(src, dst, ignore=shutil.ignore_patterns(*skip_items))
                         else:
                             shutil.copy2(src, dst)
 
@@ -239,15 +252,17 @@ class UpdateRoutes:
                     # for ComfyUI Manager to work properly
                     tracking_info_file = os.path.join(plugin_root, '.tracking')
                     tracking_files = []
+                    skip_tracked = {'civitai', 'wildcards', 'backups'}
                     for root, dirs, files in os.walk(extracted_root):
-                        # Skip civitai folder and its contents
+                        # Skip user data directories and their contents
                         rel_root = os.path.relpath(root, extracted_root)
-                        if rel_root == 'civitai' or rel_root.startswith('civitai' + os.sep):
+                        top_dir = rel_root.split(os.sep)[0] if rel_root != '.' else ''
+                        if top_dir in skip_tracked:
                             continue
                         for file in files:
                             rel_path = os.path.relpath(os.path.join(root, file), extracted_root)
-                            # Skip settings.json and any file under civitai
-                            if rel_path == 'settings.json' or rel_path.startswith('civitai' + os.sep):
+                            # Skip settings.json and any file under user data dirs
+                            if rel_path == 'settings.json' or rel_path.split(os.sep)[0] in skip_tracked:
                                 continue
                             tracking_files.append(rel_path.replace("\\", "/"))
                     with open(tracking_info_file, "w", encoding='utf-8') as file:

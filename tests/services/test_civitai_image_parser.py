@@ -184,7 +184,10 @@ async def test_parse_metadata_populates_checkpoint_and_rewrites_thumbnails(monke
     assert result["model"] is not None
     assert result["model"]["name"] == "Checkpoint Example"
     assert result["model"]["type"] == "checkpoint"
-    assert result["model"]["thumbnailUrl"] == "https://image.civitai.com/checkpoints/width=450,optimized=true"
+    assert (
+        result["model"]["thumbnailUrl"]
+        == "https://image.civitai.com/checkpoints/width=450,optimized=true"
+    )
     assert result["model"]["modelId"] == 111
     assert result["model"]["size"] == 1024 * 1024
     assert result["model"]["hash"] == "ffaa0011"
@@ -192,5 +195,216 @@ async def test_parse_metadata_populates_checkpoint_and_rewrites_thumbnails(monke
 
     assert result["loras"]
     assert result["loras"][0]["name"] == "Example Lora Model"
-    assert result["loras"][0]["thumbnailUrl"] == "https://image.civitai.com/loras/width=450,optimized=true"
+    assert (
+        result["loras"][0]["thumbnailUrl"]
+        == "https://image.civitai.com/loras/width=450,optimized=true"
+    )
     assert result["loras"][0]["hash"] == "abc123"
+
+
+@pytest.mark.asyncio
+async def test_parse_metadata_handles_modelVersionIds(monkeypatch):
+    """Test that modelVersionIds from Civitai image API are properly processed."""
+    lora_info_1 = {
+        "id": 2398829,
+        "modelId": 123456,
+        "model": {"name": "Dance LoRA 1", "type": "lora"},
+        "name": "Version 1.0",
+        "images": [{"url": "https://image.civitai.com/lora1/original=true"}],
+        "baseModel": "SDXL",
+        "downloadUrl": "https://civitai.com/lora1/download",
+        "files": [
+            {
+                "type": "Model",
+                "primary": True,
+                "sizeKB": 10240,
+                "name": "dance_lora_1.safetensors",
+                "hashes": {"SHA256": "aabbccdd0011"},
+            }
+        ],
+    }
+
+    lora_info_2 = {
+        "id": 2398838,
+        "modelId": 123457,
+        "model": {"name": "Style LoRA 2", "type": "lora"},
+        "name": "Version 2.0",
+        "images": [{"url": "https://image.civitai.com/lora2/original=true"}],
+        "baseModel": "SDXL",
+        "downloadUrl": "https://civitai.com/lora2/download",
+        "files": [
+            {
+                "type": "Model",
+                "primary": True,
+                "sizeKB": 20480,
+                "name": "style_lora_2.safetensors",
+                "hashes": {"SHA256": "aabbccdd0022"},
+            }
+        ],
+    }
+
+    async def fake_metadata_provider():
+        class Provider:
+            async def get_model_version_info(self, version_id):
+                if version_id == "2398829":
+                    return lora_info_1, None
+                if version_id == "2398838":
+                    return lora_info_2, None
+                return None, "Model not found"
+
+        return Provider()
+
+    monkeypatch.setattr(
+        "py.recipes.parsers.civitai_image.get_default_metadata_provider",
+        fake_metadata_provider,
+    )
+
+    parser = CivitaiApiMetadataParser()
+
+    # This simulates the metadata from Civitai image API where modelVersionIds
+    # is at the root level and meta only contains basic prompt info
+    metadata = {
+        "id": 109882763,
+        "meta": {
+            "id": 109882763,
+            "meta": {"prompt": "A woman does the hip bump dance."},
+        },
+        "modelVersionIds": [2398829, 2398838],
+    }
+
+    assert parser.is_metadata_matching(metadata)
+
+    result = await parser.parse_metadata(metadata)
+
+    # Verify both LoRAs were created from modelVersionIds
+    assert len(result["loras"]) == 2
+
+    # Check first LoRA
+    lora1 = result["loras"][0]
+    assert lora1["id"] == 2398829
+    assert lora1["name"] == "Dance LoRA 1"
+    assert lora1["type"] == "lora"
+    assert lora1["hash"] == "aabbccdd0011"
+    assert lora1["baseModel"] == "SDXL"
+    assert (
+        lora1["thumbnailUrl"]
+        == "https://image.civitai.com/lora1/width=450,optimized=true"
+    )
+
+    # Check second LoRA
+    lora2 = result["loras"][1]
+    assert lora2["id"] == 2398838
+    assert lora2["name"] == "Style LoRA 2"
+    assert lora2["type"] == "lora"
+    assert lora2["hash"] == "aabbccdd0022"
+    assert lora2["baseModel"] == "SDXL"
+
+
+@pytest.mark.asyncio
+async def test_parse_metadata_extracts_checkpoint_from_resources_model_type(monkeypatch):
+    """resources entries with type:"model" should be captured as the checkpoint,
+    not skipped (which was the old buggy behavior), and not mixed into loras."""
+    captured_hashes = []
+
+    async def fake_metadata_provider():
+        class Provider:
+            async def get_model_by_hash(self, model_hash):
+                captured_hashes.append(model_hash)
+                if model_hash == "a1b2c3d4e5":
+                    return ({
+                        "id": 999,
+                        "modelId": 888,
+                        "name": "v1.0",
+                        "model": {"name": "Real Checkpoint", "type": "Checkpoint"},
+                        "baseModel": "SDXL 1.0",
+                        "images": [{"url": "https://image.civitai.com/cp/original=true"}],
+                        "files": [{"type": "Model", "primary": True, "sizeKB": 1024, "name": "cp.safetensors"}]
+                    }, None)
+                return None, "Model not found"
+
+        return Provider()
+
+    monkeypatch.setattr(
+        "py.recipes.parsers.civitai_image.get_default_metadata_provider",
+        fake_metadata_provider,
+    )
+
+    parser = CivitaiApiMetadataParser()
+
+    metadata = {
+        "prompt": "test",
+        "resources": [
+            {"hash": "a1b2c3d4e5", "name": "Real Checkpoint", "type": "model"},
+            {"hash": "f6g7h8i9j0", "name": "Some LoRA", "type": "lora", "weight": 0.8},
+        ],
+        "Model hash": "a1b2c3d4e5",
+    }
+
+    result = await parser.parse_metadata(metadata)
+
+    # The type:"model" resource should be in result["model"], not in result["loras"]
+    assert result["model"] is not None, "checkpoint model should be extracted"
+    assert result["model"]["name"] == "Real Checkpoint"
+    assert result["model"]["hash"] == "a1b2c3d4e5"
+    assert result["model"]["type"] == "model"
+
+    # The LoRA resource should be in result["loras"]
+    assert len(result["loras"]) == 1
+    assert result["loras"][0]["name"] == "Some LoRA"
+
+    # The checkpoint hash should have triggered a lookup
+    assert "a1b2c3d4e5" in captured_hashes
+
+
+@pytest.mark.asyncio
+async def test_parse_metadata_resources_model_type_does_not_duplicate_checkpoint_in_loras(monkeypatch):
+    """When a resources entry has type:"model", it should NOT also appear in loras.
+    Regression test for the bug where the checkpoint model appeared in both places."""
+    async def fake_metadata_provider():
+        class Provider:
+            async def get_model_by_hash(self, model_hash):
+                if model_hash == "cp123hash":
+                    return ({
+                        "id": 100,
+                        "modelId": 200,
+                        "name": "v2",
+                        "model": {"name": "My Checkpoint", "type": "Checkpoint"},
+                        "baseModel": "SDXL",
+                        "files": [{"type": "Model", "primary": True, "sizeKB": 1024, "name": "cp.safetensors"}]
+                    }, None)
+                if model_hash == "lora1hash":
+                    return ({
+                        "id": 300,
+                        "modelId": 400,
+                        "name": "v1",
+                        "model": {"name": "Style LoRA", "type": "LORA"},
+                        "baseModel": "SDXL",
+                        "files": [{"type": "Model", "primary": True, "sizeKB": 512, "name": "style.safetensors"}]
+                    }, None)
+                return None, "Model not found"
+
+        return Provider()
+
+    monkeypatch.setattr(
+        "py.recipes.parsers.civitai_image.get_default_metadata_provider",
+        fake_metadata_provider,
+    )
+
+    parser = CivitaiApiMetadataParser()
+    metadata = {
+        "resources": [
+            {"hash": "cp123hash", "name": "My Checkpoint", "type": "model"},
+            {"hash": "lora1hash", "name": "Style LoRA", "type": "lora", "weight": 0.5},
+        ],
+    }
+
+    result = await parser.parse_metadata(metadata)
+
+    # Checkpoint must NOT appear in loras
+    lora_names = {l["name"] for l in result["loras"]}
+    assert "My Checkpoint" not in lora_names
+    assert "Style LoRA" in lora_names
+
+    # Checkpoint must be in result["model"]
+    assert result["model"] is not None
+    assert result["model"]["name"] == "My Checkpoint"

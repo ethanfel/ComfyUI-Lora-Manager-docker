@@ -17,7 +17,9 @@ def test_portable_settings_use_project_root(tmp_path, monkeypatch):
     from importlib import reload
 
     settings_paths_module = reload(settings_paths)
-    monkeypatch.setattr(settings_paths_module, "get_project_root", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        settings_paths_module, "get_project_root", lambda: str(tmp_path)
+    )
     monkeypatch.setattr(
         settings_paths_module,
         "user_config_dir",
@@ -25,7 +27,9 @@ def test_portable_settings_use_project_root(tmp_path, monkeypatch):
     )
 
     portable_settings = {"use_portable_settings": True}
-    (tmp_path / "settings.json").write_text(json.dumps(portable_settings), encoding="utf-8")
+    (tmp_path / "settings.json").write_text(
+        json.dumps(portable_settings), encoding="utf-8"
+    )
 
     config_dir = settings_paths_module.get_settings_dir(create=True)
     assert config_dir == str(tmp_path)
@@ -74,7 +78,9 @@ def test_initial_save_persists_minimal_template(tmp_path, monkeypatch):
         self._seed_template = copy.deepcopy(template)
         return copy.deepcopy(template)
 
-    monkeypatch.setattr(SettingsManager, "_load_settings_template", fake_template_loader)
+    monkeypatch.setattr(
+        SettingsManager, "_load_settings_template", fake_template_loader
+    )
 
     manager = SettingsManager()
 
@@ -118,7 +124,10 @@ def test_existing_folder_paths_seed_default_library(tmp_path, monkeypatch):
     assert "default" in libraries
     assert libraries["default"]["folder_paths"]["loras"] == [str(lora_dir)]
     assert libraries["default"]["folder_paths"]["checkpoints"] == [str(checkpoint_dir)]
-    assert libraries["default"]["folder_paths"]["unet"] == [str(diffusion_dir), str(unet_dir)]
+    assert libraries["default"]["folder_paths"]["unet"] == [
+        str(diffusion_dir),
+        str(unet_dir),
+    ]
     assert libraries["default"]["folder_paths"]["embeddings"] == [str(embedding_dir)]
 
     assert manager.get_startup_messages() == []
@@ -138,7 +147,14 @@ def test_environment_variable_overrides_settings(tmp_path, monkeypatch):
     assert mgr.get("civitai_api_key") == "secret"
 
 
-def _create_manager_with_settings(tmp_path, monkeypatch, initial_settings, *, save_spy=None):
+def test_default_download_backend_is_python(manager):
+    assert manager.get("download_backend") == "python"
+    assert manager.get("aria2c_path") == ""
+
+
+def _create_manager_with_settings(
+    tmp_path, monkeypatch, initial_settings, *, save_spy=None
+):
     """Helper to instantiate SettingsManager with predefined settings."""
 
     fake_settings_path = tmp_path / "settings.json"
@@ -203,7 +219,9 @@ def test_switch_to_portable_mode_copies_cache(tmp_path, monkeypatch):
     assert manager.settings_file == str(project_root / "settings.json")
     marker_copy = project_root / "model_cache" / "user_marker.txt"
     assert marker_copy.read_text(encoding="utf-8") == "user_marker.txt"
-    assert (project_root / "model_cache.sqlite").read_text(encoding="utf-8") == "user_db"
+    assert (project_root / "model_cache.sqlite").read_text(
+        encoding="utf-8"
+    ) == "user_db"
     assert user_settings.exists()
 
 
@@ -216,13 +234,17 @@ def test_switching_back_to_user_config_moves_cache(tmp_path, monkeypatch):
 
     project_cache_dir = project_root / "model_cache"
     project_cache_dir.mkdir(exist_ok=True)
-    (project_cache_dir / "project_marker.txt").write_text("project_marker", encoding="utf-8")
+    (project_cache_dir / "project_marker.txt").write_text(
+        "project_marker", encoding="utf-8"
+    )
     (project_root / "model_cache.sqlite").write_text("project_db", encoding="utf-8")
 
     manager.set("use_portable_settings", False)
 
     assert manager.settings_file == str(user_settings)
-    assert (user_dir / "model_cache" / "project_marker.txt").read_text(encoding="utf-8") == "project_marker"
+    assert (user_dir / "model_cache" / "project_marker.txt").read_text(
+        encoding="utf-8"
+    ) == "project_marker"
     assert (user_dir / "model_cache.sqlite").read_text(encoding="utf-8") == "project_db"
 
 
@@ -242,10 +264,19 @@ def test_download_path_template_invalid_json(manager):
     template = manager.get_download_path_template("checkpoint")
 
     assert template == "{base_model}/{first_tag}"
-    assert manager.settings["download_path_templates"]["lora"] == "{base_model}/{first_tag}"
+    assert (
+        manager.settings["download_path_templates"]["lora"]
+        == "{base_model}/{first_tag}"
+    )
 
 
 def test_auto_set_default_roots(manager):
+    # Clear any previously auto-set values to test fresh behavior
+    manager.settings["default_lora_root"] = ""
+    manager.settings["default_checkpoint_root"] = ""
+    manager.settings["default_embedding_root"] = ""
+    manager.settings["default_unet_root"] = ""
+
     manager.settings["folder_paths"] = {
         "loras": ["/loras"],
         "checkpoints": ["/checkpoints"],
@@ -259,15 +290,146 @@ def test_auto_set_default_roots(manager):
     assert manager.get("default_embedding_root") == "/embeddings"
 
 
+def test_auto_set_default_roots_repairs_stale_values(manager):
+    manager.settings["default_lora_root"] = "/stale-lora"
+    manager.settings["default_checkpoint_root"] = "/stale-checkpoint"
+    manager.settings["default_embedding_root"] = "/stale-embedding"
+    manager.settings["default_unet_root"] = "/stale-unet"
+
+    manager.settings["folder_paths"] = {
+        "loras": ["/loras"],
+        "checkpoints": ["/checkpoints"],
+        "unet": ["/unet"],
+        "embeddings": ["/embeddings"],
+    }
+
+    manager._auto_set_default_roots()
+
+    assert manager.get("default_lora_root") == "/loras"
+    assert manager.get("default_checkpoint_root") == "/checkpoints"
+    assert manager.get("default_unet_root") == "/unet"
+    assert manager.get("default_embedding_root") == "/embeddings"
+
+
+def test_auto_set_default_roots_keeps_valid_values(manager):
+    manager.settings["default_lora_root"] = "/loras"
+    manager.settings["default_checkpoint_root"] = "/checkpoints"
+    manager.settings["default_embedding_root"] = "/embeddings"
+    manager.settings["default_unet_root"] = "/unet"
+
+    manager.settings["folder_paths"] = {
+        "loras": ["/loras", "/other-loras"],
+        "checkpoints": ["/checkpoints"],
+        "unet": ["/unet", "/other-unet"],
+        "embeddings": ["/embeddings"],
+    }
+
+    manager._auto_set_default_roots()
+
+    assert manager.get("default_lora_root") == "/loras"
+    assert manager.get("default_checkpoint_root") == "/checkpoints"
+    assert manager.get("default_unet_root") == "/unet"
+    assert manager.get("default_embedding_root") == "/embeddings"
+
+
+def test_auto_set_default_roots_keeps_valid_extra_values(manager):
+    manager.settings["default_lora_root"] = "/extra-loras"
+    manager.settings["default_checkpoint_root"] = "/extra-checkpoints"
+    manager.settings["default_embedding_root"] = "/extra-embeddings"
+    manager.settings["default_unet_root"] = "/extra-unet"
+
+    manager.settings["folder_paths"] = {
+        "loras": ["/loras"],
+        "checkpoints": ["/checkpoints"],
+        "unet": ["/unet"],
+        "embeddings": ["/embeddings"],
+    }
+    manager.settings["extra_folder_paths"] = {
+        "loras": ["/extra-loras"],
+        "checkpoints": ["/extra-checkpoints"],
+        "unet": ["/extra-unet"],
+        "embeddings": ["/extra-embeddings"],
+    }
+
+    manager._auto_set_default_roots()
+
+    assert manager.get("default_lora_root") == "/extra-loras"
+    assert manager.get("default_checkpoint_root") == "/extra-checkpoints"
+    assert manager.get("default_unet_root") == "/extra-unet"
+    assert manager.get("default_embedding_root") == "/extra-embeddings"
+
+
+def test_auto_set_default_roots_keeps_valid_extra_values_with_windows_slash_mismatch(manager):
+    manager.settings["default_lora_root"] = "U:/Lora7/Loras"
+    manager.settings["default_checkpoint_root"] = "U:/Lora7/Models"
+
+    manager.settings["folder_paths"] = {
+        "loras": ["R:/ComfyUI/models/loras"],
+        "checkpoints": ["R:/ComfyUI/models/checkpoints"],
+    }
+    manager.settings["extra_folder_paths"] = {
+        "loras": ["U:\\Lora7\\Loras"],
+        "checkpoints": ["U:\\Lora7\\Models"],
+    }
+
+    manager._auto_set_default_roots()
+
+    assert manager.get("default_lora_root") == "U:/Lora7/Loras"
+    assert manager.get("default_checkpoint_root") == "U:/Lora7/Models"
+
+
+def test_auto_set_default_roots_falls_back_to_extra_when_primary_missing(manager):
+    manager.settings["default_lora_root"] = ""
+    manager.settings["folder_paths"] = {"loras": []}
+    manager.settings["extra_folder_paths"] = {"loras": ["/extra-loras"]}
+
+    manager._auto_set_default_roots()
+
+    assert manager.get("default_lora_root") == "/extra-loras"
+
+
 def test_delete_setting(manager):
     manager.set("example", 1)
     manager.delete("example")
     assert manager.get("example") is None
 
 
+def test_missing_mature_blur_level_defaults_to_r(tmp_path, monkeypatch):
+    manager = _create_manager_with_settings(
+        tmp_path,
+        monkeypatch,
+        {
+            "blur_mature_content": True,
+            "folder_paths": {},
+        },
+    )
+
+    assert manager.get("mature_blur_level") == "R"
+
+
+def test_invalid_mature_blur_level_is_normalized_to_r(tmp_path, monkeypatch):
+    manager = _create_manager_with_settings(
+        tmp_path,
+        monkeypatch,
+        {
+            "mature_blur_level": "unsafe",
+            "folder_paths": {},
+        },
+    )
+
+    assert manager.get("mature_blur_level") == "R"
+
+
 def test_model_name_display_setting_notifies_scanners(tmp_path, monkeypatch):
     initial = {
-        "libraries": {"default": {"folder_paths": {}, "default_lora_root": "", "default_checkpoint_root": "", "default_embedding_root": ""}},
+        "libraries": {
+            "default": {
+                "folder_paths": {},
+                "default_lora_root": "",
+                "default_checkpoint_root": "",
+                "default_embedding_root": "",
+            }
+        },
         "active_library": "default",
         "model_name_display": "model_name",
     }
@@ -289,6 +451,7 @@ def test_model_name_display_setting_notifies_scanners(tmp_path, monkeypatch):
 
     dispatched_loops = []
     futures = []
+
     def tracking_run_coroutine_threadsafe(coro, target_loop):
         dispatched_loops.append(target_loop)
         future = Future()
@@ -309,7 +472,9 @@ def test_model_name_display_setting_notifies_scanners(tmp_path, monkeypatch):
         "get_service_sync",
         classmethod(fake_get_service_sync),
     )
-    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", tracking_run_coroutine_threadsafe)
+    monkeypatch.setattr(
+        asyncio, "run_coroutine_threadsafe", tracking_run_coroutine_threadsafe
+    )
 
     try:
         manager.set("model_name_display", "file_name")
@@ -328,12 +493,14 @@ def test_migrates_legacy_settings_file(tmp_path, monkeypatch):
     legacy_root = tmp_path / "legacy"
     legacy_root.mkdir()
     legacy_file = legacy_root / "settings.json"
-    legacy_file.write_text("{\"value\": 1}", encoding="utf-8")
+    legacy_file.write_text('{"value": 1}', encoding="utf-8")
 
     target_dir = tmp_path / "config"
 
     monkeypatch.setattr(settings_paths, "get_project_root", lambda: str(legacy_root))
-    monkeypatch.setattr(settings_paths, "user_config_dir", lambda *_, **__: str(target_dir))
+    monkeypatch.setattr(
+        settings_paths, "user_config_dir", lambda *_, **__: str(target_dir)
+    )
 
     migrated_path = settings_paths.ensure_settings_file()
 
@@ -354,7 +521,9 @@ def test_uses_portable_settings_file_when_enabled(tmp_path, monkeypatch):
     user_dir = tmp_path / "user"
 
     monkeypatch.setattr(settings_paths, "get_project_root", lambda: str(repo_root))
-    monkeypatch.setattr(settings_paths, "user_config_dir", lambda *_, **__: str(user_dir))
+    monkeypatch.setattr(
+        settings_paths, "user_config_dir", lambda *_, **__: str(user_dir)
+    )
 
     resolved = settings_paths.ensure_settings_file()
 
@@ -367,7 +536,9 @@ def test_migrate_creates_default_library(manager):
     libraries = manager.get_libraries()
     assert "default" in libraries
     assert manager.get_active_library_name() == "default"
-    assert libraries["default"].get("folder_paths", {}) == manager.settings.get("folder_paths", {})
+    assert libraries["default"].get("folder_paths", {}) == manager.settings.get(
+        "folder_paths", {}
+    )
 
 
 def test_migrate_sanitizes_legacy_libraries(tmp_path, monkeypatch):
@@ -386,6 +557,7 @@ def test_migrate_sanitizes_legacy_libraries(tmp_path, monkeypatch):
     assert payload["default_lora_root"] == ""
     assert payload["default_checkpoint_root"] == ""
     assert payload["default_embedding_root"] == ""
+    assert payload["recipes_path"] == ""
     assert manager.get_active_library_name() == "legacy"
 
 
@@ -397,12 +569,14 @@ def test_active_library_syncs_top_level_settings(tmp_path, monkeypatch):
                 "default_lora_root": "/loras",
                 "default_checkpoint_root": "/ckpt",
                 "default_embedding_root": "/embed",
+                "recipes_path": "/loras/recipes",
             },
             "studio": {
                 "folder_paths": {"loras": ["/studio"]},
                 "default_lora_root": "/studio",
                 "default_checkpoint_root": "/studio_ckpt",
                 "default_embedding_root": "/studio_embed",
+                "recipes_path": "/studio/custom-recipes",
             },
         },
         "active_library": "studio",
@@ -411,6 +585,7 @@ def test_active_library_syncs_top_level_settings(tmp_path, monkeypatch):
         "default_lora_root": "/loras",
         "default_checkpoint_root": "/ckpt",
         "default_embedding_root": "/embed",
+        "recipes_path": "/loras/recipes",
     }
 
     manager = _create_manager_with_settings(tmp_path, monkeypatch, initial)
@@ -420,14 +595,17 @@ def test_active_library_syncs_top_level_settings(tmp_path, monkeypatch):
     assert manager.get("default_lora_root") == "/studio"
     assert manager.get("default_checkpoint_root") == "/studio_ckpt"
     assert manager.get("default_embedding_root") == "/studio_embed"
+    assert manager.get("recipes_path") == "/studio/custom-recipes"
 
     # Drift the top-level values again and ensure activate_library repairs them
     manager.settings["folder_paths"] = {"loras": ["/loras"]}
     manager.settings["default_lora_root"] = "/loras"
+    manager.settings["recipes_path"] = "/loras/recipes"
     manager.activate_library("studio")
 
     assert manager.get("folder_paths")["loras"] == ["/studio"]
     assert manager.get("default_lora_root") == "/studio"
+    assert manager.get("recipes_path") == "/studio/custom-recipes"
 
 
 def test_refresh_environment_variables_updates_stored_value(tmp_path, monkeypatch):
@@ -438,12 +616,22 @@ def test_refresh_environment_variables_updates_stored_value(tmp_path, monkeypatc
 
     initial = {
         "civitai_api_key": "stale",
-        "libraries": {"default": {"folder_paths": {}, "default_lora_root": "", "default_checkpoint_root": "", "default_embedding_root": ""}},
+        "libraries": {
+            "default": {
+                "folder_paths": {},
+                "default_lora_root": "",
+                "default_checkpoint_root": "",
+                "default_embedding_root": "",
+                "recipes_path": "",
+            }
+        },
         "active_library": "default",
     }
 
     monkeypatch.setenv("CIVITAI_API_KEY", "from-init")
-    manager = _create_manager_with_settings(tmp_path, monkeypatch, initial, save_spy=save_spy)
+    manager = _create_manager_with_settings(
+        tmp_path, monkeypatch, initial, save_spy=save_spy
+    )
 
     assert calls[-1] == "from-init"
 
@@ -468,6 +656,177 @@ def test_upsert_library_creates_entry_and_activates(manager, tmp_path):
     stored_paths = libraries["studio"]["folder_paths"]["loras"]
     normalized_stored_paths = [p.replace(os.sep, "/") for p in stored_paths]
     assert str(lora_dir).replace(os.sep, "/") in normalized_stored_paths
+
+
+def test_set_recipes_path_updates_active_library_entry(manager, tmp_path):
+    recipes_dir = tmp_path / "custom" / "recipes"
+
+    manager.set("recipes_path", str(recipes_dir))
+
+    assert manager.get("recipes_path") == str(recipes_dir.resolve())
+    assert (
+        manager.get_libraries()["default"]["recipes_path"]
+        == str(recipes_dir.resolve())
+    )
+
+
+def test_set_recipes_path_migrates_existing_recipe_files(manager, tmp_path):
+    lora_root = tmp_path / "loras"
+    old_recipes_dir = lora_root / "recipes" / "nested"
+    old_recipes_dir.mkdir(parents=True)
+    manager.set("folder_paths", {"loras": [str(lora_root)]})
+
+    recipe_id = "recipe-1"
+    old_image_path = old_recipes_dir / f"{recipe_id}.webp"
+    old_json_path = old_recipes_dir / f"{recipe_id}.recipe.json"
+    old_image_path.write_bytes(b"image-bytes")
+    old_json_path.write_text(
+        json.dumps(
+            {
+                "id": recipe_id,
+                "file_path": str(old_image_path),
+                "title": "Recipe 1",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    new_recipes_dir = tmp_path / "custom_recipes"
+    manager.set("recipes_path", str(new_recipes_dir))
+
+    migrated_image_path = new_recipes_dir / "nested" / f"{recipe_id}.webp"
+    migrated_json_path = new_recipes_dir / "nested" / f"{recipe_id}.recipe.json"
+
+    assert manager.get("recipes_path") == str(new_recipes_dir.resolve())
+    assert migrated_image_path.read_bytes() == b"image-bytes"
+    migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
+    assert migrated_payload["file_path"] == str(migrated_image_path)
+    assert not old_image_path.exists()
+    assert not old_json_path.exists()
+
+
+def test_clearing_recipes_path_migrates_files_to_default_location(manager, tmp_path):
+    lora_root = tmp_path / "loras"
+    custom_recipes_dir = tmp_path / "custom_recipes"
+    old_recipes_dir = custom_recipes_dir / "nested"
+    old_recipes_dir.mkdir(parents=True)
+    manager.set("folder_paths", {"loras": [str(lora_root)]})
+    manager.settings["recipes_path"] = str(custom_recipes_dir)
+
+    recipe_id = "recipe-2"
+    old_image_path = old_recipes_dir / f"{recipe_id}.webp"
+    old_json_path = old_recipes_dir / f"{recipe_id}.recipe.json"
+    old_image_path.write_bytes(b"image-bytes")
+    old_json_path.write_text(
+        json.dumps(
+            {
+                "id": recipe_id,
+                "file_path": str(old_image_path),
+                "title": "Recipe 2",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager.set("recipes_path", "")
+
+    fallback_recipes_dir = lora_root / "recipes"
+    migrated_image_path = fallback_recipes_dir / "nested" / f"{recipe_id}.webp"
+    migrated_json_path = fallback_recipes_dir / "nested" / f"{recipe_id}.recipe.json"
+
+    assert manager.get("recipes_path") == ""
+    assert migrated_image_path.read_bytes() == b"image-bytes"
+    migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
+    assert migrated_payload["file_path"] == str(migrated_image_path)
+    assert not old_image_path.exists()
+    assert not old_json_path.exists()
+
+
+def test_moving_recipes_path_back_to_parent_directory_is_allowed(manager, tmp_path):
+    lora_root = tmp_path / "loras"
+    manager.set("folder_paths", {"loras": [str(lora_root)]})
+
+    source_recipes_dir = lora_root / "recipes" / "custom"
+    source_recipes_dir.mkdir(parents=True)
+
+    recipe_id = "recipe-parent"
+    old_image_path = source_recipes_dir / f"{recipe_id}.webp"
+    old_json_path = source_recipes_dir / f"{recipe_id}.recipe.json"
+    old_image_path.write_bytes(b"parent-bytes")
+    old_json_path.write_text(
+        json.dumps(
+            {
+                "id": recipe_id,
+                "file_path": str(old_image_path),
+                "title": "Recipe Parent",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manager.settings["recipes_path"] = str(source_recipes_dir)
+    manager.set("recipes_path", str(lora_root / "recipes"))
+
+    migrated_image_path = lora_root / "recipes" / f"{recipe_id}.webp"
+    migrated_json_path = lora_root / "recipes" / f"{recipe_id}.recipe.json"
+
+    assert manager.get("recipes_path") == str((lora_root / "recipes").resolve())
+    assert migrated_image_path.read_bytes() == b"parent-bytes"
+    migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
+    assert migrated_payload["file_path"] == str(migrated_image_path)
+    assert not old_image_path.exists()
+    assert not old_json_path.exists()
+
+
+def test_set_recipes_path_rewrites_symlinked_recipe_metadata(manager, tmp_path):
+    real_recipes_dir = tmp_path / "real_recipes"
+    real_recipes_dir.mkdir()
+    symlink_recipes_dir = tmp_path / "linked_recipes"
+    symlink_recipes_dir.symlink_to(real_recipes_dir, target_is_directory=True)
+
+    manager.settings["recipes_path"] = str(symlink_recipes_dir)
+    manager.set("folder_paths", {"loras": [str(tmp_path / "loras")]})
+
+    recipe_id = "recipe-symlink"
+    old_image_path = real_recipes_dir / f"{recipe_id}.webp"
+    old_json_path = real_recipes_dir / f"{recipe_id}.recipe.json"
+    old_image_path.write_bytes(b"symlink-bytes")
+    old_json_path.write_text(
+        json.dumps(
+            {
+                "id": recipe_id,
+                "file_path": str(old_image_path),
+                "title": "Recipe Symlink",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    new_recipes_dir = tmp_path / "migrated_recipes"
+    manager.set("recipes_path", str(new_recipes_dir))
+
+    migrated_image_path = new_recipes_dir / f"{recipe_id}.webp"
+    migrated_json_path = new_recipes_dir / f"{recipe_id}.recipe.json"
+
+    assert migrated_image_path.read_bytes() == b"symlink-bytes"
+    migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
+    assert migrated_payload["file_path"] == str(migrated_image_path)
+    assert not old_image_path.exists()
+    assert not old_json_path.exists()
+
+
+def test_set_recipes_path_rejects_file_target(manager, tmp_path):
+    lora_root = tmp_path / "loras"
+    lora_root.mkdir()
+    manager.set("folder_paths", {"loras": [str(lora_root)]})
+
+    target_file = tmp_path / "not_a_directory"
+    target_file.write_text("blocked", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="directory"):
+        manager.set("recipes_path", str(target_file))
+
+    assert manager.get("recipes_path") == ""
 
 
 def test_extra_folder_paths_stored_separately(manager, tmp_path):
@@ -564,6 +923,116 @@ def test_extra_paths_validation_no_overlap_with_other_libraries(manager, tmp_pat
         manager.update_extra_folder_paths({"loras": [str(lora_dir1)]})
 
 
+def test_extra_paths_validation_no_overlap_with_active_primary_lora_root(
+    manager, tmp_path
+):
+    """Test that extra LoRA paths cannot overlap the active library primary LoRA roots."""
+    real_lora_dir = tmp_path / "loras_real"
+    real_lora_dir.mkdir()
+    lora_link = tmp_path / "loras_link"
+    lora_link.symlink_to(real_lora_dir, target_is_directory=True)
+
+    manager.create_library(
+        "library1",
+        folder_paths={"loras": [str(lora_link)]},
+        activate=True,
+    )
+
+    with pytest.raises(
+        ValueError, match="overlap with the active library's primary LoRA roots"
+    ):
+        manager.update_extra_folder_paths({"loras": [str(real_lora_dir)]})
+
+
+def test_extra_paths_validation_no_overlap_with_active_primary_lora_root_case_insensitive(
+    manager, monkeypatch, tmp_path
+):
+    """Overlap validation should treat differently-cased Windows-like paths as the same path."""
+    real_lora_dir = tmp_path / "loras_real"
+    real_lora_dir.mkdir()
+    lora_link = tmp_path / "loras_link"
+    lora_link.symlink_to(real_lora_dir, target_is_directory=True)
+
+    manager.create_library(
+        "library1",
+        folder_paths={"loras": [str(lora_link)]},
+        activate=True,
+    )
+
+    original_exists = settings_manager_module.os.path.exists
+    original_realpath = settings_manager_module.os.path.realpath
+    original_normcase = settings_manager_module.os.path.normcase
+
+    def fake_exists(path):
+        if isinstance(path, str) and path.lower() in {
+            str(lora_link).lower(),
+            str(real_lora_dir).lower(),
+        }:
+            return True
+        return original_exists(path)
+
+    def fake_realpath(path):
+        if isinstance(path, str) and path.lower() == str(lora_link).lower():
+            return str(real_lora_dir)
+        return original_realpath(path)
+
+    monkeypatch.setattr(settings_manager_module.os.path, "exists", fake_exists)
+    monkeypatch.setattr(settings_manager_module.os.path, "realpath", fake_realpath)
+    monkeypatch.setattr(
+        settings_manager_module.os.path,
+        "normcase",
+        lambda value: original_normcase(value).lower(),
+    )
+
+    with pytest.raises(
+        ValueError, match="overlap with the active library's primary LoRA roots"
+    ):
+        manager.update_extra_folder_paths({"loras": [str(real_lora_dir).upper()]})
+
+
+def test_extra_paths_validation_allows_missing_non_overlapping_lora_root(
+    manager, tmp_path
+):
+    """Missing non-overlapping extra LoRA paths should not be rejected."""
+    lora_dir = tmp_path / "loras"
+    lora_dir.mkdir()
+    missing_extra = tmp_path / "missing_loras"
+
+    manager.create_library(
+        "library1",
+        folder_paths={"loras": [str(lora_dir)]},
+        activate=True,
+    )
+
+    manager.update_extra_folder_paths({"loras": [str(missing_extra)]})
+
+    extra_paths = manager.get_extra_folder_paths()
+    assert extra_paths["loras"] == [str(missing_extra)]
+
+
+def test_extra_paths_validation_rejects_primary_root_first_level_symlink_target(
+    manager, tmp_path
+):
+    """Extra LoRA paths should be rejected when already reachable via a first-level symlink under the primary root."""
+    lora_dir = tmp_path / "loras"
+    lora_dir.mkdir()
+    external_dir = tmp_path / "external_loras"
+    external_dir.mkdir()
+    link_dir = lora_dir / "link"
+    link_dir.symlink_to(external_dir, target_is_directory=True)
+
+    manager.create_library(
+        "library1",
+        folder_paths={"loras": [str(lora_dir)]},
+        activate=True,
+    )
+
+    with pytest.raises(
+        ValueError, match="overlap with the active library's primary LoRA roots"
+    ):
+        manager.update_extra_folder_paths({"loras": [str(external_dir)]})
+
+
 def test_delete_library_switches_active(manager, tmp_path):
     other_dir = tmp_path / "other"
     other_dir.mkdir()
@@ -579,3 +1048,35 @@ def test_delete_library_switches_active(manager, tmp_path):
     manager.delete_library("other")
 
     assert manager.get_active_library_name() == "default"
+
+
+def test_download_skip_base_models_are_normalized(manager):
+    manager.settings["download_skip_base_models"] = [
+        "SDXL 1.0",
+        "Invalid",
+        "SDXL 1.0",
+        "Pony",
+        "Other",
+    ]
+
+    result = manager.get_download_skip_base_models()
+
+    assert result == ["SDXL 1.0", "Pony"]
+    assert manager.settings["download_skip_base_models"] == ["SDXL 1.0", "Pony"]
+
+
+def test_setting_download_skip_base_models_normalizes_string_input(manager):
+    manager.set("download_skip_base_models", "SDXL 1.0, Pony; Invalid\nSDXL 1.0")
+
+    assert manager.get("download_skip_base_models") == ["SDXL 1.0", "Pony"]
+
+
+def test_skip_previously_downloaded_model_versions_defaults_false(manager):
+    assert manager.get_skip_previously_downloaded_model_versions() is False
+
+
+def test_skip_previously_downloaded_model_versions_coerces_string_input(manager):
+    manager.settings["skip_previously_downloaded_model_versions"] = "true"
+
+    assert manager.get_skip_previously_downloaded_model_versions() is True
+    assert manager.settings["skip_previously_downloaded_model_versions"] is True

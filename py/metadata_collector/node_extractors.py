@@ -1,4 +1,6 @@
+import json
 import os
+import re
 
 from .constants import MODELS, PROMPTS, SAMPLING, LORAS, SIZE, IMAGES, IS_SAMPLER
 
@@ -142,6 +144,118 @@ class TSCCheckpointLoaderExtractor(NodeMetadataExtractor):
                 metadata[PROMPTS][node_id]["positive_encoded"] = positive_conditioning
                 metadata[PROMPTS][node_id]["negative_encoded"] = negative_conditioning
 
+
+class EasyComfyLoaderExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        if "ckpt_name" in inputs:
+            _store_checkpoint_metadata(metadata, node_id, inputs["ckpt_name"])
+
+        # Only extract from optional_lora_stack — skip the single lora_name to
+        # avoid double-counting LoRAs that come through the LORA_STACK path.
+        active_loras = []
+        optional_lora_stack = inputs.get("optional_lora_stack")
+        if optional_lora_stack is not None and isinstance(optional_lora_stack, (list, tuple)):
+            for item in optional_lora_stack:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
+                    lora_path = item[0]
+                    model_strength = item[1]
+                    lora_name = os.path.splitext(os.path.basename(lora_path))[0]
+                    active_loras.append({
+                        "name": lora_name,
+                        "strength": model_strength
+                    })
+
+        if active_loras:
+            metadata[LORAS][node_id] = {
+                "lora_list": active_loras,
+                "node_id": node_id
+            }
+
+        positive_text = inputs.get("positive", "")
+        negative_text = inputs.get("negative", "")
+
+        if positive_text or negative_text:
+            if node_id not in metadata[PROMPTS]:
+                metadata[PROMPTS][node_id] = {"node_id": node_id}
+            metadata[PROMPTS][node_id]["positive_text"] = positive_text
+            metadata[PROMPTS][node_id]["negative_text"] = negative_text
+
+        if "clip_skip" in inputs:
+            clip_skip = inputs["clip_skip"]
+            if node_id not in metadata[SAMPLING]:
+                metadata[SAMPLING][node_id] = {"parameters": {}, "node_id": node_id}
+            metadata[SAMPLING][node_id]["parameters"]["clip_skip"] = clip_skip
+
+        width = inputs.get("empty_latent_width")
+        height = inputs.get("empty_latent_height")
+        if width is not None and height is not None:
+            if SIZE not in metadata:
+                metadata[SIZE] = {}
+            metadata[SIZE][node_id] = {
+                "width": int(width),
+                "height": int(height),
+                "node_id": node_id
+            }
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        # outputs: [(pipe_dict, model, vae), ...]
+        if not outputs or not isinstance(outputs, list) or len(outputs) == 0:
+            return
+        first_output = outputs[0]
+        if not isinstance(first_output, tuple) or len(first_output) < 1:
+            return
+        pipe = first_output[0]
+        if not isinstance(pipe, dict):
+            return
+
+        positive_conditioning = pipe.get("positive")
+        negative_conditioning = pipe.get("negative")
+
+        if positive_conditioning is not None or negative_conditioning is not None:
+            if node_id not in metadata[PROMPTS]:
+                metadata[PROMPTS][node_id] = {"node_id": node_id}
+            if positive_conditioning is not None:
+                metadata[PROMPTS][node_id]["positive_encoded"] = positive_conditioning
+            if negative_conditioning is not None:
+                metadata[PROMPTS][node_id]["negative_encoded"] = negative_conditioning
+
+
+class EasyPreSamplingExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        sampling_params = {}
+        for key in ("steps", "cfg", "sampler_name", "scheduler", "denoise", "seed"):
+            if key in inputs:
+                sampling_params[key] = inputs[key]
+
+        metadata[SAMPLING][node_id] = {
+            "parameters": sampling_params,
+            "node_id": node_id,
+            IS_SAMPLER: True
+        }
+
+
+class EasySeedExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs or "seed" not in inputs:
+            return
+
+        metadata[SAMPLING][node_id] = {
+            "parameters": {"seed": inputs["seed"]},
+            "node_id": node_id,
+            IS_SAMPLER: False
+        }
+
+
 class CLIPTextEncodeExtractor(NodeMetadataExtractor):
     @staticmethod
     def extract(node_id, inputs, outputs, metadata):
@@ -160,6 +274,251 @@ class CLIPTextEncodeExtractor(NodeMetadataExtractor):
             if isinstance(outputs[0], tuple) and len(outputs[0]) > 0:
                 conditioning = outputs[0][0]
                 metadata[PROMPTS][node_id]["conditioning"] = conditioning
+
+
+class MyOriginalWaifuTextExtractor(NodeMetadataExtractor):
+    """Extractor for ComfyUI-MyOriginalWaifu TextProvider nodes."""
+
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        positive_text = inputs.get("positive", "")
+        negative_text = inputs.get("negative", "")
+
+        if positive_text or negative_text:
+            metadata[PROMPTS][node_id] = {
+                "positive_text": positive_text,
+                "negative_text": negative_text,
+                "node_id": node_id,
+            }
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        output_tuple = _first_output_tuple(outputs)
+        if not output_tuple or len(output_tuple) < 2:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        prompt_metadata["positive_text"] = output_tuple[0]
+        prompt_metadata["negative_text"] = output_tuple[1]
+
+
+class MyOriginalWaifuClipExtractor(NodeMetadataExtractor):
+    """Extractor for ComfyUI-MyOriginalWaifu ClipProvider nodes."""
+
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        positive_text = inputs.get("positive", "")
+        negative_text = inputs.get("negative", "")
+
+        if positive_text or negative_text:
+            metadata[PROMPTS][node_id] = {
+                "positive_text": positive_text,
+                "negative_text": negative_text,
+                "node_id": node_id,
+            }
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        output_tuple = _first_output_tuple(outputs)
+        if not output_tuple or len(output_tuple) < 2:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        prompt_metadata["positive_encoded"] = output_tuple[0]
+        prompt_metadata["negative_encoded"] = output_tuple[1]
+
+
+def _ensure_prompt_metadata(metadata, node_id):
+    if node_id not in metadata[PROMPTS]:
+        metadata[PROMPTS][node_id] = {"node_id": node_id}
+    return metadata[PROMPTS][node_id]
+
+
+def _first_output_tuple(outputs):
+    if not outputs or not isinstance(outputs, list) or len(outputs) == 0:
+        return None
+    first_output = outputs[0]
+    if isinstance(first_output, tuple):
+        return first_output
+    return None
+
+
+def _record_conditioning_source(
+    metadata, node_id, output_conditioning, input_conditionings
+):
+    if output_conditioning is None:
+        return
+
+    sources = [
+        conditioning for conditioning in input_conditionings if conditioning is not None
+    ]
+    if not sources:
+        return
+
+    prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+    prompt_metadata.setdefault("conditioning_sources", []).append(
+        {
+            "output": output_conditioning,
+            "inputs": sources,
+        }
+    )
+
+
+def _get_variable_name(inputs):
+    for key in ("key", "name", "variable_name", "tag", "text"):
+        value = inputs.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
+
+
+def _get_node_variable_name(metadata, node_id, inputs):
+    variable_name = _get_variable_name(inputs)
+    if variable_name:
+        return variable_name
+
+    prompt = metadata.get("current_prompt")
+    original_prompt = getattr(prompt, "original_prompt", None)
+    if not original_prompt or node_id not in original_prompt:
+        return None
+
+    node_data = original_prompt[node_id]
+    variable_name = _get_variable_name(node_data.get("inputs", {}))
+    if variable_name:
+        return variable_name
+
+    widgets_values = node_data.get("widgets_values", [])
+    if widgets_values and isinstance(widgets_values[0], str):
+        return widgets_values[0]
+
+    return None
+
+
+class ControlNetApplyAdvancedExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        if inputs.get("positive") is not None:
+            prompt_metadata["orig_pos_cond"] = inputs["positive"]
+        if inputs.get("negative") is not None:
+            prompt_metadata["orig_neg_cond"] = inputs["negative"]
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        output_tuple = _first_output_tuple(outputs)
+        if not output_tuple:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        positive_input = prompt_metadata.get("orig_pos_cond")
+        negative_input = prompt_metadata.get("orig_neg_cond")
+
+        if len(output_tuple) >= 1:
+            prompt_metadata["positive_encoded"] = output_tuple[0]
+            _record_conditioning_source(
+                metadata, node_id, output_tuple[0], [positive_input]
+            )
+        if len(output_tuple) >= 2:
+            prompt_metadata["negative_encoded"] = output_tuple[1]
+            _record_conditioning_source(
+                metadata, node_id, output_tuple[1], [negative_input]
+            )
+
+
+class ConditioningCombineExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        input_conditionings = []
+        for input_name in inputs:
+            if (
+                input_name.startswith("conditioning")
+                and inputs[input_name] is not None
+            ):
+                input_conditionings.append(inputs[input_name])
+
+        if input_conditionings:
+            prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+            prompt_metadata["orig_conditionings"] = input_conditionings
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        output_tuple = _first_output_tuple(outputs)
+        if not output_tuple or len(output_tuple) < 1:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        output_conditioning = output_tuple[0]
+        prompt_metadata["conditioning"] = output_conditioning
+        _record_conditioning_source(
+            metadata,
+            node_id,
+            output_conditioning,
+            prompt_metadata.get("orig_conditionings", []),
+        )
+
+
+class SetNodeExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        variable_name = _get_node_variable_name(metadata, node_id, inputs)
+        conditioning = inputs.get("CONDITIONING")
+        if conditioning is None:
+            conditioning = inputs.get("conditioning")
+        if conditioning is None:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        prompt_metadata["conditioning"] = conditioning
+        if variable_name:
+            prompt_metadata["variable_name"] = variable_name
+            metadata[PROMPTS].setdefault("__conditioning_variables__", {})[
+                variable_name
+            ] = conditioning
+
+
+class GetNodeExtractor(NodeMetadataExtractor):
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        variable_name = _get_node_variable_name(metadata, node_id, inputs or {})
+        if variable_name:
+            prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+            prompt_metadata["variable_name"] = variable_name
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        output_tuple = _first_output_tuple(outputs)
+        if not output_tuple or len(output_tuple) < 1:
+            return
+
+        prompt_metadata = _ensure_prompt_metadata(metadata, node_id)
+        output_conditioning = output_tuple[0]
+        prompt_metadata["conditioning"] = output_conditioning
+
+        variable_name = prompt_metadata.get("variable_name")
+        if not variable_name:
+            return
+
+        input_conditioning = metadata[PROMPTS].get("__conditioning_variables__", {}).get(
+            variable_name
+        )
+        _record_conditioning_source(
+            metadata, node_id, output_conditioning, [input_conditioning]
+        )
 
 # Base Sampler Extractor to reduce code redundancy
 class BaseSamplerExtractor(NodeMetadataExtractor):
@@ -427,6 +786,75 @@ class ImageSizeExtractor(NodeMetadataExtractor):
             "node_id": node_id
         }
 
+class RgthreePowerLoraLoaderExtractor(NodeMetadataExtractor):
+    """Extract LoRA metadata from rgthree Power Lora Loader.
+
+    The node passes LoRAs as dynamic kwargs: LORA_1, LORA_2, ... each containing
+    {'on': bool, 'lora': filename, 'strength': float, 'strengthTwo': float}.
+    """
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs:
+            return
+
+        active_loras = []
+        for key, value in inputs.items():
+            if not key.upper().startswith('LORA_'):
+                continue
+            if not isinstance(value, dict):
+                continue
+            if not value.get('on') or not value.get('lora'):
+                continue
+            lora_name = os.path.splitext(os.path.basename(value['lora']))[0]
+            active_loras.append({
+                "name": lora_name,
+                "strength": round(float(value.get('strength', 1.0)), 2)
+            })
+
+        if active_loras:
+            metadata[LORAS][node_id] = {
+                "lora_list": active_loras,
+                "node_id": node_id
+            }
+
+
+class TensorRTLoaderExtractor(NodeMetadataExtractor):
+    """Extract checkpoint metadata from TensorRT Loader.
+
+    extract() parses the engine filename from 'unet_name' as a best-effort
+    fallback (strips profile suffix after '_$' and counter suffix).
+
+    update() checks if the output MODEL has attachments["source_model"]
+    set by the node (NubeBuster fork) and overrides with the real name.
+    Vanilla TRT doesn't set this — the filename parse stands.
+    """
+    @staticmethod
+    def extract(node_id, inputs, outputs, metadata):
+        if not inputs or "unet_name" not in inputs:
+            return
+        unet_name = inputs.get("unet_name")
+        # Strip path and extension, then drop the $_profile suffix
+        model_name = os.path.splitext(os.path.basename(unet_name))[0]
+        if "_$" in model_name:
+            model_name = model_name[:model_name.index("_$")]
+        # Strip counter suffix (e.g. _00001_) left by ComfyUI's save path
+        model_name = re.sub(r'_\d+_?$', '', model_name)
+        _store_checkpoint_metadata(metadata, node_id, model_name)
+
+    @staticmethod
+    def update(node_id, outputs, metadata):
+        if not outputs or not isinstance(outputs, list) or len(outputs) == 0:
+            return
+        first_output = outputs[0]
+        if not isinstance(first_output, tuple) or len(first_output) < 1:
+            return
+        model = first_output[0]
+        # NubeBuster fork sets attachments["source_model"] on the ModelPatcher
+        source_model = getattr(model, 'attachments', {}).get("source_model")
+        if source_model:
+            _store_checkpoint_metadata(metadata, node_id, source_model)
+
+
 class LoraLoaderManagerExtractor(NodeMetadataExtractor):
     @staticmethod
     def extract(node_id, inputs, outputs, metadata):
@@ -577,8 +1005,6 @@ class SamplerCustomAdvancedExtractor(BaseSamplerExtractor):
         # Extract latent dimensions
         BaseSamplerExtractor.extract_latent_dimensions(node_id, inputs, metadata)
 
-import json
-
 class CLIPTextEncodeFluxExtractor(NodeMetadataExtractor):
     @staticmethod
     def extract(node_id, inputs, outputs, metadata):
@@ -699,9 +1125,12 @@ NODE_EXTRACTORS = {
     "KSamplerSelect": KSamplerSelectExtractor,  # Add KSamplerSelect
     "BasicScheduler": BasicSchedulerExtractor,  # Add BasicScheduler
     "AlignYourStepsScheduler": BasicSchedulerExtractor,  # Add AlignYourStepsScheduler
+    # ComfyUI-Easy-Use pre-sampling / seed
+    "samplerSettings": EasyPreSamplingExtractor,  # easy preSampling
+    "easySeed": EasySeedExtractor,  # easy seed
     # Loaders
     "CheckpointLoaderSimple": CheckpointLoaderExtractor,
-    "comfyLoader": CheckpointLoaderExtractor,  # easy comfyLoader
+    "comfyLoader": EasyComfyLoaderExtractor,  # ComfyUI-Easy-Use easy comfyLoader
     "CheckpointLoaderSimpleWithImages": CheckpointLoaderExtractor,  # CheckpointLoader|pysssss
     "TSC_EfficientLoader": TSCCheckpointLoaderExtractor,  # Efficient Nodes
     "NunchakuFluxDiTLoader": NunchakuFluxDiTLoaderExtractor,  # ComfyUI-Nunchaku
@@ -711,12 +1140,17 @@ NODE_EXTRACTORS = {
     "GGUFLoaderKJ": KJNodesModelLoaderExtractor,  # KJNodes
     "DiffusionModelLoaderKJ": KJNodesModelLoaderExtractor,  # KJNodes
     "CheckpointLoaderKJ": CheckpointLoaderExtractor,  # KJNodes
+    "CheckpointLoaderLM": CheckpointLoaderExtractor,  # LoRA Manager
     "UNETLoader": UNETLoaderExtractor,          # Updated to use dedicated extractor
     "UnetLoaderGGUF": UNETLoaderExtractor,  # Updated to use dedicated extractor
+    "UNETLoaderLM": UNETLoaderExtractor,  # LoRA Manager
     "LoraLoader": LoraLoaderExtractor,
     "LoraLoaderLM": LoraLoaderManagerExtractor,
+    "RgthreePowerLoraLoader": RgthreePowerLoraLoaderExtractor,
+    "TensorRTLoader": TensorRTLoaderExtractor,
     # Conditioning
     "CLIPTextEncode": CLIPTextEncodeExtractor,
+    "CLIPTextEncodeAttentionBias": CLIPTextEncodeExtractor,  # From https://github.com/silveroxides/ComfyUI_PromptAttention
     "PromptLM": CLIPTextEncodeExtractor,
     "CLIPTextEncodeFlux": CLIPTextEncodeFluxExtractor,  # Add CLIPTextEncodeFlux
     "WAS_Text_to_Conditioning": CLIPTextEncodeExtractor,
@@ -724,6 +1158,12 @@ NODE_EXTRACTORS = {
     "smZ_CLIPTextEncode": CLIPTextEncodeExtractor,  # From https://github.com/shiimizu/ComfyUI_smZNodes
     "CR_ApplyControlNetStack": CR_ApplyControlNetStackExtractor,  # Add CR_ApplyControlNetStack
     "PCTextEncode": CLIPTextEncodeExtractor,  # From https://github.com/asagi4/comfyui-prompt-control
+    "TextProvider": MyOriginalWaifuTextExtractor,  # ComfyUI-MyOriginalWaifu
+    "ClipProvider": MyOriginalWaifuClipExtractor,  # ComfyUI-MyOriginalWaifu
+    "ControlNetApplyAdvanced": ControlNetApplyAdvancedExtractor,
+    "ConditioningCombine": ConditioningCombineExtractor,
+    "SetNode": SetNodeExtractor,
+    "GetNode": GetNodeExtractor,
     # Latent
     "EmptyLatentImage": ImageSizeExtractor,
     # Flux

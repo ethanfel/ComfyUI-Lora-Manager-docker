@@ -9,12 +9,11 @@ from typing import Any, Awaitable, Callable, Dict, List, Mapping, Optional, Set,
 
 from ..utils.models import BaseModelMetadata
 from ..config import config
-from ..utils.file_utils import find_preview_file, get_preview_extension
+from ..utils.file_utils import find_preview_file, get_preview_extension, calculate_sha256
 from ..utils.metadata_manager import MetadataManager
 from ..utils.civitai_utils import resolve_license_info
 from .model_cache import ModelCache
 from .model_hash_index import ModelHashIndex
-from ..utils.constants import PREVIEW_EXTENSIONS
 from .model_lifecycle_service import delete_model_artifacts
 from .service_registry import ServiceRegistry
 from .websocket_manager import ws_manager
@@ -412,6 +411,7 @@ class ModelScanner:
             if scan_result:
                 await self._apply_scan_result(scan_result)
                 await self._save_persistent_cache(scan_result)
+                await self._sync_download_history(scan_result.raw_data, source='scan')
 
             # Send final progress update
             await ws_manager.broadcast_init_progress({
@@ -517,6 +517,7 @@ class ModelScanner:
         )
 
         await self._apply_scan_result(scan_result)
+        await self._sync_download_history(adjusted_raw_data, source='scan')
 
         await ws_manager.broadcast_init_progress({
             'stage': 'loading_cache',
@@ -577,6 +578,7 @@ class ModelScanner:
             excluded_models=list(self._excluded_models)
         )
         await self._save_persistent_cache(snapshot)
+        await self._sync_download_history(snapshot.raw_data, source='scan')
     def _count_model_files(self) -> int:
         """Count all model files with supported extensions in all roots
         
@@ -705,6 +707,7 @@ class ModelScanner:
             scan_result = await self._gather_model_data()
             await self._apply_scan_result(scan_result)
             await self._save_persistent_cache(scan_result)
+            await self._sync_download_history(scan_result.raw_data, source='scan')
 
             logger.info(
                 f"{self.model_type.capitalize()} Scanner: Cache initialization completed in {time.time() - start_time:.2f} seconds, "
@@ -733,18 +736,23 @@ class ModelScanner:
             # Get current cached file paths
             cached_paths = {item['file_path'] for item in self._cache.raw_data}
             path_to_item = {item['file_path']: item for item in self._cache.raw_data}
+            cached_real_paths = {}
+            for cached_path in cached_paths:
+                try:
+                    cached_real_paths.setdefault(os.path.realpath(cached_path), cached_path)
+                except Exception:
+                    continue
             
             # Track found files and new files
             found_paths = set()
             new_files = []
+            visited_real_paths = set()
+            discovered_real_files = set()
             
             # Scan all model roots
             for root_path in self.get_model_roots():
                 if not os.path.exists(root_path):
                     continue
-                    
-                # Track visited real paths to avoid symlink loops
-                visited_real_paths = set()
                 
                 # Recursively scan directory
                 for root, _, files in os.walk(root_path, followlinks=True):
@@ -758,10 +766,16 @@ class ModelScanner:
                         if ext in self.file_extensions:
                             # Construct paths exactly as they would be in cache
                             file_path = os.path.join(root, file).replace(os.sep, '/')
+                            real_file_path = os.path.realpath(os.path.join(root, file))
                             
                             # Check if this file is already in cache
                             if file_path in cached_paths:
                                 found_paths.add(file_path)
+                                continue
+
+                            cached_real_match = cached_real_paths.get(real_file_path)
+                            if cached_real_match:
+                                found_paths.add(cached_real_match)
                                 continue
 
                             if file_path in self._excluded_models:
@@ -779,6 +793,10 @@ class ModelScanner:
                                 if matched:
                                     continue
                                 
+                            if real_file_path in discovered_real_files:
+                                continue
+
+                            discovered_real_files.add(real_file_path)
                             # This is a new file to process
                             new_files.append(file_path)
                     
@@ -1049,18 +1067,23 @@ class ModelScanner:
 
         model_data = self._build_cache_entry(metadata, folder=normalized_folder)
 
+        # Compute SHA256 hash when metadata provided none (e.g., CivitAI API response has empty hashes)
+        if not model_data.get('sha256') and file_path:
+            try:
+                logger.info(f"Computing SHA256 hash for {file_path} (was empty from metadata)")
+                sha256 = await calculate_sha256(file_path)
+                if sha256:
+                    model_data['sha256'] = sha256.lower()
+                    if isinstance(metadata, BaseModelMetadata):
+                        metadata.sha256 = sha256.lower()
+                    await MetadataManager.save_metadata(file_path, metadata)
+            except Exception as e:
+                logger.error(f"Failed to compute SHA256 for {file_path}: {e}")
+
         # Skip excluded models
         if model_data.get('exclude', False):
             excluded_models.append(model_data['file_path'])
             return None
-
-        # Check for duplicate filename before adding to hash index
-        # filename = os.path.splitext(os.path.basename(file_path))[0]
-        # existing_hash = hash_index.get_hash_by_filename(filename)
-        # if existing_hash and existing_hash != model_data.get('sha256', '').lower():
-        #     existing_path = hash_index.get_path(existing_hash)
-        #     if existing_path and existing_path != file_path:
-        #         logger.warning(f"Duplicate filename detected: '{filename}' - files: '{existing_path}' and '{file_path}'")
 
         return model_data
 
@@ -1087,6 +1110,82 @@ class ModelScanner:
 
         await self._cache.resort()
 
+        self._log_duplicate_filename_summary()
+
+    def _log_duplicate_filename_summary(self) -> None:
+        """Log a batched summary of duplicate filename conflicts once per scan."""
+        # Duplicate filename detection is only relevant for LoRAs, which use
+        # basename-only syntax (<lora:name:strength>). Checkpoints and embeddings
+        # use full relative paths for resolution, so conflicts are not ambiguous.
+        if self._hash_index is None or self.model_type != "lora":
+            return
+
+        # When full path syntax is active, duplicate filenames across subfolders
+        # are fully qualified, so there is no ambiguity — skip the warning.
+        if get_settings_manager().get("lora_syntax_format", "legacy") == "full":
+            return
+
+        duplicates = self._hash_index.get_duplicate_filenames()
+        if not duplicates:
+            return
+
+        total_files = sum(len(paths) for paths in duplicates.values())
+        conflict_count = len(duplicates)
+        model_type_label = self.model_type or "model"
+
+        logger.warning(
+            "Duplicate filename conflict detected: %d %s filename(s) "
+            "are shared by %d files total, causing ambiguity in %s resolution. "
+            "Open the Doctor panel to resolve one-click.",
+            conflict_count,
+            model_type_label,
+            total_files,
+            model_type_label.capitalize(),
+        )
+
+    async def _sync_download_history(
+        self,
+        raw_data: List[Mapping[str, Any]],
+        *,
+        source: str,
+    ) -> None:
+        records: List[Dict[str, Any]] = []
+        for item in raw_data or []:
+            if not isinstance(item, Mapping):
+                continue
+            civitai = item.get('civitai')
+            if not isinstance(civitai, Mapping):
+                continue
+
+            version_id = civitai.get('id')
+            if version_id in (None, ''):
+                continue
+
+            records.append(
+                {
+                    'version_id': version_id,
+                    'model_id': civitai.get('modelId'),
+                    'file_path': item.get('file_path'),
+                }
+            )
+
+        if not records:
+            return
+
+        try:
+            history_service = await ServiceRegistry.get_downloaded_version_history_service()
+            await history_service.mark_downloaded_bulk(
+                self.model_type,
+                records,
+                source=source,
+            )
+        except Exception as exc:
+            logger.debug(
+                "%s Scanner: Failed to sync download history: %s",
+                self.model_type.capitalize(),
+                exc,
+            )
+
     async def _gather_model_data(
         self,
         *,
@@ -1100,6 +1199,8 @@ class ModelScanner:
         tags_count: Dict[str, int] = {}
         excluded_models: List[str] = []
         processed_files = 0
+        processed_real_files: Set[str] = set()
+        visited_real_dirs: Set[str] = set()
 
         async def handle_progress() -> None:
             if progress_callback is None:
@@ -1116,9 +1217,10 @@ class ModelScanner:
 
             try:
                 real_path = os.path.realpath(current_path)
-                if real_path in visited_paths:
+                if real_path in visited_paths or real_path in visited_real_dirs:
                     return
                 visited_paths.add(real_path)
+                visited_real_dirs.add(real_path)
 
                 with os.scandir(current_path) as iterator:
                     entries = list(iterator)
@@ -1131,6 +1233,11 @@ class ModelScanner:
                                 continue
 
                             file_path = entry.path.replace(os.sep, "/")
+                            real_file_path = os.path.realpath(entry.path)
+                            if real_file_path in processed_real_files:
+                                continue
+
+                            processed_real_files.add(real_file_path)
                             result = await self._process_model_file(
                                 file_path,
                                 root_path,
@@ -1387,6 +1494,15 @@ class ModelScanner:
                 file_path_override=normalized_new_path,
             )
 
+            # Ensure sha256 is populated even when metadata doesn't have it
+            if not cache_entry.get('sha256') and normalized_new_path and os.path.exists(normalized_new_path):
+                try:
+                    sha256 = await calculate_sha256(normalized_new_path)
+                    if sha256:
+                        cache_entry['sha256'] = sha256.lower()
+                except Exception as e:
+                    logger.error(f"Failed to compute SHA256 for {normalized_new_path}: {e}")
+
             if recalculate_type:
                 cache_entry = self.adjust_cached_entry(cache_entry)
 
@@ -1442,14 +1558,13 @@ class ModelScanner:
         file_path = self._hash_index.get_path(sha256.lower())
         if not file_path:
             return None
-            
-        base_name = os.path.splitext(file_path)[0]
-        
-        for ext in PREVIEW_EXTENSIONS:
-            preview_path = f"{base_name}{ext}"
-            if os.path.exists(preview_path):
-                return config.get_preview_static_url(preview_path)
-        
+
+        dir_path = os.path.dirname(file_path)
+        base_name = os.path.splitext(os.path.basename(file_path))[0]
+        preview_path = find_preview_file(base_name, dir_path)
+        if preview_path:
+            return config.get_preview_static_url(preview_path)
+
         return None
         
     async def get_top_tags(self, limit: int = 20) -> List[Dict[str, any]]:
@@ -1467,7 +1582,7 @@ class ModelScanner:
         return sorted_tags[:limit]
         
     async def get_base_models(self, limit: int = 20) -> List[Dict[str, any]]:
-        """Get base models sorted by frequency"""
+        """Get base models sorted by count. If limit is 0, return all."""
         cache = await self.get_cached_data()
         
         base_model_counts = {}
@@ -1478,19 +1593,48 @@ class ModelScanner:
         
         sorted_models = [{'name': model, 'count': count} for model, count in base_model_counts.items()]
         sorted_models.sort(key=lambda x: x['count'], reverse=True)
-        
+
+        if limit == 0:
+            return sorted_models
         return sorted_models[:limit]
         
     async def get_model_info_by_name(self, name):
         """Get model information by name"""
         try:
             cache = await self.get_cached_data()
-            
+
+            name_normalized = name.replace("\\", "/")
+            name_no_ext = name_normalized
+            for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+                if name_no_ext.lower().endswith(ext):
+                    name_no_ext = name_no_ext[: -len(ext)]
+                    break
+
+            has_path = "/" in name_no_ext
+            basename = os.path.basename(name_no_ext) if has_path else name_no_ext
+            best_fallback = None
+
             for model in cache.raw_data:
-                if model.get("file_name") == name:
+                file_name = model.get("file_name", "")
+                folder = model.get("folder", "")
+                file_name_no_ext = file_name
+                for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+                    if file_name_no_ext.lower().endswith(ext):
+                        file_name_no_ext = file_name_no_ext[: -len(ext)]
+                        break
+                path_name = f"{folder}/{file_name_no_ext}".replace("\\", "/") if folder else file_name_no_ext
+
+                if name_no_ext == file_name_no_ext or name_no_ext == path_name:
                     return model
-                    
-            return None
+
+                if has_path and file_name_no_ext == basename:
+                    if folder and name_no_ext.startswith(folder.replace("\\", "/") + "/"):
+                        best_fallback = model
+                    elif best_fallback is None:
+                        best_fallback = model
+
+            return best_fallback
+
         except Exception as e:
             logger.error(f"Error getting model info by name: {e}", exc_info=True)
             return None

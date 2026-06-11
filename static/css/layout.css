@@ -10,7 +10,7 @@
 .container {
     max-width: 1400px;
     margin: 0 auto;
-    padding: 0 15px;
+    padding: 0 var(--space-2);
     position: relative;
     z-index: var(--z-base);
 }
@@ -21,8 +21,8 @@
     top: -54px;
     z-index: calc(var(--z-header) - 1);
     background: var(--bg-color);
-    padding: var(--space-2) 0;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    padding: var(--space-1) 0;
+    box-shadow: var(--shadow-xs);
 }
 
 /* Responsive container for larger screens */
@@ -78,21 +78,23 @@
     background: var(--card-bg);
     color: var(--text-color);
     font-size: 0.85em;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
     cursor: pointer;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-xs);
 }
 
-.control-group button:hover {
+.control-group button:hover,
+.control-group button:focus-visible {
     border-color: var(--lora-accent);
     background: var(--bg-color);
     transform: translateY(-1px);
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
+    outline: none;
 }
 
 .control-group button:active {
     transform: translateY(0);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow: var(--shadow-xs);
 }
 
 .control-group button i {
@@ -100,7 +102,8 @@
     transition: opacity 0.2s ease;
 }
 
-.control-group button:hover i {
+.control-group button:hover i,
+.control-group button:focus-visible i {
     opacity: 1;
 }
 
@@ -131,7 +134,7 @@
 
 .control-group button.favorite-filter i {
     margin-right: 4px;
-    color: #ffc107;
+    color: var(--favorite-color);
 }
 
 .control-group button.update-filter i {
@@ -183,7 +186,7 @@
     color: var(--shortcut-text);
     vertical-align: middle;
     opacity: 0.8;
-    transition: all 0.2s ease;
+    transition: var(--transition-base);
 }
 
 .control-group button:hover .shortcut-key {
@@ -219,8 +222,8 @@
     background-position: right 6px center;
     background-size: 14px;
     cursor: pointer;
-    transition: all 0.2s ease;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    transition: var(--transition-base);
+    box-shadow: var(--shadow-xs);
 }
 
 /* Style for optgroups */
@@ -252,7 +255,7 @@
     border-color: var(--lora-accent);
     background-color: var(--bg-color);
     transform: translateY(-1px);
-    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.08);
+    box-shadow: var(--shadow-lg);
 }
 
 .control-group select:focus {
@@ -292,9 +295,9 @@
     opacity: 0;
     visibility: hidden;
     transform: translateY(10px);
-    transition: all 0.3s ease;
+    transition: var(--transition-slow);
     z-index: var(--z-overlay);
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--shadow-sm);
 }
 
 .back-to-top.visible {
@@ -307,7 +310,7 @@
     background: var(--lora-accent);
     color: white;
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    box-shadow: var(--shadow-md);
 }
 
 /* Prevent text selection in control and header areas */
@@ -336,7 +339,7 @@
 .dropdown-main {
     border-top-right-radius: 0;
     border-bottom-right-radius: 0;
-    border-right: 1px solid rgba(0, 0, 0, 0.1);
+    border-right: 1px solid var(--border-color);
 }
 
 .dropdown-toggle {
@@ -364,11 +367,19 @@
     background-color: var(--card-bg);
     border: 1px solid var(--border-color);
     border-radius: var(--border-radius-xs);
-    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.175);
+    box-shadow: var(--shadow-xl);
 }
 
 .dropdown-group.active .dropdown-menu {
     display: block;
+}
+
+/* Elevate the controls stacking context above breadcrumb nav when a dropdown is open,
+   so the dropdown menu isn't obscured. Only active when dropdown is shown to avoid
+   the entire controls bar (which can wrap to 2 rows on narrow viewports) covering
+   the sticky breadcrumb. */
+.controls:has(.dropdown-group.active) {
+    z-index: var(--z-header);
 }
 
 .dropdown-item {
@@ -395,6 +406,33 @@
     margin-right: 8px;
     width: 16px;
     text-align: center;
+}
+
+/* Intermediate breakpoint: wrap controls-right to prevent overflow */
+@media (max-width: 1500px) {
+    .actions {
+        flex-wrap: wrap;
+        gap: var(--space-2);
+    }
+
+    .action-buttons {
+        flex-wrap: wrap;
+        gap: var(--space-1);
+    }
+
+    .controls-right {
+        width: 100%;
+        justify-content: flex-end;
+        margin-top: 8px;
+        padding-left: 0;
+    }
+
+    /* Reduce button sizes to fit better */
+    .control-group button {
+        min-width: 80px;
+        padding: 4px 8px;
+        font-size: 0.8em;
+    }
 }
 
 @media (max-width: 768px) {

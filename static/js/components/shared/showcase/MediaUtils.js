@@ -6,7 +6,7 @@
 import { showToast, copyToClipboard, getNSFWLevelName } from '../../../utils/uiHelpers.js';
 import { state } from '../../../state/index.js';
 import { getModelApiClient } from '../../../api/modelApiFactory.js';
-import { NSFW_LEVELS } from '../../../utils/constants.js';
+import { NSFW_LEVELS, getMatureBlurThreshold } from '../../../utils/constants.js';
 import { getNsfwLevelSelector } from '../NsfwLevelSelector.js';
 
 /**
@@ -134,6 +134,39 @@ export function initLazyLoading(container) {
 
     lazyElements.forEach(element => observer.observe(element));
 }
+
+/**
+ * Check which Create As Recipe buttons correspond to already-imported
+ * images and disable them.
+ */
+async function checkImportedRecipes(container) {
+    const recipeButtons = container.querySelectorAll('.create-recipe-btn');
+    if (!recipeButtons.length) return;
+
+    const imageIds = [];
+    recipeButtons.forEach(btn => {
+        const id = btn.dataset.imageId;
+        if (id) imageIds.push(id);
+    });
+    if (!imageIds.length) return;
+
+    try {
+        const response = await fetch(`/api/lm/recipes/check-image-exists?image_ids=${imageIds.join(',')}`);
+        const data = await response.json();
+        if (!data.success || !data.results) return;
+        recipeButtons.forEach(btn => {
+            const id = btn.dataset.imageId;
+            if (id && data.results[id]?.in_library) {
+                btn.title = 'Already imported as recipe';
+                btn.classList.add('disabled');
+                btn.setAttribute('aria-disabled', 'true');
+            }
+        });
+    } catch (err) {
+        console.error('Failed to check imported recipes:', err);
+    }
+}
+
 
 /**
  * Get the actual rendered rectangle of a media element with object-fit: contain
@@ -471,6 +504,75 @@ export function initMediaControlHandlers(container) {
         });
     });
     
+    // Create As Recipe buttons
+    const recipeButtons = container.querySelectorAll('.create-recipe-btn');
+    recipeButtons.forEach(btn => {
+        btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
+            
+            // Ignore clicks when disabled
+            if (this.classList.contains('disabled')) {
+                return;
+            }
+            
+            const imageMetaRaw = this.dataset.imageMeta;
+            const imageUrl = this.dataset.imageUrl;
+            const imageNsfw = this.dataset.imageNsfw;
+            const localPath = this.dataset.localPath || '';
+            const showcaseSection = this.closest('.showcase-section');
+            const modelHash = showcaseSection ? showcaseSection.dataset.modelHash : '';
+            const modelName = showcaseSection ? showcaseSection.dataset.modelName : '';
+            const modelType = showcaseSection ? showcaseSection.dataset.modelType : '';
+            
+            if (!imageMetaRaw || !modelHash) {
+                showToast('toast.recipes.createMissingData', {}, 'error');
+                return;
+            }
+            
+            // Show loading state
+            const originalHtml = this.innerHTML;
+            this.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+            this.disabled = true;
+            
+            try {
+                const imageMeta = JSON.parse(decodeURIComponent(imageMetaRaw));
+                
+                const response = await fetch('/api/lm/recipes/create-from-example', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        image_data: {
+                            meta: imageMeta,
+                            url: imageUrl,
+                            nsfwLevel: imageNsfw ? parseInt(imageNsfw, 10) : undefined,
+                        },
+                        model_hash: modelHash,
+                        model_name: modelName || modelHash,
+                        model_type: modelType,
+                        local_image_path: localPath,
+                    }),
+                });
+                
+                const result = await response.json();
+                
+                if (result.success && result.recipe_id) {
+                    showToast('toast.recipes.created', { recipeId: result.recipe_id }, 'success');
+                } else {
+                    showToast('toast.recipes.createFailed', { error: result.error || 'Unknown error' }, 'error');
+                }
+            } catch (error) {
+                console.error('Failed to create recipe:', error);
+                showToast('toast.recipes.createError', { message: error.message }, 'error');
+            } finally {
+                this.innerHTML = originalHtml;
+                this.disabled = false;
+            }
+        });
+    });
+    
+    // Check which images are already imported as recipes → disable button
+    checkImportedRecipes(container);
+    
     // Initialize set preview buttons
     initSetPreviewHandlers(container);
 
@@ -607,7 +709,8 @@ function applyNsfwLevelChange(mediaWrapper, nsfwLevel) {
     }
     mediaWrapper.dataset.nsfwLevel = String(nsfwLevel);
 
-    const shouldBlur = state.settings.blur_mature_content && nsfwLevel > NSFW_LEVELS.PG13;
+    const matureBlurThreshold = getMatureBlurThreshold(state.settings);
+    const shouldBlur = state.settings.blur_mature_content && nsfwLevel >= matureBlurThreshold;
     let overlay = mediaWrapper.querySelector('.nsfw-overlay');
     let toggleBtn = mediaWrapper.querySelector('.toggle-blur-btn');
 

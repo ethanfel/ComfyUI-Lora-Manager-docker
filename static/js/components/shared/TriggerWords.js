@@ -8,6 +8,10 @@ import { translate } from '../../utils/i18nHelpers.js';
 import { getModelApiClient } from '../../api/modelApiFactory.js';
 import { escapeAttribute, escapeHtml } from './utils.js';
 
+const MAX_WORDS_PER_TRIGGER_GROUP = 500;
+const MAX_TRIGGER_WORD_GROUPS = 100;
+const TRIGGER_WORD_CLICK_DELAY_MS = 220;
+
 /**
  * Fetch trained words for a model
  * @param {string} filePath - Path to the model file
@@ -223,7 +227,7 @@ export function renderTriggerWords(words, filePath) {
         const escapedWord = escapeHtml(word);
         const escapedAttr = escapeAttribute(word);
         return `
-                        <div class="trigger-word-tag" data-word="${escapedAttr}" onclick="copyTriggerWord(this.dataset.word)" title="${translate('modals.model.triggerWords.copyWord')}">
+                        <div class="trigger-word-tag" data-word="${escapedAttr}" title="${translate('modals.model.triggerWords.copyWord')}">
                             <span class="trigger-word-content">${escapedWord}</span>
                             <span class="trigger-word-copy">
                                 <i class="fas fa-copy"></i>
@@ -261,6 +265,8 @@ export function setupTriggerWordsEditMode() {
     const editBtn = document.querySelector('.edit-trigger-words-btn');
     if (!editBtn) return;
 
+    document.querySelectorAll('.trigger-word-tag').forEach(setupDisplayTriggerWordTag);
+
     editBtn.addEventListener('click', async function () {
         const triggerWordsSection = this.closest('.trigger-words');
         const isEditMode = triggerWordsSection.classList.toggle('edit-mode');
@@ -293,7 +299,9 @@ export function setupTriggerWordsEditMode() {
 
             // Disable click-to-copy and show delete buttons
             triggerWordTags.forEach(tag => {
-                tag.onclick = null;
+                teardownDisplayTriggerWordTag(tag);
+                tag.addEventListener('click', startEditTriggerWord);
+                tag.title = translate('modals.model.triggerWords.editWord');
                 const copyIcon = tag.querySelector('.trigger-word-copy');
                 const deleteBtn = tag.querySelector('.metadata-delete-btn');
 
@@ -337,6 +345,12 @@ export function setupTriggerWordsEditMode() {
             // Focus the input
             addForm.querySelector('input').focus();
 
+            const pendingEditTag = triggerWordsSection._pendingTriggerWordEditTag;
+            delete triggerWordsSection._pendingTriggerWordEditTag;
+            if (pendingEditTag && document.contains(pendingEditTag)) {
+                startEditTriggerWord.call(pendingEditTag, { target: pendingEditTag, preventDefault() { }, stopPropagation() { } });
+            }
+
         } else {
             this.innerHTML = '<i class="fas fa-pencil-alt"></i>'; // Change back to edit icon
             this.title = translate('modals.model.triggerWords.edit');
@@ -350,6 +364,7 @@ export function setupTriggerWordsEditMode() {
                 // If canceling, restore original trigger words
                 restoreOriginalTriggerWords(triggerWordsSection, originalTriggerWords);
             } else {
+                commitActiveTriggerWordEdit(triggerWordsSection);
                 // If saving, reset UI state on current trigger words
                 resetTriggerWordsUIState(triggerWordsSection);
                 // Reset the skip restore flag
@@ -429,15 +444,18 @@ function deleteTriggerWord(e) {
  * @param {HTMLElement} section - The trigger words section
  */
 function resetTriggerWordsUIState(section) {
+    commitActiveTriggerWordEdit(section);
+
     const triggerWordTags = section.querySelectorAll('.trigger-word-tag');
 
     triggerWordTags.forEach(tag => {
-        const word = tag.dataset.word;
         const copyIcon = tag.querySelector('.trigger-word-copy');
         const deleteBtn = tag.querySelector('.metadata-delete-btn');
 
         // Restore click-to-copy functionality
-        tag.onclick = () => copyTriggerWord(tag.dataset.word);
+        tag.removeEventListener('click', startEditTriggerWord);
+        setupDisplayTriggerWordTag(tag);
+        tag.title = translate('modals.model.triggerWords.copyWord');
 
         // Show copy icon, hide delete button
         if (copyIcon) copyIcon.style.display = '';
@@ -471,23 +489,234 @@ function restoreOriginalTriggerWords(section, originalWords) {
 
     // Recreate original tags
     originalWords.forEach(word => {
-        const tag = document.createElement('div');
-        tag.className = 'trigger-word-tag';
-        tag.dataset.word = word;
-        tag.onclick = () => copyTriggerWord(tag.dataset.word);
-
-        const escapedWord = escapeHtml(word);
-        tag.innerHTML = `
-            <span class="trigger-word-content">${escapedWord}</span>
-            <span class="trigger-word-copy">
-                <i class="fas fa-copy"></i>
-            </span>
-            <button class="metadata-delete-btn" style="display:none;" onclick="event.stopPropagation();">
-                <i class="fas fa-times"></i>
-            </button>
-        `;
-        tagsContainer.appendChild(tag);
+        tagsContainer.appendChild(createTriggerWordTag(word, false));
     });
+}
+
+/**
+ * Create a trigger word tag element
+ * @param {string} word - Trigger word
+ * @param {boolean} isEditMode - Whether the tag should be editable
+ * @returns {HTMLElement} Tag element
+ */
+function createTriggerWordTag(word, isEditMode = false) {
+    const tag = document.createElement('div');
+    tag.className = 'trigger-word-tag';
+    tag.dataset.word = word;
+    tag.title = translate(isEditMode ? 'modals.model.triggerWords.editWord' : 'modals.model.triggerWords.copyWord');
+
+    const escapedWord = escapeHtml(word);
+    tag.innerHTML = `
+        <span class="trigger-word-content">${escapedWord}</span>
+        <span class="trigger-word-copy" style="${isEditMode ? 'display:none;' : ''}">
+            <i class="fas fa-copy"></i>
+        </span>
+        <button class="metadata-delete-btn" style="${isEditMode ? '' : 'display:none;'}" onclick="event.stopPropagation();" title="${translate('modals.model.triggerWords.deleteWord')}">
+            <i class="fas fa-times"></i>
+        </button>
+    `;
+
+    const deleteBtn = tag.querySelector('.metadata-delete-btn');
+    deleteBtn.addEventListener('click', deleteTriggerWord);
+
+    if (isEditMode) {
+        tag.addEventListener('click', startEditTriggerWord);
+    } else {
+        setupDisplayTriggerWordTag(tag);
+    }
+
+    return tag;
+}
+
+/**
+ * Set up display-mode click-to-copy and double-click-to-edit behavior
+ * @param {HTMLElement} tag - Trigger word tag
+ */
+function setupDisplayTriggerWordTag(tag) {
+    teardownDisplayTriggerWordTag(tag);
+
+    tag.addEventListener('click', handleDisplayTriggerWordClick);
+    tag.addEventListener('dblclick', handleDisplayTriggerWordDoubleClick);
+    tag.title = translate('modals.model.triggerWords.copyWord');
+}
+
+/**
+ * Remove display-mode handlers and pending copy action
+ * @param {HTMLElement} tag - Trigger word tag
+ */
+function teardownDisplayTriggerWordTag(tag) {
+    if (tag.dataset.copyTimerId) {
+        clearTimeout(Number(tag.dataset.copyTimerId));
+        delete tag.dataset.copyTimerId;
+    }
+    tag.onclick = null;
+    tag.removeEventListener('click', handleDisplayTriggerWordClick);
+    tag.removeEventListener('dblclick', handleDisplayTriggerWordDoubleClick);
+}
+
+/**
+ * Copy trigger word after a short delay so dblclick can cancel it
+ * @param {MouseEvent} e - Click event
+ */
+function handleDisplayTriggerWordClick(e) {
+    if (e.target.closest('.metadata-delete-btn') || e.target.closest('.trigger-word-edit-input')) return;
+
+    const tag = this.closest('.trigger-word-tag');
+    if (!tag || tag.closest('.trigger-words')?.classList.contains('edit-mode')) return;
+
+    e.stopPropagation();
+
+    if (tag.dataset.copyTimerId) {
+        clearTimeout(Number(tag.dataset.copyTimerId));
+    }
+
+    const timerId = window.setTimeout(() => {
+        delete tag.dataset.copyTimerId;
+        copyTriggerWord(tag.dataset.word);
+    }, TRIGGER_WORD_CLICK_DELAY_MS);
+    tag.dataset.copyTimerId = String(timerId);
+}
+
+/**
+ * Enter edit mode and start editing the double-clicked trigger word
+ * @param {MouseEvent} e - Double-click event
+ */
+function handleDisplayTriggerWordDoubleClick(e) {
+    if (e.target.closest('.metadata-delete-btn') || e.target.closest('.trigger-word-edit-input')) return;
+
+    const tag = this.closest('.trigger-word-tag');
+    const section = tag?.closest('.trigger-words');
+    const editBtn = section?.querySelector('.edit-trigger-words-btn');
+    if (!tag || !section || !editBtn) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (tag.dataset.copyTimerId) {
+        clearTimeout(Number(tag.dataset.copyTimerId));
+        delete tag.dataset.copyTimerId;
+    }
+
+    if (!section.classList.contains('edit-mode')) {
+        section._pendingTriggerWordEditTag = tag;
+        editBtn.click();
+        return;
+    }
+
+    startEditTriggerWord.call(tag, e);
+}
+
+/**
+ * Validate a trigger word against existing tags
+ * @param {string} word - Trigger word
+ * @param {HTMLElement} tagsContainer - Tags container
+ * @param {HTMLElement|null} currentTag - Tag being edited, if any
+ * @returns {boolean} Whether the word is valid
+ */
+function validateTriggerWord(word, tagsContainer, currentTag = null) {
+    if (word.split(/\s+/).length > MAX_WORDS_PER_TRIGGER_GROUP) {
+        showToast('toast.triggerWords.tooLong', {}, 'error');
+        return false;
+    }
+
+    const currentTags = tagsContainer.querySelectorAll('.trigger-word-tag');
+    const existingWords = Array.from(currentTags)
+        .filter(tag => tag !== currentTag)
+        .map(tag => tag.dataset.word);
+
+    if (existingWords.includes(word)) {
+        showToast('toast.triggerWords.alreadyExists', {}, 'error');
+        return false;
+    }
+
+    return true;
+}
+
+/**
+ * Start inline editing for a trigger word tag
+ * @param {Event} e - Click event
+ */
+function startEditTriggerWord(e) {
+    if (e.target.closest('.metadata-delete-btn') || e.target.closest('.trigger-word-edit-input')) return;
+
+    const tag = this.closest('.trigger-word-tag');
+    const section = tag?.closest('.trigger-words');
+    if (!tag || !section?.classList.contains('edit-mode') || tag.classList.contains('is-editing')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    commitActiveTriggerWordEdit(section);
+
+    const content = tag.querySelector('.trigger-word-content');
+    const originalWord = tag.dataset.word;
+    const originalRect = tag.getBoundingClientRect();
+    if (originalRect.width > 0) {
+        tag.style.setProperty('--trigger-word-edit-width', `${Math.ceil(originalRect.width)}px`);
+    }
+    if (originalRect.height > 0) {
+        tag.style.setProperty('--trigger-word-edit-height', `${Math.ceil(originalRect.height)}px`);
+    }
+
+    const editor = document.createElement('textarea');
+    editor.className = 'trigger-word-edit-input';
+    editor.rows = 1;
+    editor.value = originalWord;
+    editor.setAttribute('aria-label', translate('modals.model.triggerWords.editWord'));
+    editor.placeholder = translate('modals.model.triggerWords.editPlaceholder');
+
+    let finished = false;
+    const finish = (shouldCommit) => {
+        if (finished) return;
+        finished = true;
+
+        const nextWord = editor.value.trim().replace(/\s*\n+\s*/g, ' ');
+        if (shouldCommit && nextWord && nextWord !== originalWord) {
+            const tagsContainer = tag.closest('.trigger-words-tags');
+            if (tagsContainer && validateTriggerWord(nextWord, tagsContainer, tag)) {
+                tag.dataset.word = nextWord;
+                content.textContent = nextWord;
+            }
+        }
+
+        editor.remove();
+        content.style.display = '';
+        tag.classList.remove('is-editing');
+        tag.style.removeProperty('--trigger-word-edit-width');
+        tag.style.removeProperty('--trigger-word-edit-height');
+        updateTrainedWordsDropdown();
+    };
+
+    editor.addEventListener('click', event => event.stopPropagation());
+    editor.addEventListener('keydown', event => {
+        if (event.key === 'Enter') {
+            event.preventDefault();
+            finish(true);
+        } else if (event.key === 'Escape') {
+            event.preventDefault();
+            finish(false);
+        }
+    });
+    editor.addEventListener('blur', () => finish(true));
+
+    editor.style.visibility = 'hidden';
+    content.after(editor);
+    tag.classList.add('is-editing');
+    content.style.display = 'none';
+    editor.style.visibility = '';
+    editor.focus();
+    editor.select();
+}
+
+/**
+ * Commit an active inline trigger word edit if one exists
+ * @param {HTMLElement} section - Trigger words section
+ */
+function commitActiveTriggerWordEdit(section) {
+    const input = section.querySelector('.trigger-word-edit-input');
+    if (input) {
+        input.dispatchEvent(new FocusEvent('blur'));
+    }
 }
 
 /**
@@ -522,46 +751,16 @@ function addNewTriggerWord(word) {
         noTriggerWordsMsg.style.display = 'none';
     }
 
-    // Validation: Check length
-    if (word.split(/\s+/).length > 100) {
-        showToast('toast.triggerWords.tooLong', {}, 'error');
-        return;
-    }
-
     // Validation: Check total number
     const currentTags = tagsContainer.querySelectorAll('.trigger-word-tag');
-    if (currentTags.length >= 100) {
+    if (currentTags.length >= MAX_TRIGGER_WORD_GROUPS) {
         showToast('toast.triggerWords.tooMany', {}, 'error');
         return;
     }
 
-    // Validation: Check for duplicates
-    const existingWords = Array.from(currentTags).map(tag => tag.dataset.word);
-    if (existingWords.includes(word)) {
-        showToast('toast.triggerWords.alreadyExists', {}, 'error');
-        return;
-    }
+    if (!validateTriggerWord(word, tagsContainer)) return;
 
-    // Create new tag
-    const newTag = document.createElement('div');
-    newTag.className = 'trigger-word-tag';
-    newTag.dataset.word = word;
-
-    const escapedWord = escapeHtml(word);
-    newTag.innerHTML = `
-        <span class="trigger-word-content">${escapedWord}</span>
-        <span class="trigger-word-copy" style="display:none;">
-            <i class="fas fa-copy"></i>
-        </span>
-        <button class="metadata-delete-btn" onclick="event.stopPropagation();">
-            <i class="fas fa-times"></i>
-        </button>
-    `;
-
-    // Add event listener to delete button
-    const deleteBtn = newTag.querySelector('.metadata-delete-btn');
-    deleteBtn.addEventListener('click', deleteTriggerWord);
-
+    const newTag = createTriggerWordTag(word, triggerWordsSection.classList.contains('edit-mode'));
     tagsContainer.appendChild(newTag);
 
     // Update status of items in the trained words dropdown
@@ -632,6 +831,8 @@ async function saveTriggerWords() {
     const editBtn = document.querySelector('.edit-trigger-words-btn');
     const filePath = editBtn.dataset.filePath;
     const triggerWordsSection = editBtn.closest('.trigger-words');
+
+    commitActiveTriggerWordEdit(triggerWordsSection);
 
     // Auto-commit any pending input to prevent data loss
     const input = triggerWordsSection.querySelector('.metadata-input');

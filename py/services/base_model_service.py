@@ -20,6 +20,7 @@ from .model_query import (
     resolve_sub_type,
 )
 from .settings_manager import get_settings_manager
+from ..utils.civitai_utils import build_civitai_model_page_url
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class BaseModelService(ABC):
         base_models: list = None,
         model_types: list = None,
         tags: Optional[Dict[str, str]] = None,
+        auto_tags: Optional[Dict[str, str]] = None,
         search_options: dict = None,
         hash_filters: dict = None,
         favorites_only: bool = False,
@@ -94,6 +96,11 @@ class BaseModelService(ABC):
             sorted_data = await self._fetch_with_usage_sort(sort_params)
         else:
             sorted_data = await self.cache_repository.fetch_sorted(sort_params)
+        # Pre-compute auto_tags for every item — needed for both filtering
+        # and display. Computation is cheap (string regex on 2-3 fields).
+        from .auto_tag_service import extract_auto_tags
+        for item in sorted_data:
+            item["auto_tags"] = extract_auto_tags(item)
         fetch_duration = time.perf_counter() - t0
         initial_count = len(sorted_data)
 
@@ -109,6 +116,7 @@ class BaseModelService(ABC):
                 base_models=base_models,
                 model_types=model_types,
                 tags=tags,
+                auto_tags=auto_tags,
                 favorites_only=favorites_only,
                 search_options=search_options,
                 tag_logic=tag_logic,
@@ -178,6 +186,57 @@ class BaseModelService(ABC):
         )
         return paginated
 
+    async def get_excluded_paginated_data(
+        self,
+        page: int,
+        page_size: int,
+        sort_by: str = "name",
+        search: str = None,
+        fuzzy_search: bool = False,
+        search_options: dict = None,
+        **kwargs,
+    ) -> Dict:
+        """Get paginated excluded model data."""
+        excluded_paths = list(self.scanner.get_excluded_models())
+        excluded_entries: List[Dict[str, Any]] = []
+        stale_paths: List[str] = []
+
+        for file_path in excluded_paths:
+            if not file_path or not os.path.exists(file_path):
+                stale_paths.append(file_path)
+                continue
+
+            entry = await self._build_excluded_entry(file_path)
+            if entry:
+                excluded_entries.append(entry)
+            else:
+                stale_paths.append(file_path)
+
+        if stale_paths:
+            current_excluded = getattr(self.scanner, "_excluded_models", None)
+            if isinstance(current_excluded, list):
+                stale_set = set(stale_paths)
+                self.scanner._excluded_models = [
+                    path for path in current_excluded if path not in stale_set
+                ]
+                persist_current_cache = getattr(self.scanner, "_persist_current_cache", None)
+                if callable(persist_current_cache):
+                    await persist_current_cache()
+
+        excluded_entries = self._sort_entries(excluded_entries, sort_by)
+
+        if search:
+            excluded_entries = await self._apply_search_filters(
+                excluded_entries,
+                search,
+                fuzzy_search,
+                search_options,
+            )
+
+        paginated = self._paginate(excluded_entries, page, page_size)
+        paginated["items"] = await self._annotate_update_flags(paginated["items"])
+        return paginated
+
     async def _fetch_with_usage_sort(self, sort_params):
         """Fetch data sorted by usage count (desc/asc)."""
         cache = await self.cache_repository.get_cache()
@@ -208,10 +267,70 @@ class BaseModelService(ABC):
 
         reverse = sort_params.order == "desc"
         annotated.sort(
-            key=lambda x: (x.get("usage_count", 0), x.get("model_name", "").lower()),
+            key=lambda x: (
+                x.get("usage_count", 0),
+                x.get("model_name", "").lower(),
+                x.get("file_path", "").lower()
+            ),
             reverse=reverse,
         )
         return annotated
+
+    def _sort_entries(self, data: List[Dict[str, Any]], sort_by: str) -> List[Dict[str, Any]]:
+        sort_params = self.cache_repository.parse_sort(sort_by)
+        key_name = sort_params.key
+
+        if key_name == "date":
+            key_fn = lambda item: (
+                float(item.get("modified", 0.0) or 0.0),
+                (item.get("model_name") or item.get("file_name") or "").lower(),
+                item.get("file_path", "").lower(),
+            )
+        elif key_name == "size":
+            key_fn = lambda item: (
+                int(item.get("size", 0) or 0),
+                (item.get("model_name") or item.get("file_name") or "").lower(),
+                item.get("file_path", "").lower(),
+            )
+        elif key_name == "usage":
+            key_fn = lambda item: (
+                int(item.get("usage_count", 0) or 0),
+                (item.get("model_name") or item.get("file_name") or "").lower(),
+                item.get("file_path", "").lower(),
+            )
+        else:
+            key_fn = lambda item: (
+                (item.get("model_name") or item.get("file_name") or "").lower(),
+                item.get("file_path", "").lower(),
+            )
+
+        return sorted(data, key=key_fn, reverse=sort_params.order == "desc")
+
+    async def _build_excluded_entry(self, file_path: str) -> Optional[Dict[str, Any]]:
+        root_path = self.scanner._find_root_for_file(file_path)
+        if not root_path:
+            return None
+
+        metadata, should_skip = await MetadataManager.load_metadata(
+            file_path,
+            self.metadata_class,
+        )
+        if should_skip:
+            return None
+
+        if metadata is None:
+            metadata = await self.scanner._create_default_metadata(file_path)
+            if metadata is None:
+                return None
+
+        metadata = self.scanner.adjust_metadata(metadata, file_path, root_path)
+        folder = os.path.dirname(os.path.relpath(file_path, root_path)).replace(
+            os.path.sep, "/"
+        )
+        entry = self.scanner._build_cache_entry(metadata, folder=folder)
+        entry = self.scanner.adjust_cached_entry(entry)
+        entry["exclude"] = True
+        return entry
 
     async def _apply_hash_filters(
         self, data: List[Dict], hash_filters: Dict
@@ -242,6 +361,7 @@ class BaseModelService(ABC):
         base_models: list = None,
         model_types: list = None,
         tags: Optional[Dict[str, str]] = None,
+        auto_tags: Optional[Dict[str, str]] = None,
         favorites_only: bool = False,
         search_options: dict = None,
         tag_logic: str = "any",
@@ -255,6 +375,7 @@ class BaseModelService(ABC):
             base_models=base_models,
             model_types=model_types,
             tags=tags,
+            auto_tags=auto_tags,
             favorites_only=favorites_only,
             search_options=normalized_options,
             tag_logic=tag_logic,
@@ -749,13 +870,46 @@ class BaseModelService(ABC):
         """Get the static preview URL for a model file"""
         cache = await self.scanner.get_cached_data()
 
+        name_normalized = model_name.replace("\\", "/")
+        name_no_ext = name_normalized
+        for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+            if name_no_ext.lower().endswith(ext):
+                name_no_ext = name_no_ext[: -len(ext)]
+                break
+
+        has_path = "/" in name_no_ext
+        basename = os.path.basename(name_no_ext) if has_path else name_no_ext
+        best_fallback = None
+
         for model in cache.raw_data:
-            if model["file_name"] == model_name:
+            file_name = model.get("file_name", "")
+            folder = model.get("folder", "")
+            file_name_no_ext = file_name
+            for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+                if file_name_no_ext.lower().endswith(ext):
+                    file_name_no_ext = file_name_no_ext[: -len(ext)]
+                    break
+            path_name = f"{folder}/{file_name_no_ext}".replace("\\", "/") if folder else file_name_no_ext
+
+            if name_no_ext == file_name_no_ext or name_no_ext == path_name:
                 preview_url = model.get("preview_url")
                 if preview_url:
                     from ..config import config
 
                     return config.get_preview_static_url(preview_url)
+
+            if has_path and file_name_no_ext == basename:
+                if folder and name_no_ext.startswith(folder.replace("\\", "/") + "/"):
+                    best_fallback = model
+                elif best_fallback is None:
+                    best_fallback = model
+
+        if best_fallback:
+            preview_url = best_fallback.get("preview_url")
+            if preview_url:
+                from ..config import config
+
+                return config.get_preview_static_url(preview_url)
 
         return "/loras_static/images/no-preview.png"
 
@@ -763,22 +917,66 @@ class BaseModelService(ABC):
         """Get the Civitai URL for a model file"""
         cache = await self.scanner.get_cached_data()
 
+        name_normalized = model_name.replace("\\", "/")
+        name_no_ext = name_normalized
+        for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+            if name_no_ext.lower().endswith(ext):
+                name_no_ext = name_no_ext[: -len(ext)]
+                break
+
+        has_path = "/" in name_no_ext
+        basename = os.path.basename(name_no_ext) if has_path else name_no_ext
+        best_fallback = None
+
         for model in cache.raw_data:
-            if model["file_name"] == model_name:
+            file_name = model.get("file_name", "")
+            folder = model.get("folder", "")
+            file_name_no_ext = file_name
+            for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+                if file_name_no_ext.lower().endswith(ext):
+                    file_name_no_ext = file_name_no_ext[: -len(ext)]
+                    break
+            path_name = f"{folder}/{file_name_no_ext}".replace("\\", "/") if folder else file_name_no_ext
+
+            if name_no_ext == file_name_no_ext or name_no_ext == path_name:
                 civitai_data = model.get("civitai", {})
                 model_id = civitai_data.get("modelId")
                 version_id = civitai_data.get("id")
 
                 if model_id:
-                    civitai_url = f"https://civitai.com/models/{model_id}"
-                    if version_id:
-                        civitai_url += f"?modelVersionId={version_id}"
+                    civitai_host = self.settings.get("civitai_host", "civitai.com")
+                    civitai_url = build_civitai_model_page_url(
+                        model_id,
+                        version_id,
+                        host=civitai_host,
+                    )
 
                     return {
                         "civitai_url": civitai_url,
                         "model_id": str(model_id),
                         "version_id": str(version_id) if version_id else None,
                     }
+
+            if has_path and file_name_no_ext == basename:
+                if folder and name_no_ext.startswith(folder.replace("\\", "/") + "/"):
+                    best_fallback = model
+                elif best_fallback is None:
+                    best_fallback = model
+
+        if best_fallback:
+            civitai_data = best_fallback.get("civitai", {})
+            model_id = civitai_data.get("modelId")
+            if model_id:
+                version_id = civitai_data.get("id")
+                civitai_host = self.settings.get("civitai_host", "civitai.com")
+                civitai_url = build_civitai_model_page_url(
+                    model_id, version_id, host=civitai_host
+                )
+                return {
+                    "civitai_url": civitai_url,
+                    "model_id": str(model_id),
+                    "version_id": str(version_id) if version_id else None,
+                }
 
         return {"civitai_url": None, "model_id": None, "version_id": None}
 
@@ -793,6 +991,17 @@ class BaseModelService(ABC):
         )
         if should_skip or metadata is None:
             return None
+
+        # Prune stale example-image metadata entries whose files no longer
+        # exist on disk (e.g. a user deleted the files manually).
+        from ..utils.example_images_metadata import MetadataUpdater
+
+        was_modified = await MetadataUpdater.prune_stale_example_images(metadata)
+        if was_modified:
+            asyncio.create_task(
+                MetadataManager.save_metadata(file_path, metadata)
+            )
+
         return self.filter_civitai_data(metadata.to_dict().get("civitai", {}))
 
     async def get_model_description(self, file_path: str) -> Optional[str]:

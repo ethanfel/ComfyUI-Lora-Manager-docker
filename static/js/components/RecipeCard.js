@@ -6,7 +6,7 @@ import { modalManager } from '../managers/ModalManager.js';
 import { getCurrentPageState } from '../state/index.js';
 import { state } from '../state/index.js';
 import { bulkManager } from '../managers/BulkManager.js';
-import { NSFW_LEVELS, getBaseModelAbbreviation } from '../utils/constants.js';
+import { NSFW_LEVELS, getBaseModelAbbreviation, getMatureBlurThreshold } from '../utils/constants.js';
 
 class RecipeCard {
     constructor(recipe, clickHandler) {
@@ -28,6 +28,7 @@ class RecipeCard {
         card.dataset.created = this.recipe.created_date;
         card.dataset.id = this.recipe.id || '';
         card.dataset.folder = this.recipe.folder || '';
+        card.dataset.favorite = this.recipe.favorite ? 'true' : 'false';
 
         // Get base model with fallback
         const baseModelLabel = (this.recipe.base_model || '').trim() || 'Unknown';
@@ -74,7 +75,8 @@ class RecipeCard {
 
         // NSFW blur logic - similar to LoraCard
         const nsfwLevel = this.recipe.preview_nsfw_level !== undefined ? this.recipe.preview_nsfw_level : 0;
-        const shouldBlur = state.settings.blur_mature_content && nsfwLevel > NSFW_LEVELS.PG13;
+        const matureBlurThreshold = getMatureBlurThreshold(state.settings);
+        const shouldBlur = state.settings.blur_mature_content && nsfwLevel >= matureBlurThreshold;
 
         if (shouldBlur) {
             card.classList.add('nsfw-content');
@@ -160,6 +162,7 @@ class RecipeCard {
 
         // Update early to provide instant feedback and avoid race conditions with re-renders
         this.recipe.favorite = newFavoriteState;
+        card.dataset.favorite = newFavoriteState ? 'true' : 'false';
 
         // Function to update icon state
         const updateIconUI = (icon, state) => {

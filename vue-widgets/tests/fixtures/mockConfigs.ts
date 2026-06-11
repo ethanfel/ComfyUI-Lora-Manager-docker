@@ -16,6 +16,8 @@ export function createMockCyclerConfig(overrides: Partial<CyclerConfig> = {}): C
     model_strength: 1.0,
     clip_strength: 1.0,
     use_same_clip_strength: true,
+    use_preset_strength: false,
+    preset_strength_scale: 1.0,
     sort_by: 'filename',
     current_lora_name: 'lora1.safetensors',
     current_lora_filename: 'lora1.safetensors',
@@ -24,8 +26,9 @@ export function createMockCyclerConfig(overrides: Partial<CyclerConfig> = {}): C
     repeat_count: 1,
     repeat_used: 0,
     is_paused: false,
+    include_no_lora: false,
     ...overrides
-  }
+  } as CyclerConfig
 }
 
 /**
@@ -41,7 +44,8 @@ export function createMockPoolConfig(overrides: Partial<LoraPoolConfig> = {}): L
       license: {
         noCreditRequired: false,
         allowSelling: false
-      }
+      },
+      namePatterns: { include: [], exclude: [], useRegex: false }
     },
     preview: { matchCount: 10, lastUpdated: Date.now() },
     ...overrides
@@ -54,7 +58,8 @@ export function createMockPoolConfig(overrides: Partial<LoraPoolConfig> = {}): L
 export function createMockLoraList(count: number = 5): CyclerLoraItem[] {
   return Array.from({ length: count }, (_, i) => ({
     file_name: `lora${i + 1}.safetensors`,
-    model_name: `LoRA Model ${i + 1}`
+    model_name: `LoRA Model ${i + 1}`,
+    file_path: `/models/loras/lora${i + 1}.safetensors`
   }))
 }
 
@@ -146,7 +151,8 @@ export const SAMPLE_POOL_CONFIGS = {
       baseModels: ['SD 1.5'],
       tags: { include: [], exclude: [] },
       folders: { include: [], exclude: [] },
-      license: { noCreditRequired: false, allowSelling: false }
+      license: { noCreditRequired: false, allowSelling: false },
+      namePatterns: { include: [], exclude: [], useRegex: false }
     }
   }),
 
@@ -156,7 +162,8 @@ export const SAMPLE_POOL_CONFIGS = {
       baseModels: ['SDXL'],
       tags: { include: [], exclude: [] },
       folders: { include: [], exclude: [] },
-      license: { noCreditRequired: false, allowSelling: false }
+      license: { noCreditRequired: false, allowSelling: false },
+      namePatterns: { include: [], exclude: [], useRegex: false }
     }
   }),
 
@@ -166,7 +173,8 @@ export const SAMPLE_POOL_CONFIGS = {
       baseModels: ['SD 1.5'],
       tags: { include: ['anime', 'style'], exclude: ['realistic'] },
       folders: { include: [], exclude: [] },
-      license: { noCreditRequired: false, allowSelling: false }
+      license: { noCreditRequired: false, allowSelling: false },
+      namePatterns: { include: [], exclude: [], useRegex: false }
     }
   }),
 

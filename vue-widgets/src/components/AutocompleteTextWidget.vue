@@ -5,7 +5,9 @@
         ref="textareaRef"
         :placeholder="placeholder"
         :spellcheck="spellcheck ?? false"
-        :class="['text-input', { 'vue-dom-mode': isVueDomMode }]"
+        :class="['text-input', { 'vue-dom-mode': isVueDomMode, 'lm-wheel-scrollable': isVueDomMode }]"
+        :style="maxHeight && isVueDomMode ? { maxHeight: maxHeight + 'px' } : undefined"
+        data-capture-wheel="true"
         @input="onInput"
         @wheel="onWheel"
       />
@@ -36,6 +38,8 @@ export interface AutocompleteTextWidgetInterface {
   inputEl?: HTMLTextAreaElement
   callback?: (v: string) => void
   onSetValue?: (v: string) => void
+  metadataWidget?: { value?: unknown }
+  name?: string
 }
 
 const props = defineProps<{
@@ -45,6 +49,7 @@ const props = defineProps<{
   placeholder?: string
   showPreview?: boolean
   spellcheck?: boolean
+  maxHeight?: number
 }>()
 
 // Reactive ref for Vue DOM mode
@@ -137,7 +142,7 @@ const onWheel = (event: WheelEvent) => {
 }
 
 // Handle external value changes (e.g., from "send lora to workflow")
-const onExternalValueChange = (event: CustomEvent<{ value: string }>) => {
+const onExternalValueChange = () => {
   updateHasTextState()
 }
 
@@ -171,7 +176,10 @@ onMounted(() => {
   // Register textarea reference with widget
   if (textareaRef.value) {
     props.widget.inputEl = textareaRef.value
-    
+    ;(textareaRef.value as any)._autocompleteHostWidget = props.widget
+    ;(textareaRef.value as any)._autocompleteMetadataWidget = props.widget.metadataWidget
+    ;(textareaRef.value as any)._autocompleteTextWidgetName = props.widget.name ?? 'text'
+
     // Also store on the container element for cloned widgets (subgraph promotion)
     // When widgets are promoted to subgraph nodes, the cloned widget shares the same
     // DOM element but has its own inputEl property. We store the reference on the
@@ -180,10 +188,24 @@ onMounted(() => {
     if (container && (container as any).__widgetInputEl) {
       (container as any).__widgetInputEl.inputEl = textareaRef.value
     }
-    
-    // Initialize hasText state
-    hasText.value = textareaRef.value.value.length > 0
-    
+
+    // Apply pending value from setValue if exists (workflow loading before Vue mount)
+    const pendingValue = (props.widget as any)._pendingValue
+    if (pendingValue !== undefined) {
+      textareaRef.value.value = pendingValue
+      hasText.value = pendingValue.length > 0
+      delete (props.widget as any)._pendingValue
+      // Dispatch event to notify autocomplete of value change
+      textareaRef.value.dispatchEvent(new CustomEvent('lora-manager:autocomplete-value-changed', {
+        detail: { value: pendingValue }
+      }))
+    }
+
+    // Initialize hasText state (already done if pendingValue was applied, but safe to re-check)
+    if (pendingValue === undefined) {
+      hasText.value = textareaRef.value.value.length > 0
+    }
+
     // Listen for external value change events from setValue
     textareaRef.value.addEventListener('lora-manager:autocomplete-value-changed', onExternalValueChange as EventListener)
   }
@@ -208,6 +230,9 @@ onUnmounted(() => {
   
   // Remove external value change event listener
   if (textareaRef.value) {
+    delete (textareaRef.value as any)._autocompleteHostWidget
+    delete (textareaRef.value as any)._autocompleteMetadataWidget
+    delete (textareaRef.value as any)._autocompleteTextWidgetName
     textareaRef.value.removeEventListener('lora-manager:autocomplete-value-changed', onExternalValueChange as EventListener)
   }
   

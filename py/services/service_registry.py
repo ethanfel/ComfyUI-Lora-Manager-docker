@@ -159,10 +159,51 @@ class ServiceRegistry:
                 return cls._services[service_name]
 
             from .model_update_service import ModelUpdateService
-            from .persistent_model_cache import get_persistent_cache
+            from .settings_manager import get_settings_manager
 
-            cache = get_persistent_cache()
-            service = ModelUpdateService(cache.get_database_path())
+            service = ModelUpdateService(settings_manager=get_settings_manager())
+            cls._services[service_name] = service
+            logger.debug(f"Created and registered {service_name}")
+            return service
+
+    @classmethod
+    async def get_downloaded_version_history_service(cls):
+        """Get or create the downloaded-version history service."""
+
+        service_name = "downloaded_version_history_service"
+
+        if service_name in cls._services:
+            return cls._services[service_name]
+
+        async with cls._get_lock(service_name):
+            if service_name in cls._services:
+                return cls._services[service_name]
+
+            from .downloaded_version_history_service import (
+                DownloadedVersionHistoryService,
+            )
+
+            service = DownloadedVersionHistoryService()
+            cls._services[service_name] = service
+            logger.debug(f"Created and registered {service_name}")
+            return service
+
+    @classmethod
+    async def get_backup_service(cls):
+        """Get or create the backup service."""
+
+        service_name = "backup_service"
+
+        if service_name in cls._services:
+            return cls._services[service_name]
+
+        async with cls._get_lock(service_name):
+            if service_name in cls._services:
+                return cls._services[service_name]
+
+            from .backup_service import BackupService
+
+            service = await BackupService.get_instance()
             cls._services[service_name] = service
             logger.debug(f"Created and registered {service_name}")
             return service

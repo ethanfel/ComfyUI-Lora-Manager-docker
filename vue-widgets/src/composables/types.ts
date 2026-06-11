@@ -10,6 +10,12 @@ export interface LoraPoolConfig {
       noCreditRequired: boolean
       allowSelling: boolean
     }
+    namePatterns: {
+      include: string[]
+      exclude: string[]
+      useRegex: boolean
+    }
+    includeEmptyLora?: boolean  // Optional, deprecated (moved to Cycler)
   }
   preview: { matchCount: number; lastUpdated: number }
 }
@@ -74,6 +80,8 @@ export interface CyclerConfig {
   model_strength: number
   clip_strength: number
   use_same_clip_strength: boolean
+  use_preset_strength: boolean
+  preset_strength_scale: number
   sort_by: 'filename' | 'model_name'
   current_lora_name: string   // For display
   current_lora_filename: string
@@ -84,6 +92,8 @@ export interface CyclerConfig {
   repeat_count: number        // How many times each LoRA should repeat (default: 1)
   repeat_used: number         // How many times current index has been used
   is_paused: boolean          // Whether iteration is paused
+  // Include "no LoRA" option in cycle
+  include_no_lora: boolean    // Whether to include empty LoRA option
 }
 
 // Widget config union type

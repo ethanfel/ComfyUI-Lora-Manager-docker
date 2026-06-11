@@ -2,6 +2,9 @@ import { BaseContextMenu } from './BaseContextMenu.js';
 import { state } from '../../state/index.js';
 import { bulkManager } from '../../managers/BulkManager.js';
 import { updateElementText, translate } from '../../utils/i18nHelpers.js';
+import { bulkMissingLoraDownloadManager } from '../../managers/BulkMissingLoraDownloadManager.js';
+import { showToast } from '../../utils/uiHelpers.js';
+import { getModelApiClient } from '../../api/modelApiFactory.js';
 
 export class BulkContextMenu extends BaseContextMenu {
     constructor() {
@@ -37,6 +40,16 @@ export class BulkContextMenu extends BaseContextMenu {
         const moveAllItem = this.menu.querySelector('[data-action="move-all"]');
         const autoOrganizeItem = this.menu.querySelector('[data-action="auto-organize"]');
         const deleteAllItem = this.menu.querySelector('[data-action="delete-all"]');
+        const downloadMissingLorasItem = this.menu.querySelector('[data-action="download-missing-loras"]');
+        const repairMetadataItem = this.menu.querySelector('[data-action="repair-metadata"]');
+        const reimportMetadataItem = this.menu.querySelector('[data-action="reimport-metadata"]');
+
+        if (repairMetadataItem) {
+            repairMetadataItem.style.display = config.repairMetadata ? 'flex' : 'none';
+        }
+        if (reimportMetadataItem) {
+            reimportMetadataItem.style.display = config.reimportMetadata ? 'flex' : 'none';
+        }
 
         if (sendToWorkflowAppendItem) {
             sendToWorkflowAppendItem.style.display = config.sendToWorkflow ? 'flex' : 'none';
@@ -47,6 +60,14 @@ export class BulkContextMenu extends BaseContextMenu {
         if (copyAllItem) {
             copyAllItem.style.display = config.copyAll ? 'flex' : 'none';
         }
+
+        // Submenu parent visibility
+        const sendToWorkflowSubmenu = this.menu.querySelector('[data-has-submenu="send-to-workflow"]');
+        if (sendToWorkflowSubmenu) {
+            const hasWorkflowActions = config.sendToWorkflow || config.copyAll;
+            sendToWorkflowSubmenu.style.display = hasWorkflowActions ? 'flex' : 'none';
+        }
+
         if (refreshAllItem) {
             refreshAllItem.style.display = config.refreshAll ? 'flex' : 'none';
         }
@@ -72,39 +93,91 @@ export class BulkContextMenu extends BaseContextMenu {
             setContentRatingItem.style.display = config.setContentRating ? 'flex' : 'none';
         }
 
+        const setFavoriteItem = this.menu.querySelector('[data-action="set-favorite"]');
+
+        if (setFavoriteItem && config.setFavorite) {
+            setFavoriteItem.style.display = 'flex';
+
+            const total = state.selectedModels.size;
+            const favoritedCount = this.countFavoritedInSelection();
+            const allFavorited = total > 0 && favoritedCount === total;
+
+            const icon = setFavoriteItem.querySelector('i');
+            const label = setFavoriteItem.querySelector('span');
+
+            if (allFavorited) {
+                if (icon) { icon.className = 'far fa-star'; }
+                if (label) { label.textContent = translate('loras.bulkOperations.unfavorite'); }
+            } else {
+                if (icon) { icon.className = 'fas fa-star'; }
+                if (label) {
+                    label.textContent = favoritedCount > 0
+                        ? translate('loras.bulkOperations.setFavoriteCount', { favorited: favoritedCount, total })
+                        : translate('loras.bulkOperations.setFavorite');
+                }
+            }
+        } else if (setFavoriteItem) {
+            setFavoriteItem.style.display = 'none';
+        }
+
+        if (downloadMissingLorasItem) {
+            // Only show for recipes page
+            downloadMissingLorasItem.style.display = currentModelType === 'recipes' ? 'flex' : 'none';
+        }
+
+        const downloadExampleImagesItem = this.menu.querySelector('[data-action="download-example-images"]');
+        if (downloadExampleImagesItem) {
+            // Show on model pages (loras, checkpoints, embeddings), hide on recipes
+            const modelPages = ['loras', 'checkpoints', 'embeddings'];
+            downloadExampleImagesItem.style.display = modelPages.includes(currentModelType) ? 'flex' : 'none';
+        }
+
         const skipMetadataRefreshItem = this.menu.querySelector('[data-action="skip-metadata-refresh"]');
         const resumeMetadataRefreshItem = this.menu.querySelector('[data-action="resume-metadata-refresh"]');
 
         if (skipMetadataRefreshItem && resumeMetadataRefreshItem) {
-            const skipCount = this.countSkipStatus(true);
-            const resumeCount = this.countSkipStatus(false);
-            const totalCount = skipCount + resumeCount;
-
-            if (skipCount === totalCount) {
+            if (!config.skipMetadataRefresh) {
                 skipMetadataRefreshItem.style.display = 'none';
-                resumeMetadataRefreshItem.style.display = 'flex';
-                resumeMetadataRefreshItem.querySelector('span').textContent = translate(
-                    'loras.bulkOperations.resumeMetadataRefresh'
-                );
-            } else if (resumeCount === totalCount) {
-                skipMetadataRefreshItem.style.display = 'flex';
                 resumeMetadataRefreshItem.style.display = 'none';
-                skipMetadataRefreshItem.querySelector('span').textContent = translate(
-                    'loras.bulkOperations.skipMetadataRefresh'
-                );
             } else {
-                skipMetadataRefreshItem.style.display = 'flex';
-                resumeMetadataRefreshItem.style.display = 'flex';
-                skipMetadataRefreshItem.querySelector('span').textContent = translate(
-                    'loras.bulkOperations.skipMetadataRefreshCount',
-                    { count: resumeCount }
-                );
-                resumeMetadataRefreshItem.querySelector('span').textContent = translate(
-                    'loras.bulkOperations.resumeMetadataRefreshCount',
-                    { count: skipCount }
-                );
+                const skipCount = this.countSkipStatus(true);
+                const resumeCount = this.countSkipStatus(false);
+                const totalCount = skipCount + resumeCount;
+
+                if (skipCount === totalCount) {
+                    skipMetadataRefreshItem.style.display = 'none';
+                    resumeMetadataRefreshItem.style.display = 'flex';
+                    resumeMetadataRefreshItem.querySelector('span').textContent = translate(
+                        'loras.bulkOperations.resumeMetadataRefresh'
+                    );
+                } else if (resumeCount === totalCount) {
+                    skipMetadataRefreshItem.style.display = 'flex';
+                    resumeMetadataRefreshItem.style.display = 'none';
+                    skipMetadataRefreshItem.querySelector('span').textContent = translate(
+                        'loras.bulkOperations.skipMetadataRefresh'
+                    );
+                } else {
+                    skipMetadataRefreshItem.style.display = 'flex';
+                    resumeMetadataRefreshItem.style.display = 'flex';
+                    skipMetadataRefreshItem.querySelector('span').textContent = translate(
+                        'loras.bulkOperations.skipMetadataRefreshCount',
+                        { count: resumeCount }
+                    );
+                    resumeMetadataRefreshItem.querySelector('span').textContent = translate(
+                        'loras.bulkOperations.resumeMetadataRefreshCount',
+                        { count: skipCount }
+                    );
+                }
             }
         }
+
+        // Hide empty sections
+        this.menu.querySelectorAll('.context-menu-section').forEach(section => {
+            const items = Array.from(section.querySelectorAll('.context-menu-item'))
+                .filter(item => !item.closest('.context-submenu'));
+            const allHidden = items.length > 0 && items.every(item => item.style.display === 'none');
+            section.style.display = allHidden ? 'none' : '';
+        });
     }
 
     updateSelectedCountHeader() {
@@ -126,6 +199,20 @@ export class BulkContextMenu extends BaseContextMenu {
                 if (isSkipped === skipState) {
                     count++;
                 }
+            }
+        }
+        return count;
+    }
+
+    countFavoritedInSelection() {
+        let count = 0;
+        for (const filePath of state.selectedModels) {
+            const escapedPath = window.CSS && typeof window.CSS.escape === 'function'
+                ? window.CSS.escape(filePath)
+                : filePath.replace(/["\\]/g, '\\$&');
+            const card = document.querySelector(`.model-card[data-filepath="${escapedPath}"]`);
+            if (card && card.dataset.favorite === 'true') {
+                count++;
             }
         }
         return count;
@@ -178,11 +265,90 @@ export class BulkContextMenu extends BaseContextMenu {
             case 'delete-all':
                 bulkManager.showBulkDeleteModal();
                 break;
+            case 'repair-metadata':
+                bulkManager.repairSelectedRecipes();
+                break;
+            case 'reimport-metadata':
+                bulkManager.reimportSelectedRecipes();
+                break;
+            case 'set-favorite': {
+                const allFavorited = this.countFavoritedInSelection() === state.selectedModels.size;
+                bulkManager.setBulkFavorites(!allFavorited);
+                break;
+            }
+            case 'download-missing-loras':
+                this.handleDownloadMissingLoras();
+                break;
+            case 'download-example-images':
+                this.handleDownloadExampleImages();
+                break;
             case 'clear':
                 bulkManager.clearSelection();
                 break;
             default:
                 console.warn(`Unknown bulk action: ${action}`);
+        }
+    }
+
+    /**
+     * Handle downloading missing LoRAs for selected recipes
+     */
+    async handleDownloadMissingLoras() {
+        if (state.selectedModels.size === 0) {
+            return;
+        }
+
+        // Get selected recipes from the virtual scroller
+        const selectedRecipes = [];
+        state.selectedModels.forEach(filePath => {
+            const card = document.querySelector(`.model-card[data-filepath="${CSS.escape(filePath)}"]`);
+            if (card && card.recipeData) {
+                selectedRecipes.push(card.recipeData);
+            }
+        });
+
+        if (selectedRecipes.length === 0) {
+            // Try to get recipes from virtual scroller state
+            const items = state.virtualScroller?.items || [];
+            items.forEach(recipe => {
+                if (recipe.file_path && state.selectedModels.has(recipe.file_path)) {
+                    selectedRecipes.push(recipe);
+                }
+            });
+        }
+
+        if (selectedRecipes.length === 0) {
+            showToast('toast.recipes.noRecipesSelected', {}, 'warning');
+            return;
+        }
+
+        await bulkMissingLoraDownloadManager.downloadMissingLoras(selectedRecipes);
+    }
+
+    async handleDownloadExampleImages() {
+        if (state.selectedModels.size === 0) {
+            return;
+        }
+
+        const hashes = new Set();
+        for (const filePath of state.selectedModels) {
+            const escapedPath = CSS.escape(filePath);
+            const card = document.querySelector(`.model-card[data-filepath="${escapedPath}"]`);
+            if (card?.dataset?.sha256) {
+                hashes.add(card.dataset.sha256);
+            }
+        }
+
+        if (hashes.size === 0) {
+            showToast('No valid model hashes found in selection', {}, 'warning');
+            return;
+        }
+
+        try {
+            const apiClient = getModelApiClient();
+            await apiClient.downloadExampleImages([...hashes]);
+        } catch (error) {
+            console.error('Bulk download example images failed:', error);
         }
     }
 }

@@ -1,5 +1,5 @@
 <template>
-  <div class="lora-randomizer-widget">
+  <div class="lora-randomizer-widget" @wheel="onWheel">
     <LoraRandomizerSettingsView
       :count-mode="state.countMode.value"
       :count-fixed="state.countFixed.value"
@@ -51,6 +51,7 @@ type RandomizerWidget = ComponentWidget<RandomizerConfig>
 const props = defineProps<{
   widget: RandomizerWidget
   node: { id: number; inputs?: any[]; widgets?: any[]; graph?: any }
+  api?: any
 }>()
 
 // State management
@@ -64,6 +65,13 @@ const currentLoras = ref<LoraEntry[]>([])
 
 // Track if component is mounted to avoid early watch triggers
 const isMounted = ref(false)
+
+interface PendingExecution {
+  loras?: LoraEntry[]
+  lastUsed?: LoraEntry[] | null
+}
+
+const pendingExecutions: PendingExecution[] = []
 
 // Computed property to check if we can reuse last
 const canReuseLast = computed(() => {
@@ -154,6 +162,53 @@ const handleReuseLast = () => {
   }
 }
 
+/**
+ * Handle mouse wheel events on the widget.
+ * Forwards the event to the ComfyUI canvas for zooming when appropriate.
+ */
+const onWheel = (event: WheelEvent) => {
+  // Check if the event originated from a slider component
+  // Sliders have data-capture-wheel="true" attribute
+  const target = event.target as HTMLElement
+  if (target?.closest('[data-capture-wheel="true"]')) {
+    // Event is from a slider, slider already handled it
+    // Just stop propagation to prevent canvas zoom
+    event.stopPropagation()
+    return
+  }
+
+  // Access ComfyUI app from global window
+  const app = (window as any).app
+  if (!app || !app.canvas || typeof app.canvas.processMouseWheel !== 'function') {
+    return
+  }
+
+  const deltaX = event.deltaX
+  const deltaY = event.deltaY
+  const isHorizontal = Math.abs(deltaX) > Math.abs(deltaY)
+
+  // 1. Handle pinch-to-zoom (ctrlKey is true for pinch-to-zoom on most browsers)
+  if (event.ctrlKey) {
+    event.preventDefault()
+    event.stopPropagation()
+    app.canvas.processMouseWheel(event)
+    return
+  }
+
+  // 2. Horizontal scroll: pass to canvas (widgets usually don't scroll horizontally)
+  if (isHorizontal) {
+    event.preventDefault()
+    event.stopPropagation()
+    app.canvas.processMouseWheel(event)
+    return
+  }
+
+  // 3. Vertical scrolling: forward to canvas
+  event.preventDefault()
+  event.stopPropagation()
+  app.canvas.processMouseWheel(event)
+}
+
 // Watch for changes to the loras widget to track current loras
 watch(() => props.node.widgets?.find((w: any) => w.name === 'loras')?.value, (newVal) => {
   // Only update after component is mounted
@@ -218,23 +273,63 @@ onMounted(async () => {
   ;(props.node as any).onExecuted = function(output: any) {
     console.log("[LoraRandomizerWidget] Node executed with output:", output)
 
-    // Update last_used from backend
+    const pendingUpdate: PendingExecution = {}
+
     if (output?.last_used !== undefined) {
-      state.lastUsed.value = output.last_used
-      console.log(`[LoraRandomizerWidget] Updated last_used: ${output.last_used ? output.last_used.length : 0} LoRAs`)
+      pendingUpdate.lastUsed = output.last_used
+      console.log(`[LoraRandomizerWidget] Queued last_used update: ${output.last_used ? output.last_used.length : 0} LoRAs`)
     }
 
-    // Update loras widget if backend provided new loras
-    const lorasWidget = props.node.widgets?.find((w: any) => w.name === 'loras')
-    if (lorasWidget && output?.loras && Array.isArray(output.loras)) {
-      console.log("[LoraRandomizerWidget] Received loras data from backend:", output.loras)
-      lorasWidget.value = output.loras
-      currentLoras.value = output.loras
+    if (output?.loras && Array.isArray(output.loras)) {
+      pendingUpdate.loras = output.loras
+      console.log("[LoraRandomizerWidget] Queued loras data from backend:", output.loras)
+    }
+
+    if (pendingUpdate.lastUsed !== undefined || pendingUpdate.loras !== undefined) {
+      pendingExecutions.push(pendingUpdate)
     }
 
     // Call original onExecuted if it exists
     if (originalOnExecuted) {
       return originalOnExecuted(output)
+    }
+  }
+
+  if (props.api) {
+    const handleExecutionComplete = () => {
+      if (pendingExecutions.length === 0) {
+        return
+      }
+
+      const pending = pendingExecutions.shift()!
+
+      if (pending.lastUsed !== undefined) {
+        state.lastUsed.value = pending.lastUsed
+      }
+
+      if (pending.loras !== undefined) {
+        const lorasWidget = props.node.widgets?.find((w: any) => w.name === 'loras')
+        if (lorasWidget) {
+          lorasWidget.value = pending.loras
+        }
+        currentLoras.value = pending.loras
+      }
+    }
+
+    props.api.addEventListener('execution_success', handleExecutionComplete)
+    props.api.addEventListener('execution_error', handleExecutionComplete)
+    props.api.addEventListener('execution_interrupted', handleExecutionComplete)
+
+    const apiCleanup = () => {
+      props.api.removeEventListener('execution_success', handleExecutionComplete)
+      props.api.removeEventListener('execution_error', handleExecutionComplete)
+      props.api.removeEventListener('execution_interrupted', handleExecutionComplete)
+    }
+
+    const existingCleanup = (props.widget as any).onRemoveCleanup
+    ;(props.widget as any).onRemoveCleanup = () => {
+      existingCleanup?.()
+      apiCleanup()
     }
   }
 })

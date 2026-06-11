@@ -14,6 +14,10 @@ model_cache/
 
 # agent
 .opencode/
+.claude/
+.sisyphus/
+.codex
+.omo
 
 # Browser extension (private)
 extension/

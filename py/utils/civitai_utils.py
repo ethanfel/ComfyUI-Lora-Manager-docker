@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, Iterable, Mapping, Sequence
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qs, urlparse, urlunparse
 
 
+_SUPPORTED_CIVITAI_PAGE_HOSTS = frozenset({"civitai.com", "civitai.red", "civitai.green"})
+DEFAULT_CIVITAI_PAGE_HOST = "civitai.com"
 _DEFAULT_ALLOW_COMMERCIAL_USE: Sequence[str] = ("Sell",)
 _LICENSE_DEFAULTS: Dict[str, Any] = {
     "allowNoCredit": True,
@@ -17,12 +20,181 @@ _COMMERCIAL_ALLOWED_VALUES = {"sell", "rent", "rentcivit", "image"}
 _COMMERCIAL_SHIFT = 1
 
 
+def is_supported_civitai_page_host(hostname: str | None) -> bool:
+    """Return whether the hostname is a supported Civitai page domain."""
+
+    if not hostname:
+        return False
+    return hostname.lower() in _SUPPORTED_CIVITAI_PAGE_HOSTS
+
+
+def normalize_civitai_page_host(hostname: str | None) -> str:
+    """Return a supported Civitai page host or the default host."""
+
+    if not isinstance(hostname, str):
+        return DEFAULT_CIVITAI_PAGE_HOST
+
+    normalized = hostname.strip().lower()
+    if is_supported_civitai_page_host(normalized):
+        return normalized
+
+    return DEFAULT_CIVITAI_PAGE_HOST
+
+
+def build_civitai_model_page_url(
+    model_id: str | int | None,
+    version_id: str | int | None = None,
+    *,
+    host: str | None = None,
+) -> str | None:
+    """Build a Civitai model or model-version page URL."""
+
+    normalized_host = normalize_civitai_page_host(host)
+    normalized_model_id = str(model_id).strip() if model_id is not None else ""
+    normalized_version_id = str(version_id).strip() if version_id is not None else ""
+
+    if normalized_model_id:
+        path = f"/models/{normalized_model_id}"
+        query = f"modelVersionId={normalized_version_id}" if normalized_version_id else ""
+        return urlunparse(("https", normalized_host, path, "", query, ""))
+
+    if normalized_version_id:
+        return urlunparse(
+            ("https", normalized_host, f"/model-versions/{normalized_version_id}", "", "", "")
+        )
+
+    return None
+
+
+_RE_CDN_IMAGE_ID = re.compile(r"/(\d+)\.(?:jpeg|jpg|png|webp|gif)(?:\?|#|$)")
+
+
+def extract_civitai_image_id_from_cdn_url(url: str | None) -> str | None:
+    """Extract the numeric image ID from a Cloudflare CDN image URL.
+
+    CivitAI image CDN URLs follow the pattern::
+
+        https://image.civitai.com/{cf_uuid}/{params}/{image_id}.{ext}
+
+    The image database ID is always the last path segment (minus extension)
+    because ``getEdgeUrl(…, name=id.toString())`` embeds it explicitly
+    in the model-versions REST API response.
+    """
+    if not url:
+        return None
+    match = _RE_CDN_IMAGE_ID.search(url)
+    return match.group(1) if match else None
+
+
+def build_civitai_image_page_url(
+    image_id: str | int | None,
+    *,
+    host: str | None = None,
+) -> str | None:
+    """Build a Civitai image page URL.
+
+    Returns something like ``https://civitai.com/images/12345``.
+    The host is resolved through :func:`normalize_civitai_page_host` and
+    therefore respects the user's ``civitai_host`` setting.
+    """
+    if not image_id:
+        return None
+    normalized_host = normalize_civitai_page_host(host)
+    normalized_id = str(image_id).strip()
+    if not normalized_id:
+        return None
+    return urlunparse(("https", normalized_host, f"/images/{normalized_id}", "", "", ""))
+
+
+def _parse_supported_civitai_page_url(url: str | None):
+    if not url:
+        return None
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return None
+
+    if parsed.scheme not in {"http", "https"}:
+        return None
+
+    if not is_supported_civitai_page_host(parsed.hostname):
+        return None
+
+    return parsed
+
+
+def extract_civitai_model_url_parts(
+    url: str | None,
+) -> tuple[str | None, str | None]:
+    """Extract model and version identifiers from a supported Civitai model URL."""
+
+    parsed = _parse_supported_civitai_page_url(url)
+    if parsed is None:
+        return None, None
+
+    path_match = re.search(r"/models/(\d+)", parsed.path)
+    if not path_match:
+        return None, None
+
+    model_id = path_match.group(1)
+
+    query_params = parse_qs(parsed.query)
+    version_values = query_params.get("modelVersionId") or []
+    version_id = version_values[0] if version_values else None
+    return model_id, version_id
+
+
+def extract_civitai_image_id(url: str | None) -> str | None:
+    """Extract the image identifier from a supported Civitai image page URL."""
+
+    parsed = _parse_supported_civitai_page_url(url)
+    if parsed is None:
+        return None
+
+    path_match = re.search(r"/images/(\d+)", parsed.path)
+    if not path_match:
+        return None
+
+    return path_match.group(1)
+
+
+def normalize_civitai_download_url(url: str | None) -> str | None:
+    """Rewrite Civitai download URLs to the canonical authenticated host."""
+
+    if not url:
+        return url
+
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return url
+
+    hostname = parsed.hostname.lower() if parsed.hostname else None
+    if hostname != "civitai.red" or not parsed.path.startswith("/api/download/"):
+        return url
+
+    return urlunparse(parsed._replace(netloc="civitai.com"))
+
+
+def extract_civitai_page_host(url: str | None) -> str | None:
+    """Extract the supported Civitai page host from a URL."""
+
+    parsed = _parse_supported_civitai_page_url(url)
+    if parsed is None:
+        return None
+
+    return parsed.hostname.lower() if parsed.hostname else None
+
+
 def _normalize_commercial_values(value: Any) -> Sequence[str]:
     """Return a normalized list of commercial permissions preserving source values."""
 
     def _split_aggregate(value_str: str) -> list[str]:
         stripped = value_str.strip()
-        looks_aggregate = "," in stripped or (stripped.startswith("{") and stripped.endswith("}"))
+        looks_aggregate = "," in stripped or (
+            stripped.startswith("{") and stripped.endswith("}")
+        )
         if not looks_aggregate:
             return [value_str]
 
@@ -107,9 +279,9 @@ def _resolve_commercial_bits(values: Sequence[str]) -> int:
             normalized_values.add(normalized)
 
     has_sell = "sell" in normalized_values
-    has_rent = has_sell or "rent" in normalized_values
-    has_rentcivit = has_rent or "rentcivit" in normalized_values
-    has_image = has_sell or "image" in normalized_values
+    has_rent = "rent" in normalized_values
+    has_rentcivit = "rentcivit" in normalized_values
+    has_image = "image" in normalized_values
 
     commercial_bits = (
         (1 if has_sell else 0) << 3
@@ -141,14 +313,18 @@ def build_license_flags(payload: Mapping[str, Any] | None) -> int:
     return flags
 
 
-def resolve_license_info(model_data: Mapping[str, Any] | None) -> tuple[Dict[str, Any], int]:
+def resolve_license_info(
+    model_data: Mapping[str, Any] | None,
+) -> tuple[Dict[str, Any], int]:
     """Return normalized license payload and its encoded bitset."""
 
     payload = resolve_license_payload(model_data)
     return payload, build_license_flags(payload)
 
 
-def rewrite_preview_url(source_url: str | None, media_type: str | None = None) -> tuple[str | None, bool]:
+def rewrite_preview_url(
+    source_url: str | None, media_type: str | None = None
+) -> tuple[str | None, bool]:
     """Rewrite Civitai preview URLs to use optimized renditions.
 
     Args:
@@ -168,7 +344,12 @@ def rewrite_preview_url(source_url: str | None, media_type: str | None = None) -
     except ValueError:
         return source_url, False
 
-    if parsed.netloc.lower() != "image.civitai.com":
+    hostname = parsed.hostname
+    if hostname is None:
+        return source_url, False
+
+    hostname = hostname.lower()
+    if hostname == "civitai.com" or not hostname.endswith(".civitai.com"):
         return source_url, False
 
     replacement = "/width=450,optimized=true"
@@ -187,7 +368,13 @@ def rewrite_preview_url(source_url: str | None, media_type: str | None = None) -
 
 
 __all__ = [
+    "build_civitai_image_page_url",
     "build_license_flags",
+    "extract_civitai_image_id",
+    "extract_civitai_image_id_from_cdn_url",
+    "extract_civitai_page_host",
+    "extract_civitai_model_url_parts",
+    "is_supported_civitai_page_host",
     "resolve_license_payload",
     "resolve_license_info",
     "rewrite_preview_url",

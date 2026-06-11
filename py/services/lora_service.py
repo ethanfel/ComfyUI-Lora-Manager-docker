@@ -1,9 +1,11 @@
-import os
 import logging
+import json
+import os
 from typing import Dict, List, Optional
 
 from .base_model_service import BaseModelService
 from .model_query import resolve_sub_type
+from .auto_tag_service import extract_auto_tags
 from ..utils.models import LoraMetadata
 from ..config import config
 
@@ -27,7 +29,7 @@ class LoraService(BaseModelService):
         # Resolve sub_type using priority: sub_type > model_type > civitai.model.type > default
         # Normalize to lowercase for consistent API responses
         sub_type = resolve_sub_type(lora_data).lower()
-        
+
         return {
             "model_name": lora_data["model_name"],
             "file_name": lora_data["file_name"],
@@ -47,12 +49,16 @@ class LoraService(BaseModelService):
             "usage_tips": lora_data.get("usage_tips", ""),
             "notes": lora_data.get("notes", ""),
             "favorite": lora_data.get("favorite", False),
+            "exclude": bool(lora_data.get("exclude", False)),
             "update_available": bool(lora_data.get("update_available", False)),
-            "skip_metadata_refresh": bool(lora_data.get("skip_metadata_refresh", False)),
+            "skip_metadata_refresh": bool(
+                lora_data.get("skip_metadata_refresh", False)
+            ),
             "sub_type": sub_type,
             "civitai": self.filter_civitai_data(
                 lora_data.get("civitai", {}), minimal=True
             ),
+            "auto_tags": lora_data.get("auto_tags") or extract_auto_tags(lora_data),
         }
 
     async def _apply_specific_filters(self, data: List[Dict], **kwargs) -> List[Dict]:
@@ -61,6 +67,68 @@ class LoraService(BaseModelService):
         first_letter = kwargs.get("first_letter")
         if first_letter:
             data = self._filter_by_first_letter(data, first_letter)
+
+        # Handle name pattern filters
+        name_pattern_include = kwargs.get("name_pattern_include", [])
+        name_pattern_exclude = kwargs.get("name_pattern_exclude", [])
+        name_pattern_use_regex = kwargs.get("name_pattern_use_regex", False)
+
+        if name_pattern_include or name_pattern_exclude:
+            import re
+
+            def matches_pattern(name, pattern, use_regex):
+                """Check if name matches pattern (regex or substring)"""
+                if not name:
+                    return False
+                if use_regex:
+                    try:
+                        return bool(re.search(pattern, name, re.IGNORECASE))
+                    except re.error:
+                        # Invalid regex, fall back to substring match
+                        return pattern.lower() in name.lower()
+                else:
+                    return pattern.lower() in name.lower()
+
+            def matches_any_pattern(name, patterns, use_regex):
+                """Check if name matches any of the patterns"""
+                if not patterns:
+                    return True
+                return any(matches_pattern(name, p, use_regex) for p in patterns)
+
+            filtered = []
+            for lora in data:
+                model_name = lora.get("model_name", "")
+                file_name = lora.get("file_name", "")
+                names_to_check = [n for n in [model_name, file_name] if n]
+
+                # Check exclude patterns first
+                excluded = False
+                if name_pattern_exclude:
+                    for name in names_to_check:
+                        if matches_any_pattern(
+                            name, name_pattern_exclude, name_pattern_use_regex
+                        ):
+                            excluded = True
+                            break
+
+                if excluded:
+                    continue
+
+                # Check include patterns
+                if name_pattern_include:
+                    included = False
+                    for name in names_to_check:
+                        if matches_any_pattern(
+                            name, name_pattern_include, name_pattern_use_regex
+                        ):
+                            included = True
+                            break
+                    if not included:
+                        continue
+
+                filtered.append(lora)
+
+            data = filtered
 
         return data
 
@@ -214,6 +282,57 @@ class LoraService(BaseModelService):
 
         return None
 
+    @staticmethod
+    def get_recommended_strength_from_lora_data(lora_data: Dict) -> Optional[float]:
+        """Parse usage_tips JSON and extract recommended model strength."""
+        try:
+            usage_tips = lora_data.get("usage_tips", "")
+            if not usage_tips:
+                return None
+            tips_data = json.loads(usage_tips)
+            return tips_data.get("strength")
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return None
+
+    @staticmethod
+    def get_recommended_clip_strength_from_lora_data(
+        lora_data: Dict,
+    ) -> Optional[float]:
+        """Parse usage_tips JSON and extract recommended clip strength."""
+        try:
+            usage_tips = lora_data.get("usage_tips", "")
+            if not usage_tips:
+                return None
+            tips_data = json.loads(usage_tips)
+            return tips_data.get("clipStrength")
+        except (json.JSONDecodeError, TypeError, AttributeError):
+            return None
+
+    async def get_lora_metadata_by_filename(self, filename: str) -> Optional[Dict]:
+        """Return cached raw metadata for a LoRA matching the given filename."""
+        cache = await self.scanner.get_cached_data(force_refresh=False)
+
+        fn_normalized = filename.replace("\\", "/")
+        fn_no_ext = fn_normalized
+        for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+            if fn_no_ext.lower().endswith(ext):
+                fn_no_ext = fn_no_ext[: -len(ext)]
+                break
+
+        for lora in cache.raw_data if cache else []:
+            file_name = lora.get("file_name", "")
+            folder = lora.get("folder", "")
+            file_name_no_ext = file_name
+            for ext in (".safetensors", ".ckpt", ".pt", ".bin"):
+                if file_name_no_ext.lower().endswith(ext):
+                    file_name_no_ext = file_name_no_ext[: -len(ext)]
+                    break
+            path_name = f"{folder}/{file_name_no_ext}".replace("\\", "/") if folder else file_name_no_ext
+            if fn_no_ext in (file_name_no_ext, path_name):
+                return lora
+
+        return None
+
     def find_duplicate_hashes(self) -> Dict:
         """Find LoRAs with duplicate SHA256 hashes"""
         return self.scanner._hash_index.get_duplicate_hashes()
@@ -264,33 +383,9 @@ class LoraService(BaseModelService):
             List of LoRA dicts with randomized strengths
         """
         import random
-        import json
-
         # Use a local Random instance to avoid affecting global random state
         # This ensures each execution with a different seed produces different results
         rng = random.Random(seed)
-
-        def get_recommended_strength(lora_data: Dict) -> Optional[float]:
-            """Parse usage_tips JSON and extract recommended strength"""
-            try:
-                usage_tips = lora_data.get("usage_tips", "")
-                if not usage_tips:
-                    return None
-                tips_data = json.loads(usage_tips)
-                return tips_data.get("strength")
-            except (json.JSONDecodeError, TypeError, AttributeError):
-                return None
-
-        def get_recommended_clip_strength(lora_data: Dict) -> Optional[float]:
-            """Parse usage_tips JSON and extract recommended clip strength"""
-            try:
-                usage_tips = lora_data.get("usage_tips", "")
-                if not usage_tips:
-                    return None
-                tips_data = json.loads(usage_tips)
-                return tips_data.get("clipStrength")
-            except (json.JSONDecodeError, TypeError, AttributeError):
-                return None
 
         if locked_loras is None:
             locked_loras = []
@@ -321,7 +416,10 @@ class LoraService(BaseModelService):
             locked_loras = locked_loras[:target_count]
 
         # Filter out locked LoRAs from available pool
-        locked_names = {lora["name"] for lora in locked_loras}
+        locked_names = {
+            os.path.basename(lora["name"]) if "/" in str(lora.get("name", "")) else lora["name"]
+            for lora in locked_loras
+        }
         available_pool = [
             l for l in available_loras if l["file_name"] not in locked_names
         ]
@@ -339,7 +437,9 @@ class LoraService(BaseModelService):
         result_loras = []
         for lora in selected:
             if use_recommended_strength:
-                recommended_strength = get_recommended_strength(lora)
+                recommended_strength = self.get_recommended_strength_from_lora_data(
+                    lora
+                )
                 if recommended_strength is not None:
                     scale = rng.uniform(
                         recommended_strength_scale_min, recommended_strength_scale_max
@@ -357,7 +457,9 @@ class LoraService(BaseModelService):
             if use_same_clip_strength:
                 clip_str = model_str
             elif use_recommended_strength:
-                recommended_clip_strength = get_recommended_clip_strength(lora)
+                recommended_clip_strength = (
+                    self.get_recommended_clip_strength_from_lora_data(lora)
+                )
                 if recommended_clip_strength is not None:
                     scale = rng.uniform(
                         recommended_strength_scale_min, recommended_strength_scale_max
@@ -368,13 +470,11 @@ class LoraService(BaseModelService):
                         rng.uniform(clip_strength_min, clip_strength_max), 2
                     )
             else:
-                clip_str = round(
-                    rng.uniform(clip_strength_min, clip_strength_max), 2
-                )
+                clip_str = round(rng.uniform(clip_strength_min, clip_strength_max), 2)
 
             result_loras.append(
                 {
-                    "name": lora["file_name"],
+                    "name": f"{lora['folder']}/{lora['file_name']}" if lora.get("folder") else lora["file_name"],
                     "strength": model_str,
                     "clipStrength": clip_str,
                     "active": True,
@@ -485,12 +585,69 @@ class LoraService(BaseModelService):
                 if bool(lora.get("license_flags", 127) & (1 << 1))
             ]
 
+        # Apply name pattern filters
+        name_patterns = filter_section.get("namePatterns", {})
+        include_patterns = name_patterns.get("include", [])
+        exclude_patterns = name_patterns.get("exclude", [])
+        use_regex = name_patterns.get("useRegex", False)
+
+        if include_patterns or exclude_patterns:
+            import re
+
+            def matches_pattern(name, pattern, use_regex):
+                """Check if name matches pattern (regex or substring)"""
+                if not name:
+                    return False
+                if use_regex:
+                    try:
+                        return bool(re.search(pattern, name, re.IGNORECASE))
+                    except re.error:
+                        # Invalid regex, fall back to substring match
+                        return pattern.lower() in name.lower()
+                else:
+                    return pattern.lower() in name.lower()
+
+            def matches_any_pattern(name, patterns, use_regex):
+                """Check if name matches any of the patterns"""
+                if not patterns:
+                    return True
+                return any(matches_pattern(name, p, use_regex) for p in patterns)
+
+            filtered = []
+            for lora in available_loras:
+                model_name = lora.get("model_name", "")
+                file_name = lora.get("file_name", "")
+                names_to_check = [n for n in [model_name, file_name] if n]
+
+                # Check exclude patterns first
+                excluded = False
+                if exclude_patterns:
+                    for name in names_to_check:
+                        if matches_any_pattern(name, exclude_patterns, use_regex):
+                            excluded = True
+                            break
+
+                if excluded:
+                    continue
+
+                # Check include patterns
+                if include_patterns:
+                    included = False
+                    for name in names_to_check:
+                        if matches_any_pattern(name, include_patterns, use_regex):
+                            included = True
+                            break
+                    if not included:
+                        continue
+
+                filtered.append(lora)
+
+            available_loras = filtered
+
         return available_loras
 
     async def get_cycler_list(
-        self,
-        pool_config: Optional[Dict] = None,
-        sort_by: str = "filename"
+        self, pool_config: Optional[Dict] = None, sort_by: str = "filename"
     ) -> List[Dict]:
         """
         Get filtered and sorted LoRA list for cycling.
@@ -516,19 +673,26 @@ class LoraService(BaseModelService):
         if sort_by == "model_name":
             available_loras = sorted(
                 available_loras,
-                key=lambda x: (x.get("model_name") or x.get("file_name", "")).lower()
+                key=lambda x: (
+                    (x.get("model_name") or x.get("file_name", "")).lower(),
+                    x.get("file_path", "").lower(),
+                ),
             )
         else:  # Default to filename
             available_loras = sorted(
                 available_loras,
-                key=lambda x: x.get("file_name", "").lower()
+                key=lambda x: (
+                    x.get("file_name", "").lower(),
+                    x.get("file_path", "").lower(),
+                ),
             )
 
         # Return minimal data needed for cycling
         return [
             {
-                "file_name": lora["file_name"],
+                "file_name": f"{lora['folder']}/{lora['file_name']}" if lora.get("folder") else lora["file_name"],
                 "model_name": lora.get("model_name", lora["file_name"]),
+                "folder": lora.get("folder", ""),
             }
             for lora in available_loras
         ]

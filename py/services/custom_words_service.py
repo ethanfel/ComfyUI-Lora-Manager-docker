@@ -7,11 +7,13 @@ with category filtering and enriched results including post counts.
 from __future__ import annotations
 
 import logging
+import re
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
+_EMBEDDED_COMMAND_PATTERN = re.compile(r"\s/\w")
 class CustomWordsService:
     """Service for autocomplete via TagFTSIndex.
 
@@ -77,12 +79,28 @@ class CustomWordsService:
         Returns:
             List of dicts with tag_name, category, and post_count.
         """
+        normalized_search = search_term.strip()
+        if not normalized_search:
+            return []
+
+        # Prompt widgets should only send the active token, but guard against
+        # accidental full-prompt queries reaching the FTS path.
+        if (
+            "__" in normalized_search
+            or "," in normalized_search
+            or ">" in normalized_search
+            or "\n" in normalized_search
+            or "\r" in normalized_search
+            or _EMBEDDED_COMMAND_PATTERN.search(normalized_search)
+        ):
+            logger.debug("Skipping prompt-like custom words query: %s", normalized_search)
+            return []
+
         tag_index = self._get_tag_index()
         if tag_index is not None:
-            results = tag_index.search(
-                search_term, categories=categories, limit=limit, offset=offset
+            return tag_index.search(
+                normalized_search, categories=categories, limit=limit, offset=offset
             )
-            return results
 
         logger.debug("TagFTSIndex not available, returning empty results")
         return []

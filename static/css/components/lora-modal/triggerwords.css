@@ -1,14 +1,14 @@
 /* Update Trigger Words styles */
 .info-item.trigger-words {
   padding: var(--space-2);
-  background: rgba(0, 0, 0, 0.03);
+  background: var(--surface-subtle);
   border: 1px solid rgba(0, 0, 0, 0.1);
   border-radius: var(--border-radius-sm);
 }
 
-/* 调整 trigger words 样式 */
+/* Trigger words styles */
 [data-theme="dark"] .info-item.trigger-words {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--surface-subtle);
   border: 1px solid var(--lora-border);
 }
 
@@ -48,9 +48,13 @@
   border-radius: var(--border-radius-xs);
   padding: 4px 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: var(--transition-base);
   gap: 6px;
   position: relative;
+}
+
+.trigger-word-tag:not(.is-editing) {
+  transition: background-color 0.2s ease, border-color 0.2s ease;
 }
 
 .trigger-word-content {
@@ -63,6 +67,38 @@
 .trigger-word-tag:hover {
   background: oklch(var(--lora-accent-l) var(--lora-accent-c) var(--lora-accent-h) / 0.1);
   border-color: var(--lora-accent);
+}
+
+.trigger-words.edit-mode .trigger-word-tag {
+  cursor: text;
+}
+
+.trigger-word-tag.is-editing {
+  align-items: center;
+  flex: 0 1 min(var(--trigger-word-edit-width, 48ch), 100%);
+  width: min(var(--trigger-word-edit-width, 48ch), 100%);
+  height: var(--trigger-word-edit-height, auto);
+  border-color: var(--lora-accent);
+  transition: none;
+}
+
+.trigger-word-edit-input {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 1px 2px;
+  border: none;
+  resize: none;
+  overflow: auto;
+  outline: none;
+  background: transparent;
+  color: var(--lora-accent);
+  font: inherit;
+  font-size: 0.85em;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .trigger-word-copy {

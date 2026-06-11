@@ -1,13 +1,14 @@
 // Recipe manager module
 import { appCore } from './core.js';
 import { ImportManager } from './managers/ImportManager.js';
+import { BatchImportManager } from './managers/BatchImportManager.js';
 import { RecipeModal } from './components/RecipeModal.js';
 import { state, getCurrentPageState } from './state/index.js';
 import { getSessionItem, removeSessionItem } from './utils/storageHelpers.js';
 import { RecipeContextMenu } from './components/ContextMenu/index.js';
 import { DuplicatesManager } from './components/DuplicatesManager.js';
 import { refreshVirtualScroll } from './utils/infiniteScroll.js';
-import { refreshRecipes, syncChanges, RecipeSidebarApiClient } from './api/recipeApi.js';
+import { refreshRecipes, RecipeSidebarApiClient } from './api/recipeApi.js';
 import { sidebarManager } from './components/SidebarManager.js';
 
 class RecipePageControls {
@@ -18,16 +19,13 @@ class RecipePageControls {
     }
 
     async resetAndReload() {
-        refreshVirtualScroll();
+        await refreshVirtualScroll();
     }
 
     async refreshModels(fullRebuild = false) {
-        if (fullRebuild) {
-            await refreshRecipes();
-            return;
-        }
+        await refreshRecipes(fullRebuild);
 
-        await syncChanges();
+        await sidebarManager.refresh();
     }
 
     getSidebarApiClient() {
@@ -46,6 +44,10 @@ class RecipeManager {
         // Initialize ImportManager
         this.importManager = new ImportManager();
 
+        // Initialize BatchImportManager and make it globally accessible
+        this.batchImportManager = new BatchImportManager();
+        window.batchImportManager = this.batchImportManager;
+
         // Initialize RecipeModal
         this.recipeModal = new RecipeModal();
 
@@ -61,6 +63,8 @@ class RecipeManager {
             active: false,
             loraName: null,
             loraHash: null,
+            checkpointName: null,
+            checkpointHash: null,
             recipeId: null
         };
     }
@@ -122,16 +126,20 @@ class RecipeManager {
         // Check for Lora filter
         const filterLoraName = getSessionItem('lora_to_recipe_filterLoraName');
         const filterLoraHash = getSessionItem('lora_to_recipe_filterLoraHash');
+        const filterCheckpointName = getSessionItem('checkpoint_to_recipe_filterCheckpointName');
+        const filterCheckpointHash = getSessionItem('checkpoint_to_recipe_filterCheckpointHash');
 
         // Check for specific recipe ID
         const viewRecipeId = getSessionItem('viewRecipeId');
 
         // Set custom filter if any parameter is present
-        if (filterLoraName || filterLoraHash || viewRecipeId) {
+        if (filterLoraName || filterLoraHash || filterCheckpointName || filterCheckpointHash || viewRecipeId) {
             this.pageState.customFilter = {
                 active: true,
                 loraName: filterLoraName,
                 loraHash: filterLoraHash,
+                checkpointName: filterCheckpointName,
+                checkpointHash: filterCheckpointHash,
                 recipeId: viewRecipeId
             };
 
@@ -159,6 +167,13 @@ class RecipeManager {
                 loraName;
 
             filterText = `<span>Recipes using: <span class="lora-name">${displayName}</span></span>`;
+        } else if (this.pageState.customFilter.checkpointName) {
+            const checkpointName = this.pageState.customFilter.checkpointName;
+            const displayName = checkpointName.length > 25 ?
+                checkpointName.substring(0, 22) + '...' :
+                checkpointName;
+
+            filterText = `<span>Recipes using checkpoint: <span class="lora-name">${displayName}</span></span>`;
         } else {
             filterText = 'Filtered recipes';
         }
@@ -168,6 +183,10 @@ class RecipeManager {
         // Add title attribute to show the lora name as a tooltip
         if (this.pageState.customFilter.loraName) {
             textElement.setAttribute('title', this.pageState.customFilter.loraName);
+        } else if (this.pageState.customFilter.checkpointName) {
+            textElement.setAttribute('title', this.pageState.customFilter.checkpointName);
+        } else {
+            textElement.removeAttribute('title');
         }
         indicator.classList.remove('hidden');
 
@@ -194,6 +213,8 @@ class RecipeManager {
             active: false,
             loraName: null,
             loraHash: null,
+            checkpointName: null,
+            checkpointHash: null,
             recipeId: null
         };
 
@@ -206,6 +227,8 @@ class RecipeManager {
         // Clear any session storage items
         removeSessionItem('lora_to_recipe_filterLoraName');
         removeSessionItem('lora_to_recipe_filterLoraHash');
+        removeSessionItem('checkpoint_to_recipe_filterCheckpointName');
+        removeSessionItem('checkpoint_to_recipe_filterCheckpointHash');
         removeSessionItem('viewRecipeId');
 
         // Reset and refresh the virtual scroller
@@ -260,16 +283,6 @@ class RecipeManager {
             });
         });
 
-        // Handle quick refresh option (Sync Changes)
-        const quickRefreshOption = document.querySelector('[data-action="quick-refresh"]');
-        if (quickRefreshOption) {
-            quickRefreshOption.addEventListener('click', (e) => {
-                e.stopPropagation();
-                this.pageControls.refreshModels(false);
-                this.closeDropdowns();
-            });
-        }
-
         // Handle full rebuild option (Rebuild Cache)
         const fullRebuildOption = document.querySelector('[data-action="full-rebuild"]');
         if (fullRebuildOption) {
@@ -302,16 +315,32 @@ class RecipeManager {
         });
     }
 
+    normalizeLoadRecipesOptions(options = true) {
+        if (typeof options === 'boolean') {
+            return {
+                resetPage: options,
+                preserveScroll: false
+            };
+        }
+
+        return {
+            resetPage: options?.resetPage !== false,
+            preserveScroll: options?.preserveScroll === true
+        };
+    }
+
     // This method is kept for compatibility but now uses virtual scrolling
-    async loadRecipes(resetPage = true) {
+    async loadRecipes(options = true) {
         // Skip loading if in duplicates mode
         const pageState = getCurrentPageState();
         if (pageState.duplicatesMode) {
             return;
         }
 
+        const { resetPage, preserveScroll } = this.normalizeLoadRecipesOptions(options);
+
         if (resetPage) {
-            refreshVirtualScroll();
+            await refreshVirtualScroll({ preserveScroll });
         }
     }
 

@@ -6,9 +6,43 @@ import { bulkManager } from '../../managers/BulkManager.js';
 import { MODEL_CONFIG } from '../../api/apiConfig.js';
 import { translate } from '../../utils/i18nHelpers.js';
 import { getNsfwLevelSelector } from '../shared/NsfwLevelSelector.js';
+import { extractCivitaiModelUrlParts } from '../../utils/civitaiUtils.js';
 
 // Mixin with shared functionality for LoraContextMenu and CheckpointContextMenu
 export const ModelContextMenuMixin = {
+    isExcludedView() {
+        return state?.pages?.[state.currentPageType]?.viewMode === 'excluded';
+    },
+
+    updateExcludeMenuItem() {
+        const excludeItem = this.menu?.querySelector('[data-action="exclude"], [data-action="restore"]');
+        if (!excludeItem) {
+            return;
+        }
+
+        const isExcludedView = this.isExcludedView();
+        excludeItem.dataset.action = isExcludedView ? 'restore' : 'exclude';
+        excludeItem.innerHTML = isExcludedView
+            ? `<i class="fas fa-undo"></i> <span>${translate('loras.contextMenu.restoreModel', {}, 'Restore model')}</span>`
+            : `<i class="fas fa-eye-slash"></i> <span>${translate('loras.contextMenu.excludeModel', {}, 'Exclude model')}</span>`;
+    },
+
+    async restoreExcludedModel(filePath) {
+        const restored = await getModelApiClient().unexcludeModel(filePath);
+        if (!restored) {
+            return;
+        }
+
+        if (window.pageControls?.exitExcludedView) {
+            await window.pageControls.exitExcludedView();
+        } else {
+            const resetFn = this.resetAndReload || resetAndReload;
+            if (typeof resetFn === 'function') {
+                await resetFn(true);
+            }
+        }
+    },
+
     // NSFW Selector methods
     initNSFWSelector() {
         if (this._nsfwSelectorInitialized) {
@@ -154,25 +188,7 @@ export const ModelContextMenuMixin = {
     },
 
     extractModelVersionId(url) {
-        try {
-            // Handle all three URL formats:
-            // 1. https://civitai.com/models/649516
-            // 2. https://civitai.com/models/649516?modelVersionId=726676
-            // 3. https://civitai.com/models/649516/cynthia-pokemon-diamond-and-pearl-pdxl-lora?modelVersionId=726676
-            
-            const parsedUrl = new URL(url);
-            
-            // Extract model ID from path
-            const pathMatch = parsedUrl.pathname.match(/\/models\/(\d+)/);
-            const modelId = pathMatch ? pathMatch[1] : null;
-            
-            // Extract model version ID from query parameters
-            const modelVersionId = parsedUrl.searchParams.get('modelVersionId');
-            
-            return { modelId, modelVersionId };
-        } catch (e) {
-            return { modelId: null, modelVersionId: null };
-        }
+        return extractCivitaiModelUrlParts(url);
     },
 
     parseModelId(value) {

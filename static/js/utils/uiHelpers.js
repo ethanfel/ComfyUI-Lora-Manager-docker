@@ -3,6 +3,93 @@ import { state, getCurrentPageState } from '../state/index.js';
 import { getStorageItem, setStorageItem } from './storageHelpers.js';
 import { NODE_TYPE_ICONS, DEFAULT_NODE_COLOR } from './constants.js';
 import { eventManager } from './EventManager.js';
+import { bannerService } from '../managers/BannerService.js';
+import { modalManager } from '../managers/ModalManager.js';
+import { buildCivitaiUrl, normalizeCivitaiPageHost } from './civitaiUtils.js';
+
+const CIVITAI_HOST_INFO_BANNER_ID = 'civitai-host-preference';
+const CIVITAI_HOST_INFO_BANNER_SEEN_KEY = 'civitai_host_info_banner_seen';
+
+function getPreferredCivitaiHost() {
+  return normalizeCivitaiPageHost(state?.global?.settings?.civitai_host);
+}
+
+function maybeRegisterCivitaiHostInfoBanner() {
+  if (getStorageItem(CIVITAI_HOST_INFO_BANNER_SEEN_KEY, false)) {
+    return;
+  }
+
+  setStorageItem(CIVITAI_HOST_INFO_BANNER_SEEN_KEY, true);
+
+  bannerService.registerBanner(CIVITAI_HOST_INFO_BANNER_ID, {
+    id: CIVITAI_HOST_INFO_BANNER_ID,
+    title: translate(
+      'settings.civitaiHostBanner.title',
+      {},
+      'Civitai host preference available'
+    ),
+    content: translate(
+      'settings.civitaiHostBanner.content',
+      {},
+      'Civitai now uses civitai.com for SFW content and civitai.red for unrestricted content. You can change which site opens by default in Settings.'
+    ),
+    actions: [
+      {
+        text: translate('settings.civitaiHostBanner.openSettings', {}, 'Open Settings'),
+        icon: 'fas fa-cog',
+        action: 'open-settings-modal',
+        type: 'primary',
+      },
+    ],
+    dismissible: true,
+    priority: 70,
+    onRegister: (bannerElement) => {
+      const button = bannerElement.querySelector('.banner-action[data-action="open-settings-modal"]');
+      if (button) {
+        button.addEventListener('click', (event) => {
+          event.preventDefault();
+          modalManager.showModal('settingsModal');
+        });
+      }
+    },
+  });
+}
+
+export function openCivitaiUrl(url) {
+  if (!url) {
+    return null;
+  }
+
+  maybeRegisterCivitaiHostInfoBanner();
+  return window.open(url, '_blank', 'noopener,noreferrer');
+}
+
+async function copyExampleImagesValue(value, successKey, fallbackKey, paramsKey = 'path') {
+  if (!value) {
+    return false;
+  }
+
+  const params = { [paramsKey]: value };
+  try {
+    await navigator.clipboard.writeText(value);
+    showToast(successKey, params, 'success');
+    return true;
+  } catch (clipboardErr) {
+    console.warn('Clipboard API not available:', clipboardErr);
+    showToast(fallbackKey, params, 'info');
+    return false;
+  }
+}
+
+function tryOpenExternalUri(uri) {
+  try {
+    const openedWindow = window.open(uri, '_blank', 'noopener,noreferrer');
+    return openedWindow !== null;
+  } catch (error) {
+    console.warn('Failed to open external URI:', error);
+    return false;
+  }
+}
 
 /**
  * Utility function to copy text to clipboard with fallback for older browsers
@@ -184,15 +271,15 @@ function filterByFolder(folderPath) {
 }
 
 export function openCivitaiByMetadata(civitaiId, versionId, modelName = null) {
-  if (civitaiId) {
-    let url = `https://civitai.com/models/${civitaiId}`;
-    if (versionId) {
-      url += `?modelVersionId=${versionId}`;
-    }
-    window.open(url, '_blank');
-  } else if (modelName) {
-    // 如果没有ID，尝试使用名称搜索
-    window.open(`https://civitai.com/models?query=${encodeURIComponent(modelName)}`, '_blank');
+  const url = buildCivitaiUrl({
+    modelId: civitaiId,
+    versionId,
+    modelName,
+    host: getPreferredCivitaiHost(),
+  });
+
+  if (url) {
+    openCivitaiUrl(url);
   }
 }
 
@@ -333,17 +420,23 @@ export function getLoraStrengthsFromUsageTips(usageTips = {}) {
 export function buildLoraSyntax(fileName, usageTips = {}) {
   const { strength, hasStrength, clipStrength, hasClipStrength } = getLoraStrengthsFromUsageTips(usageTips);
 
+  const effectiveName = state.global.settings?.lora_syntax_format === 'legacy'
+    ? fileName.split('/').pop()
+    : fileName;
+
   if (hasClipStrength) {
     const modelStrength = hasStrength ? strength : 1;
-    return `<lora:${fileName}:${modelStrength}:${clipStrength}>`;
+    return `<lora:${effectiveName}:${modelStrength}:${clipStrength}>`;
   }
 
-  return `<lora:${fileName}:${strength}>`;
+  return `<lora:${effectiveName}:${strength}>`;
 }
 
 export function copyLoraSyntax(card) {
   const usageTips = JSON.parse(card.dataset.usage_tips || "{}");
-  const baseSyntax = buildLoraSyntax(card.dataset.file_name, usageTips);
+  const folder = card.dataset.folder || '';
+  const loraName = folder ? `${folder}/${card.dataset.file_name}` : card.dataset.file_name;
+  const baseSyntax = buildLoraSyntax(loraName, usageTips);
 
   // Check if trigger words should be included
   const includeTriggerWords = state.global.settings.include_trigger_words;
@@ -1028,7 +1121,31 @@ export async function openExampleImagesFolder(modelHash) {
     const result = await response.json();
 
     if (result.success) {
-      const message = translate('uiHelpers.exampleImages.openingFolder', {}, 'Opening example images folder');
+      if (result.mode === 'clipboard' && result.path) {
+        await copyExampleImagesValue(
+          result.path,
+          'uiHelpers.exampleImages.copiedPath',
+          'uiHelpers.exampleImages.clipboardFallback',
+          'path'
+        );
+        return true;
+      }
+
+      if (result.mode === 'uri' && result.uri) {
+        const opened = tryOpenExternalUri(result.uri);
+        if (!opened) {
+          await copyExampleImagesValue(
+            result.uri,
+            'uiHelpers.exampleImages.copiedUri',
+            'uiHelpers.exampleImages.uriClipboardFallback',
+            'uri'
+          );
+        } else {
+          showToast('uiHelpers.exampleImages.opened', {}, 'success');
+        }
+        return true;
+      }
+
       showToast('uiHelpers.exampleImages.opened', {}, 'success');
       return true;
     } else {

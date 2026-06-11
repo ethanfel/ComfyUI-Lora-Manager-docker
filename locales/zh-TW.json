@@ -14,7 +14,11 @@
             "backToTop": "回到頂部",
             "settings": "設定",
             "help": "說明",
-            "add": "新增"
+            "add": "新增",
+            "close": "關閉",
+            "menu": "選單",
+            "remove": "移除",
+            "change": "更換"
         },
         "status": {
             "loading": "載入中...",
@@ -174,6 +178,9 @@
             "success": "成功修復 {count} 個配方。",
             "cancelled": "修復已取消。已修復 {count} 個配方。",
             "error": "配方修復失敗：{message}"
+        },
+        "manageExcludedModels": {
+            "label": "管理已排除的模型"
         }
     },
     "header": {
@@ -221,12 +228,17 @@
             "presetOverwriteConfirm": "預設 \"{name}\" 已存在。是否覆蓋？",
             "presetNamePlaceholder": "預設名稱...",
             "baseModel": "基礎模型",
+            "baseModelSearchPlaceholder": "搜尋基礎模型...",
             "modelTags": "標籤（前 20）",
             "modelTypes": "模型類型",
             "license": "授權",
             "noCreditRequired": "無需署名",
             "allowSellingGeneratedContent": "允許銷售",
+            "allowSellingGeneratedContentTooltip": "允許出售生成的圖片",
+            "noCreditRequiredTooltip": "使用模型時無需註明原作者",
             "noTags": "無標籤",
+            "autoTags": "自動標籤",
+            "noBaseModelMatches": "沒有基礎模型符合目前的搜尋。",
             "clearAll": "清除所有篩選",
             "any": "任一",
             "all": "全部",
@@ -249,6 +261,33 @@
         "civitaiApiKey": "Civitai API 金鑰",
         "civitaiApiKeyPlaceholder": "請輸入您的 Civitai API 金鑰",
         "civitaiApiKeyHelp": "用於從 Civitai 下載模型時的身份驗證",
+        "civitaiHost": {
+            "label": "Civitai 站點",
+            "help": "選擇使用「在 Civitai 中查看」時預設開啟的 Civitai 站點。",
+            "options": {
+                "com": "civitai.com（僅 SFW）",
+                "red": "civitai.red（無限制）"
+            }
+        },
+        "downloadBackend": {
+            "label": "下載後端",
+            "help": "選擇模型檔案的下載方式。Python 使用內建下載器。aria2 使用推薦的外部下載程序。",
+            "options": {
+                "python": "Python（內建）",
+                "aria2": "aria2（推薦）"
+            }
+        },
+        "aria2cPath": {
+            "label": "aria2c 路徑",
+            "help": "可選的 aria2c 可執行檔路徑。留空則使用系統 PATH 中的 aria2c。",
+            "placeholder": "留空則使用 PATH 中的 aria2c"
+        },
+        "aria2HelpLink": "了解如何設定 aria2 下載後端",
+        "civitaiHostBanner": {
+            "title": "已提供 Civitai 站點偏好設定",
+            "content": "Civitai 現在使用 civitai.com 提供 SFW 內容，使用 civitai.red 提供無限制內容。你可以在設定中變更預設開啟的站點。",
+            "openSettings": "開啟設定"
+        },
         "openSettingsFileLocation": {
             "label": "開啟設定資料夾",
             "tooltip": "開啟包含 settings.json 的資料夾",
@@ -259,10 +298,13 @@
         },
         "sections": {
             "contentFiltering": "內容過濾",
+            "downloads": "下載",
             "videoSettings": "影片設定",
             "layoutSettings": "版面設定",
             "misc": "其他",
+            "backup": "備份",
             "folderSettings": "預設根目錄",
+            "recipeSettings": "配方",
             "extraFolderPaths": "額外資料夾路徑",
             "downloadPathTemplates": "下載路徑範本",
             "priorityTags": "優先標籤",
@@ -290,7 +332,15 @@
             "blurNsfwContent": "模糊 NSFW 內容",
             "blurNsfwContentHelp": "模糊成熟（NSFW）內容預覽圖片",
             "showOnlySfw": "僅顯示 SFW 結果",
-            "showOnlySfwHelp": "瀏覽和搜尋時過濾所有 NSFW 內容"
+            "showOnlySfwHelp": "瀏覽和搜尋時過濾所有 NSFW 內容",
+            "matureBlurThreshold": "成人內容模糊閾值",
+            "matureBlurThresholdHelp": "設定當啟用 NSFW 模糊時，從哪個評級級別開始模糊過濾。",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 及以上",
+                "r": "R 及以上（預設）",
+                "x": "X 及以上",
+                "xxx": "僅 XXX"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "滑鼠懸停自動播放影片",
@@ -314,6 +364,54 @@
                 "saveFailed": "無法儲存跳過路徑：{message}"
             }
         },
+        "backup": {
+            "autoEnabled": "自動備份",
+            "autoEnabledHelp": "每天建立一次本地快照，並依保留政策保留最新快照。",
+            "retention": "保留數量",
+            "retentionHelp": "在刪除舊快照之前，要保留多少自動快照。",
+            "management": "備份管理",
+            "managementHelp": "匯出目前的使用者狀態，或從備份封存中還原。",
+            "scopeHelp": "備份你的設定、下載歷史與模型更新狀態。不包含模型檔案或可重建的快取。",
+            "locationSummary": "目前備份位置",
+            "openFolderButton": "開啟備份資料夾",
+            "openFolderSuccess": "已開啟備份資料夾",
+            "openFolderFailed": "無法開啟備份資料夾",
+            "locationCopied": "備份路徑已複製到剪貼簿：{{path}}",
+            "locationClipboardFallback": "備份路徑：{{path}}",
+            "exportButton": "匯出備份",
+            "exportSuccess": "備份匯出成功。",
+            "exportFailed": "備份匯出失敗：{message}",
+            "importButton": "匯入備份",
+            "importConfirm": "要匯入此備份並覆寫本機使用者狀態嗎？",
+            "importSuccess": "備份匯入成功。",
+            "importFailed": "備份匯入失敗：{message}",
+            "latestSnapshot": "最近快照",
+            "latestAutoSnapshot": "最近自動快照",
+            "snapshotCount": "已儲存快照",
+            "noneAvailable": "目前還沒有快照"
+        },
+        "downloadSkipBaseModels": {
+            "label": "跳過這些基礎模型的下載",
+            "help": "適用於所有下載流程。這裡只能選擇受支援的基礎模型。",
+            "searchPlaceholder": "篩選基礎模型...",
+            "empty": "沒有符合目前搜尋條件的基礎模型。",
+            "summary": {
+                "none": "未選擇",
+                "count": "已選擇 {count} 項"
+            },
+            "actions": {
+                "edit": "編輯",
+                "collapse": "收起",
+                "clear": "清空"
+            },
+            "validation": {
+                "saveFailed": "無法儲存已排除的基礎模型：{message}"
+            }
+        },
+        "skipPreviouslyDownloadedModelVersions": {
+            "label": "跳過已下載的模型版本",
+            "help": "啟用後，如果下載歷史服務記錄顯示該版本已下載，LoRA Manager 將跳過下載該模型版本。適用於所有下載流程。"
+        },
         "layoutSettings": {
             "displayDensity": "顯示密度",
             "displayDensityOptions": {
@@ -336,6 +434,8 @@
                 "hover": "滑鼠懸停顯示"
             },
             "cardInfoDisplayHelp": "選擇何時顯示模型資訊與操作按鈕",
+            "showVersionOnCard": "在卡片上顯示版本",
+            "showVersionOnCardHelp": "在模型卡片上顯示或隱藏版本名稱",
             "modelCardFooterAction": "模型卡片按鈕操作",
             "modelCardFooterActionOptions": {
                 "exampleImages": "開啟範例圖片",
@@ -362,12 +462,16 @@
             "defaultUnetRootHelp": "設定下載、匯入和移動時的預設 Diffusion Model (UNET) 根目錄",
             "defaultEmbeddingRoot": "Embedding 根目錄",
             "defaultEmbeddingRootHelp": "設定下載、匯入和移動時的預設 Embedding 根目錄",
+            "recipesPath": "配方儲存路徑",
+            "recipesPathHelp": "已儲存配方的可選自訂目錄。留空則使用第一個 LoRA 根目錄下的 recipes 資料夾。",
+            "recipesPathPlaceholder": "/path/to/recipes",
+            "recipesPathMigrating": "正在遷移配方儲存...",
             "noDefault": "未設定預設"
         },
         "extraFolderPaths": {
             "title": "額外資料夾路徑",
-            "help": "在 ComfyUI 的標準路徑之外新增額外的模型資料夾。這些路徑單獨儲存，並與預設資料夾一起掃描。",
-            "description": "設定額外的資料夾以掃描模型。這些路徑是 LoRA Manager 特有的，將與 ComfyUI 的預設路徑合併。",
+            "description": "LoRA Manager 專屬的額外模型根目錄。從 ComfyUI 標準資料夾之外的位置載入模型，特別適合管理大型模型庫，避免影響 ComfyUI 效能。",
+            "restartRequired": "Requires restart to take effect",
             "modelTypes": {
                 "lora": "LoRA 路徑",
                 "checkpoint": "Checkpoint 路徑",
@@ -375,7 +479,7 @@
                 "embedding": "Embedding 路徑"
             },
             "pathPlaceholder": "/額外/模型/路徑",
-            "saveSuccess": "額外資料夾路徑已更新。",
+            "saveSuccess": "額外資料夾路徑已更新，需要重啟才能生效。",
             "saveError": "更新額外資料夾路徑失敗：{message}",
             "validation": {
                 "duplicatePath": "此路徑已設定"
@@ -443,6 +547,21 @@
             "downloadLocationHelp": "輸入從 Civitai 下載範例圖片要儲存的資料夾路徑",
             "autoDownload": "自動下載範例圖片",
             "autoDownloadHelp": "自動為沒有範例圖片的模型下載範例圖片（需設定下載位置）",
+            "openMode": "開啟範例圖片動作",
+            "openModeHelp": "選擇是在伺服器上開啟、複製對應的本機路徑，或啟動自訂 URI。",
+            "openModeOptions": {
+                "system": "在伺服器上開啟",
+                "clipboard": "複製本機路徑",
+                "uriTemplate": "開啟自訂 URI"
+            },
+            "localRoot": "本機範例圖片根目錄",
+            "localRootHelp": "可選的本機或掛載根目錄，用於對應伺服器上的範例圖片目錄。若留白，則會重用伺服器路徑。",
+            "localRootPlaceholder": "例如：/Volumes/ComfyUI/example_images",
+            "uriTemplate": "開啟 URI 範本",
+            "uriTemplateHelp": "使用自訂深層連結，例如檔案 URI 或 Shortcuts 連結。",
+            "uriTemplatePlaceholder": "例如：shortcuts://run-shortcut?name=Open%20Finder&input=text&text={{encoded_local_path}}",
+            "uriTemplatePlaceholders": "可用佔位符：{{local_path}}、{{encoded_local_path}}、{{relative_path}}、{{encoded_relative_path}}、{{file_uri}}、{{encoded_file_uri}}",
+            "openModeWikiLink": "了解遠端開啟模式",
             "optimizeImages": "最佳化下載圖片",
             "optimizeImagesHelp": "最佳化範例圖片以減少檔案大小並提升載入速度（會保留原有的 metadata）",
             "download": "下載",
@@ -462,7 +581,13 @@
         },
         "misc": {
             "includeTriggerWords": "在 LoRA 語法中包含觸發詞",
-            "includeTriggerWordsHelp": "複製 LoRA 語法到剪貼簿時包含訓練觸發詞"
+            "includeTriggerWordsHelp": "複製 LoRA 語法到剪貼簿時包含訓練觸發詞",
+            "loraSyntaxFormat": "LoRA 語法格式",
+            "loraSyntaxFormatHelp": "LoRA 語法格式。完整路徑（Full）包含子資料夾路徑 (<lora:style/anime/x:1.0>)，解析精確無歧義。舊版（Legacy）僅使用檔名 (<lora:x:1.0>)——A1111 原始約定，同名檔案跨資料夾時可能產生歧義。",
+            "loraSyntaxFormatOptions": {
+                "full": "完整路徑（子資料夾/名稱）",
+                "legacy": "舊版 A1111（僅名稱）"
+            }
         },
         "metadataArchive": {
             "enableArchiveDb": "啟用中繼資料封存資料庫",
@@ -526,8 +651,6 @@
             },
             "refresh": {
                 "title": "重新整理模型列表",
-                "quick": "同步變更",
-                "quickTooltip": "掃描新的或缺少的模型檔案，讓清單保持最新。",
                 "full": "重建快取",
                 "fullTooltip": "從中繼資料檔重新載入所有模型資訊；適用於清單過時或手動編輯後。"
             },
@@ -568,15 +691,30 @@
             "setContentRating": "為全部設定內容分級",
             "copyAll": "複製全部語法",
             "refreshAll": "刷新全部 metadata",
+            "repairMetadata": "修復所選中元數據",
+            "reimportMetadata": "重新匯入所選配方元數據",
             "checkUpdates": "檢查所選更新",
             "moveAll": "全部移動到資料夾",
             "autoOrganize": "自動整理所選模型",
             "skipMetadataRefresh": "跳過所選模型的元數據更新",
             "resumeMetadataRefresh": "恢復所選模型的元數據更新",
-            "deleteAll": "刪除全部模型",
+            "setFavorite": "設為收藏",
+            "setFavoriteCount": "設為收藏 ({favorited}/{total})",
+            "unfavorite": "取消收藏",
+            "deleteAll": "刪除所選",
+            "downloadMissingLoras": "下載缺失的 LoRAs",
+            "downloadExamples": "下載範例圖片",
             "clear": "清除選取",
             "skipMetadataRefreshCount": "跳過（{count} 個模型）",
             "resumeMetadataRefreshCount": "恢復（{count} 個模型）",
+            "sendToWorkflow": "發送到工作流",
+            "sections": {
+                "workflow": "工作流",
+                "metadata": "元數據",
+                "attributes": "屬性",
+                "organize": "整理",
+                "download": "下載"
+            },
             "autoOrganizeProgress": {
                 "initializing": "正在初始化自動整理...",
                 "starting": "正在開始自動整理 {type}...",
@@ -602,7 +740,9 @@
             "setContentRating": "設定內容分級",
             "moveToFolder": "移動到資料夾",
             "repairMetadata": "修復元數據",
+            "reimportMetadata": "從來源重新匯入",
             "excludeModel": "排除模型",
+            "restoreModel": "還原模型",
             "deleteModel": "刪除模型",
             "shareRecipe": "分享配方",
             "viewAllLoras": "檢視全部 LoRA",
@@ -644,6 +784,8 @@
                 "root": "根目錄",
                 "browseFolders": "瀏覽資料夾：",
                 "downloadAndSaveRecipe": "下載並儲存配方",
+                "importRecipeOnly": "僅匯入配方",
+                "importAndDownload": "匯入並下載",
                 "downloadMissingLoras": "下載缺少的 LoRA",
                 "saveRecipe": "儲存配方",
                 "loraCountInfo": "（庫存 {existing}/{total}）",
@@ -686,8 +828,6 @@
             },
             "refresh": {
                 "title": "重新整理配方列表",
-                "quick": "同步變更",
-                "quickTooltip": "同步變更 - 快速重新整理而不重建快取",
                 "full": "重建快取",
                 "fullTooltip": "重建快取 - 重新掃描所有配方檔案"
             },
@@ -728,6 +868,71 @@
                 "skipped": "配方已是最新版本，無需修復",
                 "failed": "修復配方失敗：{message}",
                 "missingId": "無法修復配方：缺少配方 ID"
+            },
+            "reimport": {
+                "starting": "正在從來源重新匯入配方...",
+                "success": "配方已從來源重新匯入成功",
+                "noSourceUrl": "配方沒有來源URL，無法重新匯入",
+                "failed": "重新匯入配方失敗：{message}",
+                "missingId": "無法重新匯入配方：缺少配方ID"
+            }
+        },
+        "batchImport": {
+            "title": "批量匯入配方",
+            "action": "批量匯入",
+            "urlList": "URL 列表",
+            "directory": "目錄",
+            "urlDescription": "輸入圖像 URL 或本地檔案路徑（每行一個）。每個都將作為配方匯入。",
+            "directoryDescription": "輸入目錄路徑以匯入該資料夾中的所有圖像。",
+            "urlsLabel": "圖像 URL 或本地路徑",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "每行輸入一個 URL 或路徑",
+            "directoryPath": "目錄路徑",
+            "directoryPlaceholder": "/path/to/images/folder",
+            "browse": "瀏覽",
+            "recursive": "包含子目錄",
+            "tagsOptional": "標籤（可選，應用於所有配方）",
+            "tagsPlaceholder": "輸入以逗號分隔的標籤",
+            "tagsHint": "標籤將被添加到所有匯入的配方中",
+            "skipNoMetadata": "跳過無元資料的圖像",
+            "skipNoMetadataHelp": "沒有 LoRA 元資料的圖像將被自動跳過。",
+            "start": "開始匯入",
+            "startImport": "開始匯入",
+            "importing": "匯入中...",
+            "progress": "進度",
+            "total": "總計",
+            "success": "成功",
+            "failed": "失敗",
+            "skipped": "跳過",
+            "current": "當前",
+            "currentItem": "當前項目",
+            "preparing": "準備中...",
+            "cancel": "取消",
+            "cancelImport": "取消匯入",
+            "cancelled": "匯入已取消",
+            "completed": "匯入完成",
+            "completedWithErrors": "匯入完成但有錯誤",
+            "completedSuccess": "成功匯入 {count} 個配方",
+            "successCount": "成功",
+            "failedCount": "失敗",
+            "skippedCount": "跳過",
+            "totalProcessed": "總計處理",
+            "viewDetails": "查看詳情",
+            "newImport": "新建匯入",
+            "manualPathEntry": "請手動輸入目錄路徑。此瀏覽器中檔案瀏覽器不可用。",
+            "batchImportDirectorySelected": "已選擇目錄：{path}",
+            "batchImportManualEntryRequired": "檔案瀏覽器不可用。請手動輸入目錄路徑。",
+            "backToParent": "返回上級目錄",
+            "folders": "資料夾",
+            "folderCount": "{count} 個資料夾",
+            "imageFiles": "圖像檔案",
+            "images": "圖像",
+            "imageCount": "{count} 個圖像",
+            "selectFolder": "選擇此資料夾",
+            "errors": {
+                "enterUrls": "請輸入至少一個 URL 或路徑",
+                "enterDirectory": "請輸入目錄路徑",
+                "startFailed": "啟動匯入失敗：{message}"
             }
         }
     },
@@ -738,7 +943,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "移動到 {otherType} 資料夾"
+            "moveToOtherTypeFolder": "移動到 {otherType} 資料夾",
+            "sendToWorkflow": "傳送到工作流"
         }
     },
     "embeddings": {
@@ -751,8 +957,8 @@
         "unpinSidebar": "取消固定側邊欄",
         "switchToListView": "切換至列表檢視",
         "switchToTreeView": "切換到樹狀檢視",
-        "recursiveOn": "搜尋子資料夾",
-        "recursiveOff": "僅搜尋目前資料夾",
+        "recursiveOn": "包含子資料夾",
+        "recursiveOff": "僅目前資料夾",
         "recursiveUnavailable": "遞迴搜尋僅能在樹狀檢視中使用",
         "collapseAllDisabled": "列表檢視下不可用",
         "dragDrop": {
@@ -768,6 +974,13 @@
         "empty": {
             "noFolders": "未找到資料夾",
             "dragHint": "將項目拖到此處以建立資料夾"
+        },
+        "folderUpdateCheck": {
+            "label": "檢查此資料夾的更新",
+            "loading": "正在檢查此資料夾中的{type}更新...",
+            "success": "在此資料夾中找到 {count} 個{type}更新",
+            "none": "此資料夾中的所有{type}都是最新版本",
+            "error": "檢查資料夾{type}更新失敗: {message}"
         }
     },
     "statistics": {
@@ -812,9 +1025,9 @@
         "download": {
             "title": "從網址下載模型",
             "titleWithType": "從網址下載 {type}",
-            "url": "Civitai 網址",
             "civitaiUrl": "Civitai 網址：",
             "placeholder": "https://civitai.com/models/...",
+            "urlHint": "每行輸入一個 CivitAI 或 CivArchive URL。支援批量下載多個 URL。",
             "locationPreview": "下載位置預覽",
             "useDefaultPath": "使用預設路徑",
             "useDefaultPathTooltip": "啟用後，檔案將依照設定的路徑範本自動整理",
@@ -832,8 +1045,15 @@
             "earlyAccess": "早期存取",
             "earlyAccessTooltip": "需要早期存取",
             "inLibrary": "已在庫存",
+            "downloaded": "已下載",
+            "downloadedTooltip": "先前已下載，但目前不在你的庫中。",
             "alreadyInLibrary": "已在庫存",
             "autoOrganizedPath": "[依路徑範本自動整理]",
+            "fileSelection": {
+                "title": "選擇檔案格式",
+                "files": "個檔案",
+                "select": "選擇檔案"
+            },
             "errors": {
                 "invalidUrl": "Civitai 網址格式無效",
                 "noVersions": "此模型無可用版本"
@@ -898,6 +1118,12 @@
             "countMessage": "模型將被永久刪除。",
             "action": "全部刪除"
         },
+        "bulkDeleteRecipes": {
+            "title": "刪除多個配方",
+            "message": "您確定要刪除所有選取的配方及其相關檔案嗎？",
+            "countMessage": "配方將被永久刪除。",
+            "action": "全部刪除"
+        },
         "checkUpdates": {
             "title": "要檢查所有 {type} 的更新嗎？",
             "message": "這會為資料庫中的每個 {type} 檢查更新，大型收藏可能會花上一些時間。",
@@ -921,6 +1147,14 @@
             "selectBaseModel": "選擇基礎模型",
             "save": "更新基礎模型",
             "cancel": "取消"
+        },
+        "bulkDownloadMissingLoras": {
+            "title": "下載缺失的 LoRAs",
+            "message": "發現 {uniqueCount} 個獨特的缺失 LoRAs（從選取食譜中的 {totalCount} 個總數）。",
+            "previewTitle": "要下載的 LoRAs：",
+            "moreItems": "...還有 {count} 個",
+            "note": "檔案將使用預設路徑模板下載。根據 LoRAs 的數量，這可能需要一些時間。",
+            "downloadButton": "下載 {count} 個 LoRA(s)"
         },
         "exampleAccess": {
             "title": "本機範例圖片",
@@ -970,16 +1204,22 @@
                 "editModelName": "編輯模型名稱",
                 "editFileName": "編輯檔案名稱",
                 "editBaseModel": "編輯基礎模型",
+                "editVersionName": "編輯版本名稱",
                 "viewOnCivitai": "在 Civitai 查看",
                 "viewOnCivitaiText": "在 Civitai 查看",
                 "viewCreatorProfile": "查看創作者個人檔案",
-                "openFileLocation": "開啟檔案位置"
+                "openFileLocation": "開啟檔案位置",
+                "sendToWorkflow": "傳送到 ComfyUI",
+                "sendToWorkflowText": "傳送到 ComfyUI"
             },
             "openFileLocation": {
                 "success": "檔案位置已成功開啟",
                 "failed": "開啟檔案位置失敗",
                 "copied": "路徑已複製到剪貼簿：{{path}}",
                 "clipboardFallback": "路徑：{{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "無法傳送到 ComfyUI：沒有可用的檔案路徑"
             },
             "metadata": {
                 "version": "版本",
@@ -996,7 +1236,9 @@
             },
             "notes": {
                 "saved": "備註已儲存",
-                "saveFailed": "儲存備註失敗"
+                "saveFailed": "儲存備註失敗",
+                "showMore": "展開",
+                "showLess": "收起"
             },
             "usageTips": {
                 "addPresetParameter": "新增預設參數...",
@@ -1017,6 +1259,8 @@
                 "cancel": "取消編輯",
                 "save": "儲存變更",
                 "addPlaceholder": "輸入或點擊下方建議",
+                "editWord": "編輯觸發詞",
+                "editPlaceholder": "編輯觸發詞",
                 "copyWord": "複製觸發詞",
                 "deleteWord": "刪除觸發詞",
                 "suggestions": {
@@ -1088,17 +1332,33 @@
                     "days": "{count}天後"
                 },
                 "badges": {
-                    "current": "目前版本",
+                    "current": "已開啟版本",
+                    "currentTooltip": "這是你用來開啟此彈窗的版本",
                     "inLibrary": "已在庫中",
+                    "inLibraryTooltip": "此版本已存在於你的本地庫中",
+                    "downloaded": "已下載",
+                    "downloadedTooltip": "此版本之前下載過，但目前不在你的本地庫中",
                     "newer": "較新版本",
+                    "newerTooltip": "此版本比你本地的最新版本更新",
                     "earlyAccess": "搶先體驗",
-                    "ignored": "已忽略"
+                    "earlyAccessTooltip": "此版本目前需要 Civitai 搶先體驗權限",
+                    "ignored": "已忽略",
+                    "ignoredTooltip": "此版本已關閉更新通知",
+                    "onSiteOnly": "僅站內生成",
+                    "onSiteOnlyTooltip": "此版本僅在 Civitai 站內可用，無法下載"
                 },
                 "actions": {
                     "download": "下載",
+                    "downloadTooltip": "下載此版本",
+                    "downloadEarlyAccessTooltip": "從 Civitai 下載此搶先體驗版本",
+                    "downloadNotAllowedTooltip": "此版本僅在 Civitai 站內可用，無法下載",
                     "delete": "刪除",
+                    "deleteTooltip": "刪除此本地版本",
                     "ignore": "忽略",
                     "unignore": "取消忽略",
+                    "ignoreTooltip": "忽略此版本的更新通知",
+                    "unignoreTooltip": "恢復此版本的更新通知",
+                    "viewVersionOnCivitai": "在 Civitai 上查看版本",
                     "earlyAccessTooltip": "需要購買搶先體驗",
                     "resumeModelUpdates": "恢復追蹤此模型的更新",
                     "ignoreModelUpdates": "忽略此模型的更新",
@@ -1238,7 +1498,9 @@
             "recipeReplaced": "配方已取代於工作流",
             "recipeFailedToSend": "傳送配方到工作流失敗",
             "noMatchingNodes": "目前工作流程中沒有相容的節點",
-            "noTargetNodeSelected": "未選擇目標節點"
+            "noTargetNodeSelected": "未選擇目標節點",
+            "modelUpdated": "模型已更新到工作流",
+            "modelFailed": "更新模型節點失敗"
         },
         "nodeSelector": {
             "recipe": "配方",
@@ -1252,6 +1514,10 @@
             "opened": "範例圖片資料夾已開啟",
             "openingFolder": "正在開啟範例圖片資料夾",
             "failedToOpen": "開啟範例圖片資料夾失敗",
+            "copiedPath": "路徑已複製到剪貼簿：{{path}}",
+            "clipboardFallback": "路徑：{{path}}",
+            "copiedUri": "連結已複製到剪貼簿：{{uri}}",
+            "uriClipboardFallback": "連結：{{uri}}",
             "setupRequired": "範例圖片儲存",
             "setupDescription": "要新增自訂範例圖片，您需要先設定下載位置。",
             "setupUsage": "此路徑用於儲存下載的範例圖片和自訂圖片。",
@@ -1389,6 +1655,7 @@
             "pleaseSelectVersion": "請選擇一個版本",
             "versionExists": "此版本已存在於您的庫中",
             "downloadCompleted": "下載成功完成",
+            "downloadSkippedByBaseModel": "由於基礎模型 {baseModel} 已被排除，已跳過下載",
             "autoOrganizeSuccess": "自動整理已成功完成，共 {count} 個 {type} 已整理",
             "autoOrganizePartialSuccess": "自動整理完成：已移動 {success} 個，{failures} 個失敗，共 {total} 個模型",
             "autoOrganizeFailed": "自動整理失敗：{error}",
@@ -1408,8 +1675,16 @@
             "nameUpdated": "配方名稱已更新",
             "tagsUpdated": "配方標籤已更新",
             "sourceUrlUpdated": "來源網址已更新",
+            "promptUpdated": "提示詞更新成功",
+            "negativePromptUpdated": "負面提示詞更新成功",
+            "promptEditorHint": "按 Enter 儲存，Shift+Enter 換行",
             "noRecipeId": "無配方 ID",
+            "sendToWorkflowFailed": "傳送配方到工作流失敗：{message}",
             "copyFailed": "複製配方語法錯誤：{message}",
+            "createError": "建立配方時發生錯誤：{message}",
+            "createFailed": "建立配方失敗：{error}",
+            "createMissingData": "缺少建立配方所需的資料",
+            "created": "配方建立成功",
             "noMissingLoras": "無缺少的 LoRA 可下載",
             "missingLorasInfoFailed": "取得缺少 LoRA 資訊失敗",
             "preparingForDownloadFailed": "準備下載 LoRA 時發生錯誤",
@@ -1436,9 +1711,27 @@
             "processingError": "處理錯誤：{message}",
             "folderBrowserError": "載入資料夾瀏覽器錯誤：{message}",
             "recipeSaveFailed": "儲存配方失敗：{error}",
+            "recipeSaved": "配方儲存成功",
             "importFailed": "匯入失敗：{message}",
             "folderTreeFailed": "載入資料夾樹狀結構失敗",
-            "folderTreeError": "載入資料夾樹狀結構錯誤"
+            "folderTreeError": "載入資料夾樹狀結構錯誤",
+            "batchImportFailed": "啟動批量匯入失敗：{message}",
+            "batchImportCancelling": "正在取消批量匯入...",
+            "batchImportCancelFailed": "取消批量匯入失敗：{message}",
+            "batchImportNoUrls": "請輸入至少一個 URL 或檔案路徑",
+            "batchImportNoDirectory": "請輸入目錄路徑",
+            "batchImportBrowseFailed": "瀏覽目錄失敗：{message}",
+            "batchImportDirectorySelected": "已選擇目錄：{path}",
+            "noRecipesSelected": "未選取任何食譜",
+            "repairBulkComplete": "修復完成：{repaired} 個已修復，{skipped} 個已跳過（共 {total} 個）",
+            "repairBulkSkipped": "所選 {total} 個配方無需修復",
+            "repairBulkFailed": "修復所選配方失敗：{message}",
+            "reimporting": "正在從來源重新匯入配方...",
+            "reimportSuccess": "配方已從來源重新匯入成功",
+            "reimportBulkComplete": "重新匯入完成：{completed} 個已匯入，{failed} 個失敗（共 {total} 個）",
+            "reimportBulkFailed": "重新匯入某些配方失敗",
+            "noMissingLorasInSelection": "在選取的食譜中未找到缺失的 LoRAs",
+            "noLoraRootConfigured": "未配置 LoRA 根目錄。請在設定中設定預設的 LoRA 根目錄。"
         },
         "models": {
             "noModelsSelected": "未選擇模型",
@@ -1467,6 +1760,11 @@
             "bulkContentRatingSet": "已將 {count} 個模型的內容分級設定為 {level}",
             "bulkContentRatingPartial": "已將 {success} 個模型的內容分級設定為 {level}，{failed} 個失敗",
             "bulkContentRatingFailed": "無法更新所選模型的內容分級",
+            "bulkFavoriteUpdating": "正在將 {count} 個模型加入收藏...",
+            "bulkUnfavoriteUpdating": "正在將 {count} 個模型從收藏移除...",
+            "bulkFavoritePartialAdded": "已將 {success} 個模型加入收藏，{failed} 個失敗",
+            "bulkFavoritePartialRemoved": "已將 {success} 個模型從收藏移除，{failed} 個失敗",
+            "bulkFavoriteFailed": "更新收藏狀態失敗",
             "bulkUpdatesChecking": "正在檢查所選 {type} 的更新...",
             "bulkUpdatesSuccess": "{count} 個所選 {type} 有可用更新",
             "bulkUpdatesNone": "所選 {type} 未找到更新",
@@ -1505,6 +1803,8 @@
             "mappingSaveFailed": "儲存基礎模型對應失敗：{message}",
             "downloadTemplatesUpdated": "下載路徑範本已更新",
             "downloadTemplatesFailed": "儲存下載路徑範本失敗：{message}",
+            "recipesPathUpdated": "配方儲存路徑已更新",
+            "recipesPathSaveFailed": "更新配方儲存路徑失敗：{message}",
             "settingsUpdated": "設定已更新：{setting}",
             "compactModeToggled": "緊湊模式已{state}",
             "settingSaveFailed": "儲存設定失敗：{message}",
@@ -1555,8 +1855,8 @@
         },
         "triggerWords": {
             "loadFailed": "無法載入訓練詞",
-            "tooLong": "觸發詞不可超過 100 個字",
-            "tooMany": "最多允許 30 個觸發詞",
+            "tooLong": "觸發詞不可超過 500 個字",
+            "tooMany": "最多允許 100 個觸發詞",
             "alreadyExists": "此觸發詞已存在",
             "updateSuccess": "觸發詞已更新",
             "updateFailed": "更新觸發詞失敗",
@@ -1617,6 +1917,8 @@
             "deleteFailed": "刪除 {type} 失敗：{message}",
             "excludeSuccess": "{type} 已成功排除",
             "excludeFailed": "排除 {type} 失敗：{message}",
+            "restoreSuccess": "{type} 已成功還原",
+            "restoreFailed": "還原 {type} 失敗：{message}",
             "fileNameUpdated": "檔案名稱已成功更新",
             "fileRenameFailed": "重新命名檔案失敗：{error}",
             "previewUpdated": "預覽圖片已成功更新",
@@ -1647,6 +1949,69 @@
             "exampleImagesDownloadFailed": "下載範例圖片失敗：{message}",
             "moveFailed": "Failed to move item: {message}"
         }
+    },
+    "doctor": {
+        "kicker": "系統診斷",
+        "title": "醫生",
+        "buttonTitle": "執行診斷與常見修復",
+        "loading": "正在檢查環境...",
+        "footer": "如果修復後問題仍然存在，請匯出診斷套件。",
+        "summary": {
+            "idle": "針對設定、快取完整性與 UI 一致性執行健康檢查。",
+            "ok": "目前環境中未發現任何活動中的問題。",
+            "warning": "找到 {count} 個問題。大多可以直接在此面板修復。",
+            "error": "應先處理 {count} 個問題，應用程式才能完全正常。"
+        },
+        "status": {
+            "ok": "健康",
+            "warning": "需要注意",
+            "error": "需要處理"
+        },
+        "issues": {
+            "civitai_api_key": {
+                "title": "Civitai API 金鑰"
+            },
+            "cache_health": {
+                "title": "模型快取健康狀態"
+            },
+            "filename_conflicts": {
+                "title": "檔案名稱重複衝突"
+            },
+            "ui_version": {
+                "title": "UI 版本"
+            }
+        },
+        "actions": {
+            "runAgain": "重新執行",
+            "exportBundle": "匯出套件",
+            "open-settings": "開啟設定",
+            "open-settings-syntax-format": "切換為完整路徑語法",
+            "repair-cache": "重建快取",
+            "resolve-filename-conflicts": "解決衝突",
+            "reload-page": "重新載入 UI"
+        },
+        "labels": {
+            "conflicts": "衝突詳情",
+            "version": "版本"
+        },
+        "toast": {
+            "loadFailed": "載入診斷失敗：{message}",
+            "repairSuccess": "快取重建完成。",
+            "repairFailed": "快取重建失敗：{message}",
+            "exportSuccess": "診斷套件已匯出。",
+            "exportFailed": "匯出診斷套件失敗：{message}",
+            "conflictsResolved": "已解決 {count} 個檔案名稱衝突。",
+            "conflictsResolveFailed": "解決檔案名稱衝突失敗：{message}"
+        }
+    },
+    "conflictConfirm": {
+        "title": "解決檔案名稱衝突",
+        "message": "通過在每個重複檔案名稱後附加 4 位元哈希值來重新命名檔案。",
+        "note": "此操作會重新命名磁碟上的檔案。如果使用 A1111 語法格式，現有工作流程中的模型參考可能需要更新。",
+        "detail": "示例：<code>filename_v1.2</code> → <code>filename_v1.2-ab3c</code>",
+        "impact": "將重新命名 <strong>{count}</strong> 個檔案（共 <strong>{groups}</strong> 組重複）",
+        "confirm": "重新命名檔案",
+        "cancel": "取消"
     },
     "banners": {
         "versionMismatch": {

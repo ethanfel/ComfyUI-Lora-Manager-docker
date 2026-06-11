@@ -19,10 +19,12 @@ from ..services.downloader import get_downloader
 from ..utils.usage_stats import UsageStats
 from .handlers.misc_handlers import (
     CustomWordsHandler,
+    DoctorHandler,
     ExampleWorkflowsHandler,
     FileSystemHandler,
     HealthCheckHandler,
     LoraCodeHandler,
+    BackupHandler,
     MetadataArchiveHandler,
     MiscHandlerSet,
     ModelExampleFilesHandler,
@@ -33,8 +35,10 @@ from .handlers.misc_handlers import (
     SupportersHandler,
     TrainedWordsHandler,
     UsageStatsHandler,
+    WildcardsHandler,
     build_service_registry_adapter,
 )
+from .handlers.base_model_handlers import BaseModelHandlerSet
 from .misc_route_registrar import MiscRouteRegistrar
 
 logger = logging.getLogger(__name__)
@@ -115,6 +119,7 @@ class MiscRoutes:
             settings_service=self._settings,
             metadata_provider_updater=self._metadata_provider_updater,
         )
+        backup = BackupHandler()
         filesystem = FileSystemHandler(settings_service=self._settings)
         node_registry_handler = NodeRegistryHandler(
             node_registry=self._node_registry,
@@ -126,8 +131,11 @@ class MiscRoutes:
             metadata_provider_factory=self._metadata_provider_factory,
         )
         custom_words = CustomWordsHandler()
+        wildcards = WildcardsHandler()
         supporters = SupportersHandler()
+        doctor = DoctorHandler(settings_service=self._settings)
         example_workflows = ExampleWorkflowsHandler()
+        base_model = BaseModelHandlerSet()
 
         return self._handler_set_factory(
             health=health,
@@ -139,10 +147,14 @@ class MiscRoutes:
             node_registry=node_registry_handler,
             model_library=model_library,
             metadata_archive=metadata_archive,
+            backup=backup,
             filesystem=filesystem,
             custom_words=custom_words,
+            wildcards=wildcards,
             supporters=supporters,
+            doctor=doctor,
             example_workflows=example_workflows,
+            base_model=base_model,
         )
 
 

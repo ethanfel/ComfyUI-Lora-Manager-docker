@@ -84,6 +84,18 @@ export class ModalManager {
             });
         }
 
+        const doctorModal = document.getElementById('doctorModal');
+        if (doctorModal) {
+            this.registerModal('doctorModal', {
+                element: doctorModal,
+                onClose: () => {
+                    this.getModal('doctorModal').element.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
+            });
+        }
+
         // Add moveModal registration
         const moveModal = document.getElementById('moveModal');
         if (moveModal) {
@@ -131,6 +143,19 @@ export class ModalManager {
                     this.getModal('importModal').element.style.display = 'none';
                     document.body.classList.remove('modal-open');   
                 }
+            });
+        }
+
+        // Add batchImportModal registration
+        const batchImportModal = document.getElementById('batchImportModal');
+        if (batchImportModal) {
+            this.registerModal('batchImportModal', {
+                element: batchImportModal,
+                onClose: () => {
+                    this.getModal('batchImportModal').element.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
             });
         }
 
@@ -278,6 +303,32 @@ export class ModalManager {
             });
         }
 
+        // Register bulkDownloadMissingLorasModal
+        const bulkDownloadMissingLorasModal = document.getElementById('bulkDownloadMissingLorasModal');
+        if (bulkDownloadMissingLorasModal) {
+            this.registerModal('bulkDownloadMissingLorasModal', {
+                element: bulkDownloadMissingLorasModal,
+                onClose: () => {
+                    this.getModal('bulkDownloadMissingLorasModal').element.style.display = 'none';
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
+            });
+        }
+
+        // Register resolveFilenameConflictsModal
+        const resolveFilenameConflictsModal = document.getElementById('resolveFilenameConflictsModal');
+        if (resolveFilenameConflictsModal) {
+            this.registerModal('resolveFilenameConflictsModal', {
+                element: resolveFilenameConflictsModal,
+                onClose: () => {
+                    this.getModal('resolveFilenameConflictsModal').element.classList.remove('show');
+                    document.body.classList.remove('modal-open');
+                },
+                closeOnOutsideClick: true
+            });
+        }
+
         document.addEventListener('keydown', this.boundHandleEscape);
         this.initialized = true;
     }
@@ -358,7 +409,8 @@ export class ModalManager {
           id === "modelDuplicateDeleteModal" ||
           id === "clearCacheModal" ||
           id === "bulkDeleteModal" ||
-          id === "checkUpdatesConfirmModal"
+          id === "checkUpdatesConfirmModal" ||
+          id === "resolveFilenameConflictsModal"
         ) {
           modal.element.classList.add("show");
         } else {

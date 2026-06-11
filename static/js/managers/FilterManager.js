@@ -20,6 +20,8 @@ export class FilterManager {
         this.filterPanel = document.getElementById('filterPanel');
         this.filterButton = document.getElementById('filterButton');
         this.activeFiltersCount = document.getElementById('activeFiltersCount');
+        this.baseModelSearchInput = document.getElementById('baseModelSearchInput');
+        this.baseModelOptions = [];
         this.tagsLoaded = false;
 
         // Initialize preset manager
@@ -49,6 +51,8 @@ export class FilterManager {
     }
 
     initialize() {
+        this.initializeFilterSearchInputs();
+
         // Create base model filter tags if they exist
         if (document.getElementById('baseModelTags')) {
             this.createBaseModelTags();
@@ -65,6 +69,9 @@ export class FilterManager {
 
         // Initialize tag logic toggle
         this.initializeTagLogicToggle();
+
+        // Create auto-tag filter section (I2V, T2V, TI2V, Lightning, Turbo)
+        this.createAutoTagFilters();
 
         // Add click handler for filter button
         if (this.filterButton) {
@@ -108,6 +115,18 @@ export class FilterManager {
 
         // Set initial state
         this.updateTagLogicToggleUI();
+    }
+
+    initializeFilterSearchInputs() {
+        if (this.baseModelSearchInput) {
+            this.baseModelSearchInput.addEventListener('input', () => {
+                this.renderBaseModelTags();
+            });
+        }
+    }
+
+    getNormalizedSearchQuery(input) {
+        return (input?.value || '').trim().toLowerCase();
     }
 
     updateTagLogicToggleUI() {
@@ -164,11 +183,6 @@ export class FilterManager {
 
         tagsContainer.innerHTML = '';
 
-        if (!tags.length) {
-            tagsContainer.innerHTML = `<div class="no-tags">No ${this.currentPage === 'recipes' ? 'recipe ' : ''}tags available</div>`;
-            return;
-        }
-
         // Collect existing tag names from the API response
         const existingTagNames = new Set(tags.map(t => t.tag));
 
@@ -184,6 +198,11 @@ export class FilterManager {
                     existingTagNames.add(tagName);
                 }
             });
+        }
+
+        if (!tags.length) {
+            tagsContainer.innerHTML = `<div class="no-tags">No ${this.currentPage === 'recipes' ? 'recipe ' : ''}tags available</div>`;
+            return;
         }
 
         tags.forEach(tag => {
@@ -212,7 +231,6 @@ export class FilterManager {
                 await this.applyFilters(false);
             });
 
-            this.applyTagElementState(tagEl, (this.filters.tags && this.filters.tags[tagName]) || 'none');
             tagsContainer.appendChild(tagEl);
         });
 
@@ -235,8 +253,8 @@ export class FilterManager {
             await this.applyFilters(false);
         });
 
-        this.applyTagElementState(noTagsEl, (this.filters.tags && this.filters.tags[noTagsKey]) || 'none');
         tagsContainer.appendChild(noTagsEl);
+        this.updateTagSelections();
     }
 
     initializeLicenseFilters() {
@@ -323,50 +341,72 @@ export class FilterManager {
         if (!baseModelTagsContainer) return;
 
         // Set the API endpoint based on current page
-        const apiEndpoint = `/api/lm/${this.currentPage}/base-models`;
+        const apiEndpoint = `/api/lm/${this.currentPage}/base-models?limit=0`;
 
         // Fetch base models
         fetch(apiEndpoint)
             .then(response => response.json())
             .then(data => {
                 if (data.success && data.base_models) {
-                    baseModelTagsContainer.innerHTML = '';
-
-                    data.base_models.forEach(model => {
-                        const tag = document.createElement('div');
-                        tag.className = `filter-tag base-model-tag`;
-                        tag.dataset.baseModel = model.name;
-                        tag.innerHTML = `${model.name} <span class="tag-count">${model.count}</span>`;
-
-                        // Add click handler to toggle selection and automatically apply
-                        tag.addEventListener('click', async () => {
-                            tag.classList.toggle('active');
-
-                            if (tag.classList.contains('active')) {
-                                if (!this.filters.baseModel.includes(model.name)) {
-                                    this.filters.baseModel.push(model.name);
-                                }
-                            } else {
-                                this.filters.baseModel = this.filters.baseModel.filter(m => m !== model.name);
-                            }
-
-                            this.updateActiveFiltersCount();
-
-                            // Auto-apply filter when tag is clicked
-                            await this.applyFilters(false);
-                        });
-
-                        baseModelTagsContainer.appendChild(tag);
-                    });
-
-                    // Update selections based on stored filters
-                    this.updateTagSelections();
+                    this.baseModelOptions = data.base_models;
+                    this.renderBaseModelTags();
                 }
             })
             .catch(error => {
                 console.error(`Error fetching base models for ${this.currentPage}:`, error);
                 baseModelTagsContainer.innerHTML = '<div class="tags-error">Failed to load base models</div>';
             });
+    }
+
+    renderBaseModelTags() {
+        const baseModelTagsContainer = document.getElementById('baseModelTags');
+        const emptyState = document.getElementById('baseModelEmptyState');
+        if (!baseModelTagsContainer) return;
+
+        baseModelTagsContainer.innerHTML = '';
+
+        if (!this.baseModelOptions.length) {
+            baseModelTagsContainer.innerHTML = '<div class="no-tags">No base models available</div>';
+            if (emptyState) {
+                emptyState.hidden = true;
+            }
+            return;
+        }
+
+        const query = this.getNormalizedSearchQuery(this.baseModelSearchInput);
+        const filteredModels = query
+            ? this.baseModelOptions.filter(model => model.name.toLowerCase().includes(query))
+            : this.baseModelOptions;
+
+        filteredModels.forEach(model => {
+            const tag = document.createElement('div');
+            tag.className = 'filter-tag base-model-tag';
+            tag.dataset.baseModel = model.name;
+            tag.innerHTML = `${model.name} <span class="tag-count">${model.count}</span>`;
+
+            tag.addEventListener('click', async () => {
+                tag.classList.toggle('active');
+
+                if (tag.classList.contains('active')) {
+                    if (!this.filters.baseModel.includes(model.name)) {
+                        this.filters.baseModel.push(model.name);
+                    }
+                } else {
+                    this.filters.baseModel = this.filters.baseModel.filter(m => m !== model.name);
+                }
+
+                this.updateActiveFiltersCount();
+                await this.applyFilters(false);
+            });
+
+            baseModelTagsContainer.appendChild(tag);
+        });
+
+        if (emptyState) {
+            emptyState.hidden = filteredModels.length > 0;
+        }
+
+        this.updateTagSelections();
     }
 
     async createModelTypeTags() {
@@ -443,6 +483,58 @@ export class FilterManager {
         }
     }
 
+    AUTO_TAG_FILTER_TAGS = ['I2V', 'T2V', 'TI2V', 'Lightning', 'Turbo'];
+
+    createAutoTagFilters() {
+        const container = document.getElementById('autoTagFilterTags');
+        if (container) return;
+
+        const modelTypeSection = document.getElementById('modelTypeTags')?.closest('.filter-section');
+        if (!modelTypeSection) return;
+
+        const section = document.createElement('div');
+        section.className = 'filter-section';
+        section.innerHTML = `
+            <h4>${translate('header.filter.autoTags', {}, 'Auto Tags')}</h4>
+            <div class="filter-tags" id="autoTagFilterTags"></div>
+        `;
+        modelTypeSection.parentNode.insertBefore(section, modelTypeSection.nextSibling);
+
+        const tagsContainer = document.getElementById('autoTagFilterTags');
+        this.AUTO_TAG_FILTER_TAGS.forEach(tag => {
+            const el = document.createElement('div');
+            el.className = 'filter-tag auto-tag-filter';
+            el.dataset.autoTag = tag;
+            el.textContent = tag;
+
+            // Restore previous state
+            const state = (this.filters.autoTags && this.filters.autoTags[tag]) || 'none';
+            this._applyTriState(el, state);
+
+            el.addEventListener('click', async () => {
+                const current = (this.filters.autoTags && this.filters.autoTags[tag]) || 'none';
+                const next = current === 'none' ? 'include' : current === 'include' ? 'exclude' : 'none';
+                if (!this.filters.autoTags) this.filters.autoTags = {};
+                if (next === 'none') {
+                    delete this.filters.autoTags[tag];
+                } else {
+                    this.filters.autoTags[tag] = next;
+                }
+                this._applyTriState(el, next);
+                this.updateActiveFiltersCount();
+                await this.applyFilters(false);
+            });
+
+            tagsContainer.appendChild(el);
+        });
+    }
+
+    _applyTriState(el, state) {
+        el.classList.remove('active', 'exclude');
+        if (state === 'include') el.classList.add('active');
+        else if (state === 'exclude') el.classList.add('exclude');
+    }
+
     toggleFilterPanel() {
         if (this.filterPanel) {
             const isHidden = this.filterPanel.classList.contains('hidden');
@@ -453,6 +545,7 @@ export class FilterManager {
 
                 this.filterPanel.classList.remove('hidden');
                 this.filterButton.classList.add('active');
+                this.baseModelSearchInput?.focus();
 
                 // Load tags if they haven't been loaded yet
                 if (!this.tagsLoaded) {
@@ -502,6 +595,13 @@ export class FilterManager {
             this.updateLicenseSelections();
         }
         this.updateModelTypeSelections();
+
+        const autoTagEls = document.querySelectorAll('.auto-tag-filter');
+        autoTagEls.forEach(el => {
+            const tag = el.dataset.autoTag;
+            const state = (this.filters.autoTags && this.filters.autoTags[tag]) || 'none';
+            this._applyTriState(el, state);
+        });
     }
 
     updateModelTypeSelections() {
@@ -518,11 +618,12 @@ export class FilterManager {
 
     updateActiveFiltersCount() {
         const tagFilterCount = this.filters.tags ? Object.keys(this.filters.tags).length : 0;
+        const autoTagFilterCount = this.filters.autoTags ? Object.keys(this.filters.autoTags).length : 0;
         const licenseFilterCount = this.filters.license ? Object.keys(this.filters.license).length : 0;
         const modelTypeFilterCount = this.filters.modelTypes.length;
         // Exclude EMPTY_WILDCARD_MARKER from base model count
         const baseModelCount = this.filters.baseModel.filter(m => m !== EMPTY_WILDCARD_MARKER).length;
-        const totalActiveFilters = baseModelCount + tagFilterCount + licenseFilterCount + modelTypeFilterCount;
+        const totalActiveFilters = baseModelCount + tagFilterCount + autoTagFilterCount + licenseFilterCount + modelTypeFilterCount;
 
         if (this.activeFiltersCount) {
             if (totalActiveFilters > 0) {
@@ -614,6 +715,7 @@ export class FilterManager {
             ...this.filters,
             baseModel: [],
             tags: {},
+            autoTags: {},
             license: {},
             modelTypes: [],
             tagLogic: 'any'
@@ -683,6 +785,7 @@ export class FilterManager {
 
     hasActiveFilters() {
         const tagCount = this.filters.tags ? Object.keys(this.filters.tags).length : 0;
+        const autoTagCount = this.filters.autoTags ? Object.keys(this.filters.autoTags).length : 0;
         const licenseCount = this.filters.license ? Object.keys(this.filters.license).length : 0;
         const modelTypeCount = this.filters.modelTypes.length;
         // Exclude EMPTY_WILDCARD_MARKER from base model count
@@ -690,6 +793,7 @@ export class FilterManager {
         return (
             baseModelCount > 0 ||
             tagCount > 0 ||
+            autoTagCount > 0 ||
             licenseCount > 0 ||
             modelTypeCount > 0
         );
@@ -701,6 +805,7 @@ export class FilterManager {
             ...source,
             baseModel: Array.isArray(source.baseModel) ? [...source.baseModel] : [],
             tags: this.normalizeTagFilters(source.tags),
+            autoTags: this.normalizeTagFilters(source.autoTags),
             license: this.shouldShowLicenseFilters() ? this.normalizeLicenseFilters(source.license) : {},
             modelTypes: this.normalizeModelTypeFilters(source.modelTypes),
             tagLogic: source.tagLogic || 'any'
@@ -784,6 +889,7 @@ export class FilterManager {
             ...this.filters,
             baseModel: [...(this.filters.baseModel || [])],
             tags: { ...(this.filters.tags || {}) },
+            autoTags: { ...(this.filters.autoTags || {}) },
             license: { ...(this.filters.license || {}) },
             modelTypes: [...(this.filters.modelTypes || [])],
             tagLogic: this.filters.tagLogic || 'any'

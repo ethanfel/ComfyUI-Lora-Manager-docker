@@ -2,7 +2,13 @@ import asyncio
 import copy
 import logging
 import os
+from collections import OrderedDict
 from typing import Any, Optional, Dict, Tuple, List, Sequence
+from .connectivity_guard import (
+    OFFLINE_FRIENDLY_MESSAGE,
+    is_expected_offline_error,
+    is_offline_cooldown_error,
+)
 from .model_metadata_provider import (
     CivitaiModelMetadataProvider,
     ModelMetadataProviderManager,
@@ -39,7 +45,18 @@ class CivitaiClient:
             return
         self._initialized = True
 
-        self.base_url = "https://civitai.com/api/v1"
+        self.base_url = "https://civitai.red/api/v1"
+        # In-memory cache to avoid redundant get_model_version_info calls
+        # within the same import/scan flow. Only successful results are cached.
+        # Uses OrderedDict with LRU eviction at MAX_CACHE_ENTRIES to prevent
+        # unbounded growth in long-running server processes.
+        self._version_info_cache: OrderedDict[
+            str, Tuple[Optional[Dict], Optional[str]]
+        ] = OrderedDict()
+        self._MAX_CACHE_ENTRIES = 500
+
+    def _build_image_info_url(self, image_id: str) -> str:
+        return f"{self.base_url}/images?imageId={image_id}&nsfw=X"
 
     async def _make_request(
         self,
@@ -49,20 +66,57 @@ class CivitaiClient:
         use_auth: bool = False,
         **kwargs,
     ) -> Tuple[bool, Dict | str]:
-        """Wrapper around downloader.make_request that surfaces rate limits."""
+        """Wrapper around downloader.make_request that surfaces rate limits,
+        with retry for transient server errors (5xx, Cloudflare 524, network flakiness)."""
 
-        downloader = await get_downloader()
-        success, result = await downloader.make_request(
-            method,
-            url,
-            use_auth=use_auth,
-            **kwargs,
-        )
-        if not success and isinstance(result, RateLimitError):
-            if result.provider is None:
-                result.provider = "civitai_api"
-            raise result
-        return success, result
+        max_retries = 3
+        for attempt in range(max_retries):
+            downloader = await get_downloader()
+            success, result = await downloader.make_request(
+                method,
+                url,
+                use_auth=use_auth,
+                **kwargs,
+            )
+            if success:
+                return True, result
+
+            if isinstance(result, RateLimitError):
+                if result.provider is None:
+                    result.provider = "civitai_api"
+                raise result
+
+            if is_offline_cooldown_error(result):
+                return False, OFFLINE_FRIENDLY_MESSAGE
+
+            # Transient server error — retry with exponential backoff
+            if self._is_transient_server_error(str(result)):
+                if attempt < max_retries - 1:
+                    wait = 2**attempt  # 1s, 2s, 4s
+                    logger.info(
+                        "Transient error on %s %s, retrying in %ds "
+                        "(attempt %d/%d): %s",
+                        method,
+                        url,
+                        wait,
+                        attempt + 1,
+                        max_retries,
+                        result,
+                    )
+                    await asyncio.sleep(wait)
+                    continue
+                logger.warning(
+                    "All %d retries exhausted for %s %s: %s",
+                    max_retries,
+                    method,
+                    url,
+                    result,
+                )
+                return False, result
+
+            return False, result
+
+        return False, "Unexpected error in _make_request"
 
     @staticmethod
     def _remove_comfy_metadata(model_version: Optional[Dict]) -> None:
@@ -121,6 +175,8 @@ class CivitaiClient:
             )
             if not success:
                 message = str(version)
+                if is_expected_offline_error(message):
+                    return None, OFFLINE_FRIENDLY_MESSAGE
                 if "not found" in message.lower():
                     return None, "Model not found"
 
@@ -161,6 +217,9 @@ class CivitaiClient:
                 return True
             return False
         except Exception as e:
+            if is_expected_offline_error(str(e)):
+                logger.debug("Preview download skipped due to offline state.")
+                return False
             logger.error(f"Download Error: {str(e)}")
             return False
 
@@ -186,11 +245,36 @@ class CivitaiClient:
 
         return _from_value(payload)
 
+    @staticmethod
+    def _is_transient_server_error(message: str) -> bool:
+        """Return True when the message indicates a transient upstream failure.
+
+        Recognises Cloudflare 524, generic 5xx, and connectivity-level flakiness
+        that should not be treated as a permanent failure.
+        """
+        normalized = message.lower()
+        if "status 5" in normalized or "status 524" in normalized:
+            return True
+        if any(
+            keyword in normalized
+            for keyword in (
+                "connection refused",
+                "connection reset",
+                "temporary failure",
+                "name resolution",
+                "connection closed",
+            )
+        ):
+            return True
+        return False
+
     async def get_model_versions(self, model_id: str) -> Optional[Dict]:
         """Get all versions of a model with local availability info"""
         try:
             success, result = await self._make_request(
-                "GET", f"{self.base_url}/models/{model_id}", use_auth=True
+                "GET",
+                f"{self.base_url}/models/{model_id}",
+                use_auth=True,
             )
             if success:
                 # Also return model type along with versions
@@ -202,7 +286,17 @@ class CivitaiClient:
             message = self._extract_error_message(result)
             if message and "not found" in message.lower():
                 raise ResourceNotFoundError(f"Resource not found for model {model_id}")
+            if is_expected_offline_error(message):
+                logger.info("Civitai request skipped: %s", OFFLINE_FRIENDLY_MESSAGE)
+                return None
             if message:
+                if self._is_transient_server_error(message):
+                    logger.info(
+                        "Transient server error for model %s: %s",
+                        model_id,
+                        message,
+                    )
+                    return None
                 raise RuntimeError(message)
             return None
         except RateLimitError:
@@ -237,7 +331,7 @@ class CivitaiClient:
                 "GET",
                 f"{self.base_url}/models",
                 use_auth=True,
-                params={"ids": query},
+                params={"ids": query, "nsfw": "true"},
             )
             if not success:
                 return None
@@ -316,6 +410,25 @@ class CivitaiClient:
             return None
 
         target_version = self._select_target_version(model_data, model_id, version_id)
+
+        # If modelVersions is empty (e.g. CivitAI cache lag for newly published
+        # models) but a specific version_id is known, fall back to fetching the
+        # version directly via the individual model-versions endpoint, then
+        # enrich it with the model-level data we already have.
+        if target_version is None and version_id is not None:
+            logger.info(
+                "modelVersions empty for model %s; falling back to direct "
+                "version lookup for %s",
+                model_id,
+                version_id,
+            )
+            version = await self._fetch_version_by_id(version_id)
+            if version:
+                self._enrich_version_with_model_data(version, model_data)
+                self._remove_comfy_metadata(version)
+                return version
+            return None
+
         if target_version is None:
             return None
 
@@ -346,10 +459,14 @@ class CivitaiClient:
 
     async def _fetch_model_data(self, model_id: int) -> Optional[Dict]:
         success, data = await self._make_request(
-            "GET", f"{self.base_url}/models/{model_id}", use_auth=True
+            "GET",
+            f"{self.base_url}/models/{model_id}",
+            use_auth=True,
         )
         if success:
             return data
+        if is_expected_offline_error(data):
+            return None
         logger.warning(f"Failed to fetch model data for model {model_id}")
         return None
 
@@ -358,10 +475,14 @@ class CivitaiClient:
             return None
 
         success, version = await self._make_request(
-            "GET", f"{self.base_url}/model-versions/{version_id}", use_auth=True
+            "GET",
+            f"{self.base_url}/model-versions/{version_id}",
+            use_auth=True,
         )
         if success:
             return version
+        if is_expected_offline_error(version):
+            return None
 
         logger.warning(f"Failed to fetch version by id {version_id}")
         return None
@@ -371,10 +492,14 @@ class CivitaiClient:
             return None
 
         success, version = await self._make_request(
-            "GET", f"{self.base_url}/model-versions/by-hash/{model_hash}", use_auth=True
+            "GET",
+            f"{self.base_url}/model-versions/by-hash/{model_hash}",
+            use_auth=True,
         )
         if success:
             return version
+        if is_expected_offline_error(version):
+            return None
 
         logger.warning(f"Failed to fetch version by hash {model_hash}")
         return None
@@ -450,20 +575,33 @@ class CivitaiClient:
                 - The model version data or None if not found
                 - An error message if there was an error, or None on success
         """
+        # In-memory cache avoids redundant API calls within the same
+        # import/scan flow (e.g. _resolve_base_model_from_checkpoint
+        # followed by _resolve_and_populate_checkpoint with the same id).
+        if version_id in self._version_info_cache:
+            logger.debug("Cache hit for model version info: %s", version_id)
+            self._version_info_cache.move_to_end(version_id)  # LRU bump
+            return self._version_info_cache[version_id]
+
         try:
             url = f"{self.base_url}/model-versions/{version_id}"
 
-            logger.debug(f"Resolving DNS for model version info: {url}")
+            logger.debug("Resolving Civitai model version info: %s", url)
             success, result = await self._make_request("GET", url, use_auth=True)
 
             if success:
-                logger.debug(
-                    f"Successfully fetched model version info for: {version_id}"
-                )
+                logger.debug("Successfully fetched model version info for: %s", version_id)
                 self._remove_comfy_metadata(result)
+                self._version_info_cache[version_id] = (result, None)
+                self._version_info_cache.move_to_end(version_id)
+                # Evict oldest entry when over capacity
+                if len(self._version_info_cache) > self._MAX_CACHE_ENTRIES:
+                    self._version_info_cache.popitem(last=False)
                 return result, None
 
             # Handle specific error cases
+            if is_expected_offline_error(result):
+                return None, OFFLINE_FRIENDLY_MESSAGE
             if "not found" in str(result):
                 error_msg = f"Model not found"
                 logger.warning(f"Model version not found: {version_id} - {error_msg}")
@@ -479,36 +617,131 @@ class CivitaiClient:
             logger.error(error_msg)
             return None, error_msg
 
-    async def get_image_info(self, image_id: str) -> Optional[Dict]:
+    async def get_image_info(
+        self, image_id: str, source_url: str | None = None
+    ) -> Optional[Dict]:
         """Fetch image information from Civitai API
 
         Args:
             image_id: The Civitai image ID
+            source_url: Original image page URL. Accepted for caller compatibility;
+                API requests always target ``civitai.red``.
 
         Returns:
             Optional[Dict]: The image data or None if not found
         """
         try:
-            url = f"{self.base_url}/images?imageId={image_id}&nsfw=X"
-
-            logger.debug(f"Fetching image info for ID: {image_id}")
+            requested_id = int(image_id)
+            url = self._build_image_info_url(image_id)
             success, result = await self._make_request("GET", url, use_auth=True)
 
-            if success:
-                if result and "items" in result and len(result["items"]) > 0:
-                    logger.debug(f"Successfully fetched image info for ID: {image_id}")
-                    return result["items"][0]
-                logger.warning(f"No image found with ID: {image_id}")
+            if not success:
+                if is_expected_offline_error(result):
+                    return None
+                if self._is_transient_server_error(str(result)):
+                    logger.info(
+                        "Transient server error fetching image info for ID %s: %s",
+                        image_id,
+                        result,
+                    )
+                    return None
+                logger.error(
+                    "Failed to fetch image info for ID %s from civitai.red: %s",
+                    image_id,
+                    result,
+                )
                 return None
 
-            logger.error(f"Failed to fetch image info for ID: {image_id}: {result}")
+            if result and "items" in result and isinstance(result["items"], list):
+                items = result["items"]
+
+                for item in items:
+                    if isinstance(item, dict) and item.get("id") == requested_id:
+                        logger.debug(
+                            "Successfully fetched image info for ID %s from civitai.red",
+                            image_id,
+                        )
+                        return item
+
+                returned_ids = [
+                    item.get("id")
+                    for item in items
+                    if isinstance(item, dict) and "id" in item
+                ]
+
+                logger.warning(
+                    "CivitAI API returned no matching image for requested ID %s from civitai.red. Returned %d item(s) with IDs: %s. This may indicate the image was deleted, hidden, or there is a database lag.",
+                    image_id,
+                    len(items),
+                    returned_ids,
+                )
+                return None
+
+            logger.warning("No image found with ID: %s", image_id)
             return None
         except RateLimitError:
             raise
+        except ValueError as e:
+            error_msg = f"Invalid image ID format: {image_id}"
+            logger.error(error_msg)
+            return None
         except Exception as e:
             error_msg = f"Error fetching image info: {e}"
             logger.error(error_msg)
             return None
+
+    async def get_model_versions_by_hashes(
+        self, hashes: List[str]
+    ) -> Optional[List[Dict]]:
+        """Fetch full version details for up to 100 SHA256 hashes via the batch endpoint.
+
+        Uses POST /api/v1/model-versions/by-hash which returns full version
+        details including ``usageControl`` and ``earlyAccessEndsAt`` that are
+        not available from the model-level API.
+
+        Args:
+            hashes: List of SHA256 hashes (max 100 per batch; auto-split).
+
+        Returns:
+            List of version dicts or None on failure.
+        """
+        if not hashes:
+            return []
+
+        BATCH_SIZE = 100
+        all_versions: List[Dict] = []
+
+        for start in range(0, len(hashes), BATCH_SIZE):
+            batch = hashes[start : start + BATCH_SIZE]
+            try:
+                success, result = await self._make_request(
+                    "POST",
+                    f"{self.base_url}/model-versions/by-hash",
+                    use_auth=True,
+                    json=batch,
+                )
+                if not success:
+                    logger.warning(
+                        "Batch by-hash request failed for %d hashes: %s",
+                        len(batch),
+                        result,
+                    )
+                    continue
+
+                if isinstance(result, list):
+                    all_versions.extend(result)
+                else:
+                    logger.debug(
+                        "Unexpected by-hash response type: %s", type(result)
+                    )
+            except RateLimitError:
+                raise
+            except Exception as exc:  # pragma: no cover - defensive logging
+                logger.error(
+                    "Error fetching model versions by hashes: %s", exc
+                )
+
+        return all_versions if all_versions else None
 
     async def get_user_models(self, username: str) -> Optional[List[Dict]]:
         """Fetch all models for a specific Civitai user."""
@@ -516,10 +749,17 @@ class CivitaiClient:
             return None
 
         try:
-            url = f"{self.base_url}/models?username={username}"
-            success, result = await self._make_request("GET", url, use_auth=True)
+            success, result = await self._make_request(
+                "GET",
+                f"{self.base_url}/models",
+                use_auth=True,
+                params={"username": username, "nsfw": "true"},
+            )
 
             if not success:
+                if is_expected_offline_error(result):
+                    logger.info("User model fetch skipped: %s", OFFLINE_FRIENDLY_MESSAGE)
+                    return None
                 logger.error("Failed to fetch models for %s: %s", username, result)
                 return None
 

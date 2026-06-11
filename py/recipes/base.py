@@ -7,7 +7,7 @@ import re
 from typing import Dict, List, Any, Optional, Tuple
 from abc import ABC, abstractmethod
 from ..config import config
-from ..utils.constants import VALID_LORA_TYPES
+from ..utils.constants import VALID_LORA_TYPES, VALID_CHECKPOINT_SUB_TYPES
 from ..utils.civitai_utils import rewrite_preview_url
 
 logger = logging.getLogger(__name__)
@@ -58,9 +58,52 @@ class RecipeMetadataParser(ABC):
             civitai_info, error_msg = civitai_info_tuple if isinstance(civitai_info_tuple, tuple) else (civitai_info_tuple, None)
             
             if not civitai_info or error_msg == "Model not found":
-                # Model not found or deleted
-                lora_entry['isDeleted'] = True
-                lora_entry['thumbnailUrl'] = '/loras_static/images/no-preview.png'
+                # CivitAI may fail to resolve a hash that is still being
+                # computed (known CivitAI issue). Before marking as deleted,
+                # try to reconcile with a local model that has the same
+                # filename and matching AutoV3 hash.
+                reconciled = False
+                file_name = lora_entry.get("file_name")
+                if file_name and recipe_scanner and hash_value:
+                    lora_scanner = getattr(recipe_scanner, "_lora_scanner", None)
+                    if lora_scanner:
+                        try:
+                            # Local import to avoid circular dependency:
+                            # base.py → file_utils → settings_manager → ...
+                            #  → recipe_scanner → enrichment → base.py
+                            from ..utils.file_utils import calculate_autov3  # fmt: skip
+                            cache = await lora_scanner.get_cached_data()
+                            for item in getattr(cache, "raw_data", []):
+                                if item.get("file_name") == file_name:
+                                    local_path = item.get("file_path")
+                                    if local_path and os.path.exists(local_path):
+                                        local_autov3 = calculate_autov3(local_path)
+                                        if local_autov3 and local_autov3 == hash_value:
+                                            lora_entry["existsLocally"] = True
+                                            lora_entry["localPath"] = local_path
+                                            lora_entry["hash"] = item.get("sha256", hash_value)
+                                            if "preview_url" in item:
+                                                lora_entry["thumbnailUrl"] = config.get_preview_static_url(item["preview_url"])
+                                            civ = item.get("civitai") or {}
+                                            if isinstance(civ, dict):
+                                                if civ.get("id") is not None:
+                                                    lora_entry["id"] = civ["id"]
+                                                if civ.get("modelId") is not None:
+                                                    lora_entry["modelId"] = civ["modelId"]
+                                                if civ.get("name"):
+                                                    lora_entry["version"] = civ["name"]
+                                                # model_name is the CivitAI model display
+                                                # name stored directly in the cache column.
+                                                cached_model_name = item.get("model_name")
+                                                if cached_model_name:
+                                                    lora_entry["name"] = cached_model_name
+                                            reconciled = True
+                                            break
+                        except Exception:
+                            pass
+                if not reconciled:
+                    lora_entry['isDeleted'] = True
+                    lora_entry['thumbnailUrl'] = '/loras_static/images/no-preview.png'
                 return lora_entry
                 
             # Get model type and validate
@@ -171,6 +214,20 @@ class RecipeMetadataParser(ABC):
 
             if not civitai_data or error_msg == "Model not found":
                 checkpoint['isDeleted'] = True
+                return checkpoint
+
+            # Validate that the model type is actually a checkpoint.
+            # Unlike populate_lora_from_civitai which has this check,
+            # this function was missing type validation — allowing LoRA
+            # version data to be saved as the recipe's checkpoint when the
+            # wrong version ID was passed downstream (fixed in v2.7+).
+            model_type = civitai_data.get('model', {}).get('type', '').lower()
+            if model_type not in VALID_CHECKPOINT_SUB_TYPES:
+                logger.warning(
+                    f"Cannot populate checkpoint: model version {civitai_data.get('id')} "
+                    f"has type '{model_type}', expected one of {VALID_CHECKPOINT_SUB_TYPES}. "
+                    f"Skipping checkpoint enrichment."
+                )
                 return checkpoint
 
             if 'model' in civitai_data and 'name' in civitai_data['model']:

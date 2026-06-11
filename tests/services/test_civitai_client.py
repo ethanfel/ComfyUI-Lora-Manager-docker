@@ -5,6 +5,7 @@ import pytest
 
 from py.services import civitai_client as civitai_client_module
 from py.services.civitai_client import CivitaiClient
+from py.services.connectivity_guard import OFFLINE_COOLDOWN_ERROR, OFFLINE_FRIENDLY_MESSAGE
 from py.services.errors import RateLimitError, ResourceNotFoundError
 from py.services.model_metadata_provider import ModelMetadataProviderManager
 
@@ -62,6 +63,12 @@ async def test_download_file_uses_downloader(tmp_path, downloader):
     assert downloader.download_calls[0]["use_auth"] is True
 
 
+async def test_client_defaults_to_red_api_host(downloader):
+    client = await CivitaiClient.get_instance()
+
+    assert client.base_url == "https://civitai.red/api/v1"
+
+
 async def test_get_model_by_hash_enriches_metadata(monkeypatch, downloader):
     version_payload = {
         "modelId": 123,
@@ -107,6 +114,20 @@ async def test_get_model_by_hash_handles_not_found(monkeypatch, downloader):
 
     assert result is None
     assert error == "Model not found"
+
+
+async def test_get_model_by_hash_handles_offline_cooldown(downloader):
+    async def fake_make_request(method, url, use_auth=True, **kwargs):
+        return False, OFFLINE_COOLDOWN_ERROR
+
+    downloader.make_request = fake_make_request
+
+    client = await CivitaiClient.get_instance()
+
+    result, error = await client.get_model_by_hash("missing")
+
+    assert result is None
+    assert error == OFFLINE_FRIENDLY_MESSAGE
 
 
 async def test_get_model_by_hash_propagates_rate_limit(monkeypatch, downloader):
@@ -201,7 +222,7 @@ async def test_get_model_versions_raises_on_other_errors(monkeypatch, downloader
 async def test_get_model_versions_bulk_success(monkeypatch, downloader):
     async def fake_make_request(method, url, use_auth=True, **kwargs):
         assert url.endswith("/models")
-        assert kwargs.get("params") == {"ids": "1,2"}
+        assert kwargs.get("params") == {"ids": "1,2", "nsfw": "true"}
         return True, {
             "items": [
                 {
@@ -484,9 +505,11 @@ async def test_get_model_version_info_success(monkeypatch, downloader):
     assert result["images"][0]["meta"]["other"] == "keep"
 
 
-async def test_get_image_info_returns_first_item(monkeypatch, downloader):
+async def test_get_image_info_returns_matching_item(monkeypatch, downloader):
+    """When API returns multiple items, return the one matching the requested ID."""
     async def fake_make_request(method, url, use_auth=True, **kwargs):
-        return True, {"items": [{"id": 1}, {"id": 2}]}
+        # Requested ID is 42, but it's the second item in the response
+        return True, {"items": [{"id": 41}, {"id": 42, "name": "target"}, {"id": 43}]}
 
     downloader.make_request = fake_make_request
 
@@ -494,7 +517,25 @@ async def test_get_image_info_returns_first_item(monkeypatch, downloader):
 
     result = await client.get_image_info("42")
 
-    assert result == {"id": 1}
+    assert result == {"id": 42, "name": "target"}
+
+
+async def test_get_image_info_returns_none_when_id_mismatch(monkeypatch, downloader, caplog):
+    """When API returns items but none match the requested ID, return None and log warning."""
+    async def fake_make_request(method, url, use_auth=True, **kwargs):
+        # Requested ID is 999, but API returns different IDs (simulating deleted/hidden image)
+        return True, {"items": [{"id": 1}, {"id": 2}, {"id": 3}]}
+
+    downloader.make_request = fake_make_request
+
+    client = await CivitaiClient.get_instance()
+
+    result = await client.get_image_info("999")
+
+    assert result is None
+    # Verify warning was logged
+    assert "CivitAI API returned no matching image for requested ID 999" in caplog.text
+    assert "Returned 3 item(s) with IDs: [1, 2, 3]" in caplog.text
 
 
 async def test_get_image_info_handles_missing(monkeypatch, downloader):
@@ -508,3 +549,76 @@ async def test_get_image_info_handles_missing(monkeypatch, downloader):
     result = await client.get_image_info("42")
 
     assert result is None
+
+
+async def test_get_image_info_prefers_red_host_for_red_source(monkeypatch, downloader):
+    requested_urls = []
+
+    async def fake_make_request(method, url, use_auth=True, **kwargs):
+        requested_urls.append(url)
+        return True, {"items": [{"id": 124950237, "name": "target"}]}
+
+    downloader.make_request = fake_make_request
+
+    client = await CivitaiClient.get_instance()
+
+    result = await client.get_image_info(
+        "124950237", source_url="https://civitai.red/images/124950237"
+    )
+
+    assert result == {"id": 124950237, "name": "target"}
+    assert requested_urls == [
+        "https://civitai.red/api/v1/images?imageId=124950237&nsfw=X"
+    ]
+
+
+async def test_get_image_info_uses_red_host_even_for_red_source(monkeypatch, downloader):
+    requested_urls = []
+
+    async def fake_make_request(method, url, use_auth=True, **kwargs):
+        requested_urls.append(url)
+        return True, {"items": [{"id": 124950237, "name": "target"}]}
+
+    downloader.make_request = fake_make_request
+
+    client = await CivitaiClient.get_instance()
+
+    result = await client.get_image_info(
+        "124950237", source_url="https://civitai.red/images/124950237"
+    )
+
+    assert result == {"id": 124950237, "name": "target"}
+    assert requested_urls == [
+        "https://civitai.red/api/v1/images?imageId=124950237&nsfw=X",
+    ]
+
+
+async def test_get_image_info_does_not_fall_back_after_request_failure(monkeypatch, downloader):
+    requested_urls = []
+
+    async def fake_make_request(method, url, use_auth=True, **kwargs):
+        requested_urls.append(url)
+        return False, "403 forbidden"
+
+    downloader.make_request = fake_make_request
+
+    client = await CivitaiClient.get_instance()
+
+    result = await client.get_image_info(
+        "124950237", source_url="https://civitai.red/images/124950237"
+    )
+
+    assert result is None
+    assert requested_urls == [
+        "https://civitai.red/api/v1/images?imageId=124950237&nsfw=X",
+    ]
+
+
+async def test_get_image_info_handles_invalid_id(monkeypatch, downloader, caplog):
+    """When given a non-numeric image ID, return None and log error."""
+    client = await CivitaiClient.get_instance()
+
+    result = await client.get_image_info("not-a-number")
+
+    assert result is None
+    assert "Invalid image ID format" in caplog.text

@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
 
 from ...config import config
+from ...recipes.constants import GEN_PARAM_KEYS
 from ...utils.utils import calculate_recipe_fingerprint
 from .errors import RecipeNotFoundError, RecipeValidationError
 
@@ -90,23 +91,7 @@ class RecipePersistenceService:
         current_time = time.time()
         loras_data = [self._normalise_lora_entry(lora) for lora in (metadata.get("loras") or [])]
         checkpoint_entry = self._sanitize_checkpoint_entry(self._extract_checkpoint_entry(metadata))
-
-        gen_params = metadata.get("gen_params") or {}
-        if not gen_params and "raw_metadata" in metadata:
-            raw_metadata = metadata.get("raw_metadata", {})
-            gen_params = {
-                "prompt": raw_metadata.get("prompt", ""),
-                "negative_prompt": raw_metadata.get("negative_prompt", ""),
-                "steps": raw_metadata.get("steps", ""),
-                "sampler": raw_metadata.get("sampler", ""),
-                "cfg_scale": raw_metadata.get("cfg_scale", ""),
-                "seed": raw_metadata.get("seed", ""),
-                "size": raw_metadata.get("size", ""),
-                "clip_skip": raw_metadata.get("clip_skip", ""),
-            }
-
-        # Drop checkpoint duplication from generation parameters to store it only at top level
-        gen_params.pop("checkpoint", None)
+        gen_params = self._sanitize_gen_params_for_storage(metadata)
 
         fingerprint = calculate_recipe_fingerprint(loras_data)
         recipe_data: Dict[str, Any] = {
@@ -130,9 +115,14 @@ class RecipePersistenceService:
         if metadata.get("source_path"):
             recipe_data["source_path"] = metadata.get("source_path")
 
+        nsfw_level = metadata.get("preview_nsfw_level")
+        if nsfw_level is not None and isinstance(nsfw_level, int):
+            recipe_data["preview_nsfw_level"] = nsfw_level
+
         json_filename = f"{recipe_id}.recipe.json"
         json_path = os.path.join(recipes_dir, json_filename)
         json_path = os.path.normpath(json_path)
+
         with open(json_path, "w", encoding="utf-8") as file_obj:
             json.dump(recipe_data, file_obj, indent=4, ensure_ascii=False)
 
@@ -151,6 +141,30 @@ class RecipePersistenceService:
                 "matching_recipes": matching_recipes,
             }
         )
+
+    @staticmethod
+    def _sanitize_gen_params_for_storage(metadata: dict[str, Any]) -> dict[str, Any]:
+        gen_params = metadata.get("gen_params")
+        if isinstance(gen_params, dict) and gen_params:
+            source = gen_params
+        else:
+            source = metadata.get("raw_metadata")
+
+        if not isinstance(source, dict):
+            return {}
+
+        allowed_keys = set(GEN_PARAM_KEYS)
+        sanitized: dict[str, Any] = {}
+        for key in allowed_keys:
+            if key not in source:
+                continue
+            value = source.get(key)
+            if value in (None, ""):
+                continue
+            sanitized[key] = value
+
+        sanitized.pop("checkpoint", None)
+        return sanitized
 
     async def delete_recipe(self, *, recipe_scanner, recipe_id: str) -> PersistenceResult:
         """Delete an existing recipe."""
@@ -173,10 +187,22 @@ class RecipePersistenceService:
     async def update_recipe(self, *, recipe_scanner, recipe_id: str, updates: dict[str, Any]) -> PersistenceResult:
         """Update persisted metadata for a recipe."""
 
-        if not any(key in updates for key in ("title", "tags", "source_path", "preview_nsfw_level", "favorite")):
+        allowed_fields = (
+            "title",
+            "tags",
+            "source_path",
+            "preview_nsfw_level",
+            "favorite",
+            "gen_params",
+        )
+
+        if not any(key in updates for key in allowed_fields):
             raise RecipeValidationError(
-                "At least one field to update must be provided (title or tags or source_path or preview_nsfw_level or favorite)"
+                "At least one field to update must be provided (title or tags or source_path or preview_nsfw_level or favorite or gen_params)"
             )
+
+        if "gen_params" in updates and not isinstance(updates["gen_params"], dict):
+            raise RecipeValidationError("gen_params must be an object")
 
         success = await recipe_scanner.update_recipe_metadata(recipe_id, updates)
         if not success:
@@ -486,6 +512,10 @@ class RecipePersistenceService:
         most_common_base_model = (
             max(base_model_counts.items(), key=lambda item: item[1])[0] if base_model_counts else ""
         )
+        checkpoint_entry = await self._build_widget_checkpoint_entry(
+            recipe_scanner,
+            metadata.get("checkpoint"),
+        )
 
         recipe_data = {
             "id": recipe_id,
@@ -493,9 +523,8 @@ class RecipePersistenceService:
             "title": recipe_name,
             "modified": time.time(),
             "created_date": time.time(),
-            "base_model": most_common_base_model,
+            "base_model": most_common_base_model or (checkpoint_entry or {}).get("baseModel", ""),
             "loras": loras_data,
-            "checkpoint": self._sanitize_checkpoint_entry(metadata.get("checkpoint", "")),
             "gen_params": {
                 key: value
                 for key, value in metadata.items()
@@ -503,6 +532,8 @@ class RecipePersistenceService:
             },
             "loras_stack": lora_stack,
         }
+        if checkpoint_entry:
+            recipe_data["checkpoint"] = checkpoint_entry
 
         json_filename = f"{recipe_id}.recipe.json"
         json_path = os.path.join(recipes_dir, json_filename)
@@ -523,6 +554,91 @@ class RecipePersistenceService:
         )
 
     # Helper methods ---------------------------------------------------
+
+    async def _build_widget_checkpoint_entry(
+        self,
+        recipe_scanner,
+        checkpoint_raw: Any,
+    ) -> Optional[dict[str, Any]]:
+        """Build recipe checkpoint metadata from widget generation metadata."""
+
+        if isinstance(checkpoint_raw, dict):
+            return self._sanitize_checkpoint_entry(checkpoint_raw)
+
+        if not isinstance(checkpoint_raw, str):
+            return None
+
+        checkpoint_name = checkpoint_raw.strip()
+        if not checkpoint_name:
+            return None
+
+        file_name = os.path.splitext(os.path.basename(checkpoint_name))[0]
+        checkpoint_info = await self._lookup_widget_checkpoint(
+            recipe_scanner,
+            checkpoint_name,
+        )
+        if not checkpoint_info:
+            return {
+                "type": "checkpoint",
+                "name": checkpoint_name,
+                "file_name": file_name,
+                "hash": "",
+            }
+
+        civitai = checkpoint_info.get("civitai") or {}
+        civitai_model = civitai.get("model") or {}
+        file_path = checkpoint_info.get("file_path") or checkpoint_info.get("path") or ""
+        cached_file_name = (
+            checkpoint_info.get("file_name")
+            or (os.path.splitext(os.path.basename(file_path))[0] if file_path else "")
+            or file_name
+        )
+
+        return {
+            "type": "checkpoint",
+            "modelId": civitai_model.get("id", 0),
+            "modelVersionId": civitai.get("id", 0),
+            "name": civitai_model.get("name") or checkpoint_info.get("model_name") or checkpoint_name,
+            "version": civitai.get("name", ""),
+            "hash": (checkpoint_info.get("sha256") or checkpoint_info.get("hash") or "").lower(),
+            "file_name": cached_file_name,
+            "modelName": civitai_model.get("name", ""),
+            "modelVersionName": civitai.get("name", ""),
+            "baseModel": checkpoint_info.get("base_model") or civitai.get("baseModel", ""),
+        }
+
+    async def _lookup_widget_checkpoint(
+        self,
+        recipe_scanner,
+        checkpoint_name: str,
+    ) -> Optional[dict[str, Any]]:
+        lookup = getattr(recipe_scanner, "get_local_checkpoint", None)
+        if not callable(lookup):
+            return None
+
+        candidates = []
+        for candidate in (
+            checkpoint_name,
+            os.path.basename(checkpoint_name),
+            os.path.splitext(os.path.basename(checkpoint_name))[0],
+        ):
+            if candidate and candidate not in candidates:
+                candidates.append(candidate)
+
+        for candidate in candidates:
+            try:
+                checkpoint_info = await lookup(candidate)
+            except Exception as exc:
+                self._logger.debug(
+                    "Failed to lookup checkpoint %s while saving widget recipe: %s",
+                    candidate,
+                    exc,
+                )
+                continue
+            if checkpoint_info:
+                return checkpoint_info
+
+        return None
 
     def _extract_checkpoint_entry(self, metadata: dict[str, Any]) -> Optional[dict[str, Any]]:
         """Pull a checkpoint entry from various metadata locations."""

@@ -14,7 +14,11 @@
             "backToTop": "맨 위로",
             "settings": "설정",
             "help": "도움말",
-            "add": "추가"
+            "add": "추가",
+            "close": "닫기",
+            "menu": "메뉴",
+            "remove": "제거",
+            "change": "변경"
         },
         "status": {
             "loading": "로딩 중...",
@@ -174,6 +178,9 @@
             "success": "{count}개의 레시피가 성공적으로 복구되었습니다.",
             "cancelled": "수리가 취소되었습니다. {count}개의 레시피가 수리되었습니다.",
             "error": "레시피 복구 실패: {message}"
+        },
+        "manageExcludedModels": {
+            "label": "제외된 모델 관리"
         }
     },
     "header": {
@@ -221,12 +228,17 @@
             "presetOverwriteConfirm": "프리셋 \"{name}\"이(가) 이미 존재합니다. 덮어쓰시겠습니까?",
             "presetNamePlaceholder": "프리셋 이름...",
             "baseModel": "베이스 모델",
+            "baseModelSearchPlaceholder": "베이스 모델 검색...",
             "modelTags": "태그 (상위 20개)",
             "modelTypes": "모델 유형",
             "license": "라이선스",
             "noCreditRequired": "크레딧 표기 없음",
             "allowSellingGeneratedContent": "판매 허용",
+            "allowSellingGeneratedContentTooltip": "생성된 이미지 판매 허용",
+            "noCreditRequiredTooltip": "크리에이터 저작자 표시 없이 모델 사용 가능",
             "noTags": "태그 없음",
+            "autoTags": "자동 태그",
+            "noBaseModelMatches": "현재 검색과 일치하는 베이스 모델이 없습니다.",
             "clearAll": "모든 필터 지우기",
             "any": "아무",
             "all": "모두",
@@ -249,6 +261,33 @@
         "civitaiApiKey": "Civitai API 키",
         "civitaiApiKeyPlaceholder": "Civitai API 키를 입력하세요",
         "civitaiApiKeyHelp": "Civitai에서 모델을 다운로드할 때 인증에 사용됩니다",
+        "civitaiHost": {
+            "label": "Civitai 호스트",
+            "help": "\"View on Civitai\" 링크를 사용할 때 어떤 Civitai 사이트를 열지 선택합니다.",
+            "options": {
+                "com": "civitai.com(SFW 전용)",
+                "red": "civitai.red(무제한)"
+            }
+        },
+        "downloadBackend": {
+            "label": "다운로드 백엔드",
+            "help": "모델 파일을 다운로드하는 방식을 선택합니다. Python은 내장 다운로더를 사용하고, aria2는 권장되는 외부 다운로더 프로세스를 사용합니다.",
+            "options": {
+                "python": "Python(내장)",
+                "aria2": "aria2(권장)"
+            }
+        },
+        "aria2cPath": {
+            "label": "aria2c 경로",
+            "help": "aria2c 실행 파일의 선택적 경로입니다. 비워 두면 시스템 PATH의 aria2c를 사용합니다.",
+            "placeholder": "비워 두면 PATH의 aria2c를 사용합니다"
+        },
+        "aria2HelpLink": "aria2 다운로드 백엔드 설정 방법 알아보기",
+        "civitaiHostBanner": {
+            "title": "Civitai 호스트 기본 설정 사용 가능",
+            "content": "이제 Civitai는 SFW 콘텐츠에 civitai.com을, 무제한 콘텐츠에 civitai.red를 사용합니다. 설정에서 기본으로 열 사이트를 변경할 수 있습니다.",
+            "openSettings": "설정 열기"
+        },
         "openSettingsFileLocation": {
             "label": "설정 폴더 열기",
             "tooltip": "settings.json이 있는 폴더를 엽니다",
@@ -259,10 +298,13 @@
         },
         "sections": {
             "contentFiltering": "콘텐츠 필터링",
+            "downloads": "다운로드",
             "videoSettings": "비디오 설정",
             "layoutSettings": "레이아웃 설정",
             "misc": "기타",
+            "backup": "백업",
             "folderSettings": "기본 루트",
+            "recipeSettings": "레시피",
             "extraFolderPaths": "추가 폴다 경로",
             "downloadPathTemplates": "다운로드 경로 템플릿",
             "priorityTags": "우선순위 태그",
@@ -290,7 +332,15 @@
             "blurNsfwContent": "NSFW 콘텐츠 블러 처리",
             "blurNsfwContentHelp": "성인(NSFW) 콘텐츠 미리보기 이미지를 블러 처리합니다",
             "showOnlySfw": "SFW 결과만 표시",
-            "showOnlySfwHelp": "탐색 및 검색 시 모든 NSFW 콘텐츠를 필터링합니다"
+            "showOnlySfwHelp": "탐색 및 검색 시 모든 NSFW 콘텐츠를 필터링합니다",
+            "matureBlurThreshold": "성인 콘텐츠 블러 임계값",
+            "matureBlurThresholdHelp": "NSFW 블러가 활성화될 때 어떤 등급 레벨부터 블러 필터링을 시작할지 설정합니다.",
+            "matureBlurThresholdOptions": {
+                "pg13": "PG13 이상",
+                "r": "R 이상（기본값）",
+                "x": "X 이상",
+                "xxx": "XXX만"
+            }
         },
         "videoSettings": {
             "autoplayOnHover": "호버 시 비디오 자동 재생",
@@ -314,6 +364,54 @@
                 "saveFailed": "건너뛰기 경로를 저장할 수 없습니다: {message}"
             }
         },
+        "backup": {
+            "autoEnabled": "자동 백업",
+            "autoEnabledHelp": "하루에 한 번 로컬 스냅샷을 만들고 보존 정책에 따라 최신 스냅샷을 유지합니다.",
+            "retention": "보존 개수",
+            "retentionHelp": "오래된 자동 스냅샷을 삭제하기 전에 몇 개를 유지할지 지정합니다.",
+            "management": "백업 관리",
+            "managementHelp": "현재 사용자 상태를 내보내거나 백업 아카이브에서 복원합니다.",
+            "scopeHelp": "설정, 다운로드 기록, 모델 업데이트 상태를 백업합니다. 모델 파일과 다시 생성할 수 있는 캐시는 포함되지 않습니다.",
+            "locationSummary": "현재 백업 위치",
+            "openFolderButton": "백업 폴더 열기",
+            "openFolderSuccess": "백업 폴더를 열었습니다",
+            "openFolderFailed": "백업 폴더를 열지 못했습니다",
+            "locationCopied": "백업 경로를 클립보드에 복사했습니다: {{path}}",
+            "locationClipboardFallback": "백업 경로: {{path}}",
+            "exportButton": "백업 내보내기",
+            "exportSuccess": "백업을 성공적으로 내보냈습니다.",
+            "exportFailed": "백업 내보내기에 실패했습니다: {message}",
+            "importButton": "백업 가져오기",
+            "importConfirm": "이 백업을 가져와서 로컬 사용자 상태를 덮어쓰시겠습니까?",
+            "importSuccess": "백업을 성공적으로 가져왔습니다.",
+            "importFailed": "백업 가져오기에 실패했습니다: {message}",
+            "latestSnapshot": "최근 스냅샷",
+            "latestAutoSnapshot": "최근 자동 스냅샷",
+            "snapshotCount": "저장된 스냅샷",
+            "noneAvailable": "아직 스냅샷이 없습니다"
+        },
+        "downloadSkipBaseModels": {
+            "label": "기본 모델 다운로드 건너뛰기",
+            "help": "모든 다운로드 흐름에 적용됩니다. 여기서는 지원되는 기본 모델만 선택할 수 있습니다.",
+            "searchPlaceholder": "기본 모델 필터링...",
+            "empty": "현재 검색과 일치하는 기본 모델이 없습니다.",
+            "summary": {
+                "none": "선택 없음",
+                "count": "{count}개 선택됨"
+            },
+            "actions": {
+                "edit": "편집",
+                "collapse": "접기",
+                "clear": "지우기"
+            },
+            "validation": {
+                "saveFailed": "제외된 기본 모델을 저장할 수 없습니다: {message}"
+            }
+        },
+        "skipPreviouslyDownloadedModelVersions": {
+            "label": "이전에 다운로드한 모델 버전 건너뛰기",
+            "help": "활성화하면 다운로드 기록 서비스가 해당 버전이 이미 다운로드되었음을 기록한 경우 LoRA Manager는 해당 모델 버전 다운로드를 건너뜁니다. 모든 다운로드 플로우에 적용됩니다."
+        },
         "layoutSettings": {
             "displayDensity": "표시 밀도",
             "displayDensityOptions": {
@@ -336,6 +434,8 @@
                 "hover": "호버 시 표시"
             },
             "cardInfoDisplayHelp": "모델 정보 및 액션 버튼을 언제 표시할지 선택하세요",
+            "showVersionOnCard": "카드에 버전 표시",
+            "showVersionOnCardHelp": "모델 카드에 버전 이름 표시 여부를 전환합니다",
             "modelCardFooterAction": "모델 카드 버튼 동작",
             "modelCardFooterActionOptions": {
                 "exampleImages": "예시 이미지 열기",
@@ -362,12 +462,16 @@
             "defaultUnetRootHelp": "다운로드, 가져오기 및 이동을 위한 기본 Diffusion Model (UNET) 루트 디렉토리를 설정합니다",
             "defaultEmbeddingRoot": "Embedding 루트",
             "defaultEmbeddingRootHelp": "다운로드, 가져오기 및 이동을 위한 기본 Embedding 루트 디렉토리를 설정합니다",
+            "recipesPath": "레시피 저장 경로",
+            "recipesPathHelp": "저장된 레시피를 위한 선택적 사용자 지정 디렉터리입니다. 비워 두면 첫 번째 LoRA 루트의 recipes 폴더를 사용합니다.",
+            "recipesPathPlaceholder": "/path/to/recipes",
+            "recipesPathMigrating": "레시피 저장 경로를 이동 중...",
             "noDefault": "기본값 없음"
         },
         "extraFolderPaths": {
             "title": "추가 폴다 경로",
-            "help": "ComfyUI의 표준 경로 외부에 추가 모델 폴드를 추가하세요. 이러한 경로는 별도로 저장되며 기본 폴와 함께 스캔됩니다.",
-            "description": "모델을 스캔하기 위한 추가 폴를 설정하세요. 이러한 경로는 LoRA Manager 특유의 것이며 ComfyUI의 기본 경로와 병합됩니다.",
+            "description": "LoRA Manager 전용 추가 모델 루트 경로입니다. ComfyUI의 표준 폴더 외부 위치에서 모델을 로드하여 대규모 라이브러리로 인한 성능 저하를 방지합니다.",
+            "restartRequired": "Requires restart to take effect",
             "modelTypes": {
                 "lora": "LoRA 경로",
                 "checkpoint": "Checkpoint 경로",
@@ -375,7 +479,7 @@
                 "embedding": "Embedding 경로"
             },
             "pathPlaceholder": "/추가/모델/경로",
-            "saveSuccess": "추가 폴다 경로가 업데이트되었습니다.",
+            "saveSuccess": "추가 폴다 경로가 업데이트되었습니다. 변경 사항을 적용하려면 재시작이 필요합니다.",
             "saveError": "추가 폴다 경로 업데이트 실패: {message}",
             "validation": {
                 "duplicatePath": "이 경로는 이미 구성되어 있습니다"
@@ -443,6 +547,21 @@
             "downloadLocationHelp": "Civitai의 예시 이미지가 저장될 폴더 경로를 입력하세요",
             "autoDownload": "예시 이미지 자동 다운로드",
             "autoDownloadHelp": "예시 이미지가 없는 모델의 예시 이미지를 자동으로 다운로드합니다 (다운로드 위치 설정 필요)",
+            "openMode": "예시 이미지 열기 동작",
+            "openModeHelp": "서버에서 열지, 매핑된 로컬 경로를 복사할지, 사용자 지정 URI를 실행할지 선택합니다.",
+            "openModeOptions": {
+                "system": "서버에서 열기",
+                "clipboard": "로컬 경로 복사",
+                "uriTemplate": "사용자 지정 URI 열기"
+            },
+            "localRoot": "로컬 예시 이미지 루트",
+            "localRootHelp": "서버 예시 이미지 디렉터리를 반영하는 선택적 로컬 또는 마운트된 루트입니다. 비워 두면 서버 경로를 재사용합니다.",
+            "localRootPlaceholder": "예: /Volumes/ComfyUI/example_images",
+            "uriTemplate": "URI 템플릿 열기",
+            "uriTemplateHelp": "파일 URI 또는 Shortcuts 링크 같은 사용자 지정 딥링크를 사용합니다.",
+            "uriTemplatePlaceholder": "예: shortcuts://run-shortcut?name=Open%20Finder&input=text&text={{encoded_local_path}}",
+            "uriTemplatePlaceholders": "사용 가능한 플레이스홀더: {{local_path}}, {{encoded_local_path}}, {{relative_path}}, {{encoded_relative_path}}, {{file_uri}}, {{encoded_file_uri}}",
+            "openModeWikiLink": "원격 열기 모드에 대해 자세히 알아보기",
             "optimizeImages": "다운로드된 이미지 최적화",
             "optimizeImagesHelp": "파일 크기를 줄이고 로딩 속도를 향상시키기 위해 예시 이미지를 최적화합니다 (메타데이터는 보존됨)",
             "download": "다운로드",
@@ -462,7 +581,13 @@
         },
         "misc": {
             "includeTriggerWords": "LoRA 문법에 트리거 단어 포함",
-            "includeTriggerWordsHelp": "LoRA 문법을 클립보드에 복사할 때 학습된 트리거 단어를 포함합니다"
+            "includeTriggerWordsHelp": "LoRA 문법을 클립보드에 복사할 때 학습된 트리거 단어를 포함합니다",
+            "loraSyntaxFormat": "LoRA 구문 형식",
+            "loraSyntaxFormatHelp": "LoRA 구문 형식. 전체 경로는 하위 폴더 경로(<lora:style/anime/x:1.0>)를 포함하여 손실 없는 모델 해상도를 제공합니다. 레거시는 파일 이름만(<lora:x:1.0>) 사용 — A1111 규칙이지만, 폴더 간 파일명 중복 시 모호할 수 있습니다.",
+            "loraSyntaxFormatOptions": {
+                "full": "전체 경로(하위 폴더/이름)",
+                "legacy": "레거시 A1111(이름만)"
+            }
         },
         "metadataArchive": {
             "enableArchiveDb": "메타데이터 아카이브 데이터베이스 활성화",
@@ -526,8 +651,6 @@
             },
             "refresh": {
                 "title": "모델 목록 새로고침",
-                "quick": "변경 사항 동기화",
-                "quickTooltip": "새로운 모델 파일이나 누락된 파일을 찾아 목록을 최신 상태로 유지합니다.",
                 "full": "캐시 재구성",
                 "fullTooltip": "메타데이터 파일에서 모든 모델 정보를 다시 불러옵니다. 라이브러리가 오래되어 보이거나 수동 수정 후에 사용하세요."
             },
@@ -568,15 +691,30 @@
             "setContentRating": "모든 모델에 콘텐츠 등급 설정",
             "copyAll": "모든 문법 복사",
             "refreshAll": "모든 메타데이터 새로고침",
+            "repairMetadata": "선택한 레시피 메타데이터 복구",
+            "reimportMetadata": "선택한 레시피 다시 가져오기",
             "checkUpdates": "선택 항목 업데이트 확인",
             "moveAll": "모두 폴더로 이동",
             "autoOrganize": "자동 정리 선택",
             "skipMetadataRefresh": "선택한 모델의 메타데이터 새로고침 건너뛰기",
             "resumeMetadataRefresh": "선택한 모델의 메타데이터 새로고침 재개",
-            "deleteAll": "모든 모델 삭제",
+            "setFavorite": "즐겨찾기로 설정",
+            "setFavoriteCount": "즐겨찾기로 설정 ({favorited}/{total})",
+            "unfavorite": "즐겨찾기 해제",
+            "deleteAll": "선택된 항목 삭제",
+            "downloadMissingLoras": "누락된 LoRA 다운로드",
+            "downloadExamples": "예시 이미지 다운로드",
             "clear": "선택 지우기",
             "skipMetadataRefreshCount": "건너뛰기（{count}개 모델）",
             "resumeMetadataRefreshCount": "재개（{count}개 모델）",
+            "sendToWorkflow": "워크플로우로 보내기",
+            "sections": {
+                "workflow": "워크플로우",
+                "metadata": "메타데이터",
+                "attributes": "속성",
+                "organize": "정리",
+                "download": "다운로드"
+            },
             "autoOrganizeProgress": {
                 "initializing": "자동 정리 초기화 중...",
                 "starting": "{type}에 대한 자동 정리 시작...",
@@ -602,7 +740,9 @@
             "setContentRating": "콘텐츠 등급 설정",
             "moveToFolder": "폴더로 이동",
             "repairMetadata": "메타데이터 복구",
+            "reimportMetadata": "소스에서 다시 가져오기",
             "excludeModel": "모델 제외",
+            "restoreModel": "모델 복원",
             "deleteModel": "모델 삭제",
             "shareRecipe": "레시피 공유",
             "viewAllLoras": "모든 LoRA 보기",
@@ -644,6 +784,8 @@
                 "root": "루트",
                 "browseFolders": "폴더 탐색:",
                 "downloadAndSaveRecipe": "다운로드 및 레시피 저장",
+                "importRecipeOnly": "레시피만 가져오기",
+                "importAndDownload": "가져오기 및 다운로드",
                 "downloadMissingLoras": "누락된 LoRA 다운로드",
                 "saveRecipe": "레시피 저장",
                 "loraCountInfo": "({existing}/{total} 라이브러리에 있음)",
@@ -686,8 +828,6 @@
             },
             "refresh": {
                 "title": "레시피 목록 새로고침",
-                "quick": "변경 사항 동기화",
-                "quickTooltip": "변경 사항 동기화 - 캐시를 재구성하지 않고 빠른 새로고침",
                 "full": "캐시 재구성",
                 "fullTooltip": "캐시 재구성 - 모든 레시피 파일을 완전히 다시 스캔"
             },
@@ -728,6 +868,71 @@
                 "skipped": "레시피가 이미 최신 버전입니다. 복구가 필요하지 않습니다",
                 "failed": "레시피 복구 실패: {message}",
                 "missingId": "레시피를 복구할 수 없음: 레시피 ID 누락"
+            },
+            "reimport": {
+                "starting": "소스에서 레시피를 다시 가져오는 중...",
+                "success": "레시피를 다시 가져왔습니다",
+                "noSourceUrl": "레시피에 소스 URL이 없어 다시 가져올 수 없습니다",
+                "failed": "레시피 다시 가져오기 실패: {message}",
+                "missingId": "레시피를 다시 가져올 수 없음: 레시피 ID 누락"
+            }
+        },
+        "batchImport": {
+            "title": "Batch Import Recipes",
+            "action": "Batch Import",
+            "urlList": "URL List",
+            "directory": "Directory",
+            "urlDescription": "Enter image URLs or local file paths (one per line). Each will be imported as a recipe.",
+            "directoryDescription": "Enter a directory path to import all images from that folder.",
+            "urlsLabel": "Image URLs or Local Paths",
+            "urlsPlaceholder": "https://civitai.com/images/...\nhttps://civitai.com/images/...\nC:/path/to/image.png\n...",
+            "urlsHint": "Enter one URL or path per line",
+            "directoryPath": "Directory Path",
+            "directoryPlaceholder": "/path/to/images/folder",
+            "browse": "Browse",
+            "recursive": "Include subdirectories",
+            "tagsOptional": "Tags (optional, applied to all recipes)",
+            "tagsPlaceholder": "Enter tags separated by commas",
+            "tagsHint": "Tags will be added to all imported recipes",
+            "skipNoMetadata": "Skip images without metadata",
+            "skipNoMetadataHelp": "Images without LoRA metadata will be skipped automatically.",
+            "start": "Start Import",
+            "startImport": "Start Import",
+            "importing": "Importing...",
+            "progress": "Progress",
+            "total": "Total",
+            "success": "Success",
+            "failed": "Failed",
+            "skipped": "Skipped",
+            "current": "Current",
+            "currentItem": "Current",
+            "preparing": "Preparing...",
+            "cancel": "Cancel",
+            "cancelImport": "Cancel",
+            "cancelled": "Import cancelled",
+            "completed": "Import completed",
+            "completedWithErrors": "Completed with errors",
+            "completedSuccess": "Successfully imported {count} recipe(s)",
+            "successCount": "Successful",
+            "failedCount": "Failed",
+            "skippedCount": "Skipped",
+            "totalProcessed": "Total processed",
+            "viewDetails": "View Details",
+            "newImport": "New Import",
+            "manualPathEntry": "Please enter the directory path manually. File browser is not available in this browser.",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "batchImportManualEntryRequired": "File browser not available. Please enter the directory path manually.",
+            "backToParent": "Back to parent directory",
+            "folders": "Folders",
+            "folderCount": "{count} folders",
+            "imageFiles": "Image Files",
+            "images": "images",
+            "imageCount": "{count} images",
+            "selectFolder": "Select This Folder",
+            "errors": {
+                "enterUrls": "Please enter at least one URL or path",
+                "enterDirectory": "Please enter a directory path",
+                "startFailed": "Failed to start import: {message}"
             }
         }
     },
@@ -738,7 +943,8 @@
             "diffusion_model": "Diffusion Model"
         },
         "contextMenu": {
-            "moveToOtherTypeFolder": "{otherType} 폴더로 이동"
+            "moveToOtherTypeFolder": "{otherType} 폴더로 이동",
+            "sendToWorkflow": "워크플로우로 전송"
         }
     },
     "embeddings": {
@@ -751,8 +957,8 @@
         "unpinSidebar": "사이드바 고정 해제",
         "switchToListView": "목록 보기로 전환",
         "switchToTreeView": "트리 보기로 전환",
-        "recursiveOn": "하위 폴더 검색",
-        "recursiveOff": "현재 폴더만 검색",
+        "recursiveOn": "하위 폴더 포함",
+        "recursiveOff": "현재 폴더만",
         "recursiveUnavailable": "재귀 검색은 트리 보기에서만 사용할 수 있습니다",
         "collapseAllDisabled": "목록 보기에서는 사용할 수 없습니다",
         "dragDrop": {
@@ -768,6 +974,13 @@
         "empty": {
             "noFolders": "폴더를 찾을 수 없습니다",
             "dragHint": "항목을 여기로 드래그하여 폴더를 만듭니다"
+        },
+        "folderUpdateCheck": {
+            "label": "이 폴더의 업데이트 확인",
+            "loading": "이 폴더의 {type} 업데이트를 확인하는 중...",
+            "success": "이 폴더에서 {type}s에 대한 {count}개 업데이트를 찾았습니다",
+            "none": "이 폴더의 모든 {type}s가 최신 상태입니다",
+            "error": "폴더의 {type} 업데이트 확인 실패: {message}"
         }
     },
     "statistics": {
@@ -812,9 +1025,9 @@
         "download": {
             "title": "URL에서 모델 다운로드",
             "titleWithType": "URL에서 {type} 다운로드",
-            "url": "Civitai URL",
             "civitaiUrl": "Civitai URL:",
             "placeholder": "https://civitai.com/models/...",
+            "urlHint": "한 줄에 하나의 CivitAI 또는 CivArchive URL을 입력하세요. 여러 URL을 일괄 다운로드할 수 있습니다.",
             "locationPreview": "다운로드 위치 미리보기",
             "useDefaultPath": "기본 경로 사용",
             "useDefaultPathTooltip": "활성화하면 구성된 경로 템플릿을 사용하여 파일이 자동으로 정리됩니다",
@@ -832,8 +1045,15 @@
             "earlyAccess": "얼리 액세스",
             "earlyAccessTooltip": "얼리 액세스 필요",
             "inLibrary": "라이브러리에 있음",
+            "downloaded": "다운로드됨",
+            "downloadedTooltip": "이전에 다운로드했지만 현재 라이브러리에 없습니다.",
             "alreadyInLibrary": "이미 라이브러리에 있음",
             "autoOrganizedPath": "[경로 템플릿으로 자동 정리됨]",
+            "fileSelection": {
+                "title": "파일 형식 선택",
+                "files": "개 파일",
+                "select": "파일 선택"
+            },
             "errors": {
                 "invalidUrl": "잘못된 Civitai URL 형식",
                 "noVersions": "이 모델에 사용 가능한 버전이 없습니다"
@@ -898,6 +1118,12 @@
             "countMessage": "개의 모델이 영구적으로 삭제됩니다.",
             "action": "모두 삭제"
         },
+        "bulkDeleteRecipes": {
+            "title": "여러 레시피 삭제",
+            "message": "선택된 모든 레시피와 관련 파일을 삭제하시겠습니까?",
+            "countMessage": "개의 레시피가 영구적으로 삭제됩니다.",
+            "action": "모두 삭제"
+        },
         "checkUpdates": {
             "title": "{type} 전체 업데이트를 확인할까요?",
             "message": "라이브러리에 있는 모든 {type}의 업데이트를 확인합니다. 컬렉션이 클수록 시간이 조금 더 걸릴 수 있습니다.",
@@ -921,6 +1147,14 @@
             "selectBaseModel": "베이스 모델 선택",
             "save": "베이스 모델 업데이트",
             "cancel": "취소"
+        },
+        "bulkDownloadMissingLoras": {
+            "title": "누락된 LoRA 다운로드",
+            "message": "선택한 레시피에서 총 {totalCount}개 중 {uniqueCount}개의 고유한 누락된 LoRA를 찾았습니다.",
+            "previewTitle": "다운로드할 LoRA:",
+            "moreItems": "...그리고 {count}개 더",
+            "note": "파일은 기본 경로 템플릿을 사용하여 다운로드됩니다. LoRA의 수에 따라 다소 시간이 걸릴 수 있습니다.",
+            "downloadButton": "{count}개 LoRA 다운로드"
         },
         "exampleAccess": {
             "title": "로컬 예시 이미지",
@@ -970,16 +1204,22 @@
                 "editModelName": "모델명 편집",
                 "editFileName": "파일명 편집",
                 "editBaseModel": "베이스 모델 편집",
+                "editVersionName": "버전명 편집",
                 "viewOnCivitai": "Civitai에서 보기",
                 "viewOnCivitaiText": "Civitai에서 보기",
                 "viewCreatorProfile": "제작자 프로필 보기",
-                "openFileLocation": "파일 위치 열기"
+                "openFileLocation": "파일 위치 열기",
+                "sendToWorkflow": "ComfyUI로 보내기",
+                "sendToWorkflowText": "ComfyUI로 보내기"
             },
             "openFileLocation": {
                 "success": "파일 위치가 성공적으로 열렸습니다",
                 "failed": "파일 위치 열기에 실패했습니다",
                 "copied": "경로가 클립보드에 복사되었습니다: {{path}}",
                 "clipboardFallback": "경로: {{path}}"
+            },
+            "sendToWorkflow": {
+                "noFilePath": "ComfyUI로 보낼 수 없습니다: 파일 경로가 없습니다"
             },
             "metadata": {
                 "version": "버전",
@@ -996,7 +1236,9 @@
             },
             "notes": {
                 "saved": "메모가 성공적으로 저장됨",
-                "saveFailed": "메모 저장 실패"
+                "saveFailed": "메모 저장 실패",
+                "showMore": "더 보기",
+                "showLess": "접기"
             },
             "usageTips": {
                 "addPresetParameter": "프리셋 매개변수 추가...",
@@ -1017,6 +1259,8 @@
                 "cancel": "편집 취소",
                 "save": "변경사항 저장",
                 "addPlaceholder": "입력하거나 아래 제안을 클릭하세요",
+                "editWord": "트리거 단어 편집",
+                "editPlaceholder": "트리거 단어 편집",
                 "copyWord": "트리거 단어 복사",
                 "deleteWord": "트리거 단어 삭제",
                 "suggestions": {
@@ -1088,17 +1332,33 @@
                     "days": "{count}일 후"
                 },
                 "badges": {
-                    "current": "현재 버전",
+                    "current": "열린 버전",
+                    "currentTooltip": "이 모달을 열 때 사용한 버전입니다",
                     "inLibrary": "라이브러리에 있음",
+                    "inLibraryTooltip": "이 버전은 로컬 라이브러리에 있습니다",
+                    "downloaded": "다운로드됨",
+                    "downloadedTooltip": "이 버전은 이전에 다운로드되었지만 현재는 라이브러리에 없습니다",
                     "newer": "최신 버전",
+                    "newerTooltip": "이 버전은 로컬의 최신 버전보다 더 새롭습니다",
                     "earlyAccess": "얼리 액세스",
-                    "ignored": "무시됨"
+                    "earlyAccessTooltip": "이 버전은 현재 Civitai 얼리 액세스가 필요합니다",
+                    "ignored": "무시됨",
+                    "ignoredTooltip": "이 버전은 업데이트 알림이 비활성화되어 있습니다",
+                    "onSiteOnly": "사이트 내 전용",
+                    "onSiteOnlyTooltip": "이 버전은 Civitai 사이트 내에서만 사용 가능하며 다운로드할 수 없습니다"
                 },
                 "actions": {
                     "download": "다운로드",
+                    "downloadTooltip": "이 버전 다운로드",
+                    "downloadEarlyAccessTooltip": "Civitai에서 이 얼리 액세스 버전 다운로드",
+                    "downloadNotAllowedTooltip": "이 버전은 Civitai 사이트 내에서만 사용 가능하며 다운로드할 수 없습니다",
                     "delete": "삭제",
+                    "deleteTooltip": "이 로컬 버전 삭제",
                     "ignore": "무시",
                     "unignore": "무시 해제",
+                    "ignoreTooltip": "이 버전의 업데이트 알림 무시",
+                    "unignoreTooltip": "이 버전의 업데이트 알림 다시 받기",
+                    "viewVersionOnCivitai": "Civitai에서 버전 보기",
                     "earlyAccessTooltip": "얼리 액세스 구매 필요",
                     "resumeModelUpdates": "이 모델 업데이트 재개",
                     "ignoreModelUpdates": "이 모델 업데이트 무시",
@@ -1238,7 +1498,9 @@
             "recipeReplaced": "레시피가 워크플로에서 교체되었습니다",
             "recipeFailedToSend": "레시피를 워크플로로 전송하지 못했습니다",
             "noMatchingNodes": "현재 워크플로에서 호환되는 노드가 없습니다",
-            "noTargetNodeSelected": "대상 노드가 선택되지 않았습니다"
+            "noTargetNodeSelected": "대상 노드가 선택되지 않았습니다",
+            "modelUpdated": "모델이 워크플로에서 업데이트되었습니다",
+            "modelFailed": "모델 노드 업데이트 실패"
         },
         "nodeSelector": {
             "recipe": "레시피",
@@ -1252,6 +1514,10 @@
             "opened": "예시 이미지 폴더가 열렸습니다",
             "openingFolder": "예시 이미지 폴더를 여는 중",
             "failedToOpen": "예시 이미지 폴더 열기 실패",
+            "copiedPath": "경로를 클립보드에 복사했습니다: {{path}}",
+            "clipboardFallback": "경로: {{path}}",
+            "copiedUri": "링크를 클립보드에 복사했습니다: {{uri}}",
+            "uriClipboardFallback": "링크: {{uri}}",
             "setupRequired": "예시 이미지 저장소",
             "setupDescription": "사용자 지정 예시 이미지를 추가하려면 먼저 다운로드 위치를 설정해야 합니다.",
             "setupUsage": "이 경로는 다운로드한 예시 이미지와 사용자 지정 이미지 모두에 사용됩니다.",
@@ -1389,6 +1655,7 @@
             "pleaseSelectVersion": "버전을 선택해주세요",
             "versionExists": "이 버전은 이미 라이브러리에 있습니다",
             "downloadCompleted": "다운로드가 성공적으로 완료되었습니다",
+            "downloadSkippedByBaseModel": "기본 모델 {baseModel}이(가) 제외되어 다운로드를 건너뛰었습니다",
             "autoOrganizeSuccess": "{count}개의 {type}에 대해 자동 정리가 성공적으로 완료되었습니다",
             "autoOrganizePartialSuccess": "자동 정리 완료: 전체 {total}개 중 {success}개 이동, {failures}개 실패",
             "autoOrganizeFailed": "자동 정리 실패: {error}",
@@ -1408,8 +1675,16 @@
             "nameUpdated": "레시피 이름이 성공적으로 업데이트되었습니다",
             "tagsUpdated": "레시피 태그가 성공적으로 업데이트되었습니다",
             "sourceUrlUpdated": "소스 URL이 성공적으로 업데이트되었습니다",
+            "promptUpdated": "프롬프트가 성공적으로 업데이트되었습니다",
+            "negativePromptUpdated": "네거티브 프롬프트가 성공적으로 업데이트되었습니다",
+            "promptEditorHint": "Enter 키를 눌러 저장, Shift+Enter로 새 줄",
             "noRecipeId": "사용 가능한 레시피 ID가 없습니다",
+            "sendToWorkflowFailed": "워크플로우에 레시피 보내기 실패: {message}",
             "copyFailed": "레시피 문법 복사 오류: {message}",
+            "createError": "레시피 생성 중 오류 발생：{message}",
+            "createFailed": "레시피 생성 실패：{error}",
+            "createMissingData": "레시피 생성에 필요한 데이터가 없습니다",
+            "created": "레시피가 생성되었습니다",
             "noMissingLoras": "다운로드할 누락된 LoRA가 없습니다",
             "missingLorasInfoFailed": "누락된 LoRA 정보를 가져오는데 실패했습니다",
             "preparingForDownloadFailed": "LoRA 다운로드 준비 오류",
@@ -1436,9 +1711,27 @@
             "processingError": "처리 오류: {message}",
             "folderBrowserError": "폴더 브라우저 로딩 오류: {message}",
             "recipeSaveFailed": "레시피 저장 실패: {error}",
+            "recipeSaved": "Recipe saved successfully",
             "importFailed": "가져오기 실패: {message}",
             "folderTreeFailed": "폴더 트리 로딩 실패",
-            "folderTreeError": "폴더 트리 로딩 오류"
+            "folderTreeError": "폴더 트리 로딩 오류",
+            "batchImportFailed": "Failed to start batch import: {message}",
+            "batchImportCancelling": "Cancelling batch import...",
+            "batchImportCancelFailed": "Failed to cancel batch import: {message}",
+            "batchImportNoUrls": "Please enter at least one URL or file path",
+            "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportBrowseFailed": "Failed to browse directory: {message}",
+            "batchImportDirectorySelected": "Directory selected: {path}",
+            "noRecipesSelected": "선택한 레시피가 없습니다",
+            "repairBulkComplete": "복구 완료: {repaired}개 복구, {skipped}개 건너뜀 (총 {total}개)",
+            "repairBulkSkipped": "선택한 {total}개 레시피는 복구가 필요하지 않습니다",
+            "repairBulkFailed": "선택한 레시피 복구 실패: {message}",
+            "reimporting": "소스에서 레시피를 다시 가져오는 중...",
+            "reimportSuccess": "레시피를 다시 가져왔습니다",
+            "reimportBulkComplete": "다시 가져오기 완료: {completed}개 성공, {failed}개 실패 (총 {total}개)",
+            "reimportBulkFailed": "일부 레시피를 다시 가져오지 못했습니다",
+            "noMissingLorasInSelection": "선택한 레시피에서 누락된 LoRA를 찾을 수 없습니다",
+            "noLoraRootConfigured": "LoRA 루트 디렉토리가 구성되지 않았습니다. 설정에서 기본 LoRA 루트를 설정하세요."
         },
         "models": {
             "noModelsSelected": "선택된 모델이 없습니다",
@@ -1467,6 +1760,11 @@
             "bulkContentRatingSet": "{count}개 모델의 콘텐츠 등급을 {level}(으)로 설정했습니다",
             "bulkContentRatingPartial": "{success}개 모델의 콘텐츠 등급을 {level}(으)로 설정했고, {failed}개는 실패했습니다",
             "bulkContentRatingFailed": "선택한 모델의 콘텐츠 등급을 업데이트하지 못했습니다",
+            "bulkFavoriteUpdating": "{count}개 모델을 즐겨찾기에 추가 중...",
+            "bulkUnfavoriteUpdating": "{count}개 모델을 즐겨찾기에서 제거 중...",
+            "bulkFavoritePartialAdded": "{success}개 모델을 즐겨찾기에 추가, {failed}개 실패",
+            "bulkFavoritePartialRemoved": "{success}개 모델을 즐겨찾기에서 제거, {failed}개 실패",
+            "bulkFavoriteFailed": "즐겨찾기 상태 업데이트 실패",
             "bulkUpdatesChecking": "선택한 {type}의 업데이트를 확인하는 중...",
             "bulkUpdatesSuccess": "선택한 {count}개의 {type}에 사용할 수 있는 업데이트가 있습니다",
             "bulkUpdatesNone": "선택한 {type}에 대한 업데이트가 없습니다",
@@ -1505,6 +1803,8 @@
             "mappingSaveFailed": "베이스 모델 매핑 저장 실패: {message}",
             "downloadTemplatesUpdated": "다운로드 경로 템플릿이 업데이트되었습니다",
             "downloadTemplatesFailed": "다운로드 경로 템플릿 저장 실패: {message}",
+            "recipesPathUpdated": "레시피 저장 경로가 업데이트되었습니다",
+            "recipesPathSaveFailed": "레시피 저장 경로 업데이트 실패: {message}",
             "settingsUpdated": "설정 업데이트됨: {setting}",
             "compactModeToggled": "컴팩트 모드 {state}",
             "settingSaveFailed": "설정 저장 실패: {message}",
@@ -1555,8 +1855,8 @@
         },
         "triggerWords": {
             "loadFailed": "학습된 단어를 로딩할 수 없습니다",
-            "tooLong": "트리거 단어는 100단어를 초과할 수 없습니다",
-            "tooMany": "최대 30개의 트리거 단어만 허용됩니다",
+            "tooLong": "트리거 단어는 500단어를 초과할 수 없습니다",
+            "tooMany": "최대 100개의 트리거 단어만 허용됩니다",
             "alreadyExists": "이 트리거 단어는 이미 존재합니다",
             "updateSuccess": "트리거 단어가 성공적으로 업데이트되었습니다",
             "updateFailed": "트리거 단어 업데이트에 실패했습니다",
@@ -1617,6 +1917,8 @@
             "deleteFailed": "{type} 삭제 실패: {message}",
             "excludeSuccess": "{type}이(가) 성공적으로 제외되었습니다",
             "excludeFailed": "{type} 제외 실패: {message}",
+            "restoreSuccess": "{type} 복원 완료",
+            "restoreFailed": "{type} 복원 실패: {message}",
             "fileNameUpdated": "파일명이 성공적으로 업데이트되었습니다",
             "fileRenameFailed": "파일 이름 변경 실패: {error}",
             "previewUpdated": "미리보기가 성공적으로 업데이트되었습니다",
@@ -1647,6 +1949,69 @@
             "exampleImagesDownloadFailed": "예시 이미지 다운로드 실패: {message}",
             "moveFailed": "Failed to move item: {message}"
         }
+    },
+    "doctor": {
+        "kicker": "시스템 진단",
+        "title": "닥터",
+        "buttonTitle": "진단 및 일반적인 수정 실행",
+        "loading": "환경을 확인하는 중...",
+        "footer": "수리 후에도 문제가 계속되면 진단 번들을 내보내세요.",
+        "summary": {
+            "idle": "설정, 캐시 무결성, UI 일관성에 대한 상태 검사를 실행합니다.",
+            "ok": "현재 환경에서 활성 문제를 찾지 못했습니다.",
+            "warning": "{count}개의 문제가 발견되었습니다. 대부분은 이 패널에서 바로 해결할 수 있습니다.",
+            "error": "앱이 완전히 정상 상태가 되기 전에 {count}개의 문제를 처리해야 합니다."
+        },
+        "status": {
+            "ok": "정상",
+            "warning": "주의 필요",
+            "error": "조치 필요"
+        },
+        "issues": {
+            "civitai_api_key": {
+                "title": "Civitai API 키"
+            },
+            "cache_health": {
+                "title": "모델 캐시 상태"
+            },
+            "filename_conflicts": {
+                "title": "파일명 중복 충돌"
+            },
+            "ui_version": {
+                "title": "UI 버전"
+            }
+        },
+        "actions": {
+            "runAgain": "다시 실행",
+            "exportBundle": "번들 내보내기",
+            "open-settings": "설정 열기",
+            "open-settings-syntax-format": "전체 경로 구문으로 전환",
+            "repair-cache": "캐시 재구축",
+            "resolve-filename-conflicts": "충돌 해결",
+            "reload-page": "UI 새로고침"
+        },
+        "labels": {
+            "conflicts": "충돌",
+            "version": "버전"
+        },
+        "toast": {
+            "loadFailed": "진단 로드 실패: {message}",
+            "repairSuccess": "캐시 재구성이 완료되었습니다.",
+            "repairFailed": "캐시 재구성 실패: {message}",
+            "exportSuccess": "진단 번들이 내보내졌습니다.",
+            "exportFailed": "진단 번들 내보내기 실패: {message}",
+            "conflictsResolved": "{count}개 파일명 충돌이 해결되었습니다.",
+            "conflictsResolveFailed": "파일명 충돌 해결 실패: {message}"
+        }
+    },
+    "conflictConfirm": {
+        "title": "파일명 충돌 해결",
+        "message": "중복 파일명에 4자리 해시를 추가하여 이름을 변경합니다.",
+        "note": "이 작업은 디스크에 있는 파일의 이름을 변경합니다. A1111 구문 형식을 사용하는 경우 기존 워크플로우의 모델 참조를 업데이트해야 할 수 있습니다.",
+        "detail": "예시: <code>filename_v1.2</code> → <code>filename_v1.2-ab3c</code>",
+        "impact": "<strong>{groups}</strong>개 중복 그룹에서 <strong>{count}</strong>개 파일 이름을 변경합니다",
+        "confirm": "파일 이름 변경",
+        "cancel": "취소"
     },
     "banners": {
         "versionMismatch": {
