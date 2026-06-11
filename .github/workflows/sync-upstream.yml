@@ -37,7 +37,16 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git merge --ff-only upstream/main
+          # Real merge (not --ff-only): the fork carries its own commits
+          # (Docker/CI), so history is permanently diverged and a fast-forward
+          # is impossible. A merge preserves the fork commits and joins upstream
+          # via a merge commit. On conflict, abort and fail WITHOUT pushing so a
+          # broken tree can never land on main.
+          git merge --no-edit upstream/main || {
+            echo "::error::Conflict while merging upstream/main. Aborting; resolve manually."
+            git merge --abort
+            exit 1
+          }
 
       - name: Push
         if: steps.check.outputs.behind != '0'
