@@ -113,6 +113,7 @@
             "replacePreview": "Remplacer l'aperçu",
             "copyCheckpointName": "Copier le nom du checkpoint",
             "copyEmbeddingName": "Copier le nom de l'embedding",
+            "embeddingNameCopied": "Syntaxe dembedding copiée",
             "sendCheckpointToWorkflow": "Envoyer vers ComfyUI",
             "sendEmbeddingToWorkflow": "Envoyer vers ComfyUI"
         },
@@ -695,7 +696,7 @@
             "copyAll": "Copier toute la syntaxe",
             "refreshAll": "Actualiser toutes les métadonnées",
             "repairMetadata": "Réparer les métadonnées de la sélection",
-            "reimportMetadata": "Ré-importer les métadonnées de la sélection",
+            "reimportMetadata": "Ré-importer depuis la source",
             "checkUpdates": "Vérifier les mises à jour pour la sélection",
             "moveAll": "Déplacer tout vers un dossier",
             "autoOrganize": "Auto-organiser la sélection",
@@ -1503,11 +1504,14 @@
             "noMatchingNodes": "Aucun nœud compatible disponible dans le workflow actuel",
             "noTargetNodeSelected": "Aucun nœud cible sélectionné",
             "modelUpdated": "Modèle mis à jour dans le workflow",
-            "modelFailed": "Échec de la mise à jour du nœud modèle"
+            "modelFailed": "Échec de la mise à jour du nœud modèle",
+            "embeddingAdded": "Embedding ajouté au workflow",
+            "embeddingFailed": "Échec de l'ajout de l'embedding"
         },
         "nodeSelector": {
             "recipe": "Recipe",
             "lora": "LoRA",
+            "embedding": "Embedding",
             "replace": "Remplacer",
             "append": "Ajouter",
             "selectTargetNode": "Sélectionner le nœud cible",

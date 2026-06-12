@@ -1,7 +1,6 @@
 import os
 import logging
 import toml
-import git
 import zipfile
 import shutil
 import tempfile
@@ -225,7 +224,7 @@ class UpdateRoutes:
                 logger.debug("Could not close downloaded-version history database", exc_info=True)
 
             # Skip settings.json, civitai, model cache and runtime cache folders
-            UpdateRoutes._clean_plugin_folder(plugin_root, skip_files=['settings.json', 'civitai', 'model_cache', 'cache', 'wildcards', 'backups'])
+            UpdateRoutes._clean_plugin_folder(plugin_root, skip_files=['settings.json', 'civitai', 'model_cache', 'cache', 'wildcards', 'backups', 'stats'])
 
             # Extract ZIP to temp dir
             with tempfile.TemporaryDirectory() as tmp_dir:
@@ -235,7 +234,7 @@ class UpdateRoutes:
                     extracted_root = next(os.scandir(tmp_dir)).path
 
                     # Copy files, skipping user data that should be preserved
-                    skip_items = {'settings.json', 'civitai', 'wildcards', 'backups'}
+                    skip_items = {'settings.json', 'civitai', 'wildcards', 'backups', 'stats'}
                     for item in os.listdir(extracted_root):
                         if item in skip_items:
                             continue
@@ -252,7 +251,7 @@ class UpdateRoutes:
                     # for ComfyUI Manager to work properly
                     tracking_info_file = os.path.join(plugin_root, '.tracking')
                     tracking_files = []
-                    skip_tracked = {'civitai', 'wildcards', 'backups'}
+                    skip_tracked = {'civitai', 'wildcards', 'backups', 'stats'}
                     for root, dirs, files in os.walk(extracted_root):
                         # Skip user data directories and their contents
                         rel_root = os.path.relpath(root, extracted_root)
@@ -358,6 +357,15 @@ class UpdateRoutes:
             tuple: (success, new_version)
         """
         try:
+            import git
+        except ImportError:
+            logger.error(
+                "GitPython is not available: the git executable was not found in PATH. "
+                "Install git or set $GIT_PYTHON_GIT_EXECUTABLE to the git binary path."
+            )
+            return False, ""
+
+        try:
             # Open the Git repository
             repo = git.Repo(plugin_root)
             
@@ -453,6 +461,7 @@ class UpdateRoutes:
             if not os.path.exists(os.path.join(plugin_root, '.git')):
                 return git_info
 
+            import git
             repo = git.Repo(plugin_root)
             commit = repo.head.commit
             git_info['commit_hash'] = commit.hexsha

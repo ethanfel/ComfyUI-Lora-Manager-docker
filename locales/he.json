@@ -113,6 +113,7 @@
             "replacePreview": "החלף תצוגה מקדימה",
             "copyCheckpointName": "העתק שם Checkpoint",
             "copyEmbeddingName": "העתק שם Embedding",
+            "embeddingNameCopied": "תחביר Embedding הועתק",
             "sendCheckpointToWorkflow": "שלח ל-ComfyUI",
             "sendEmbeddingToWorkflow": "שלח ל-ComfyUI"
         },
@@ -695,7 +696,7 @@
             "copyAll": "העתק את כל התחבירים",
             "refreshAll": "רענן את כל המטא-דאטה",
             "repairMetadata": "תקן מטא-דאטה עבור הנבחרים",
-            "reimportMetadata": "ייבא מחדש מטא-דאטה עבור הנבחרים",
+            "reimportMetadata": "ייבא מחדש ממקור",
             "checkUpdates": "בדוק עדכונים לבחירה",
             "moveAll": "העבר הכל לתיקייה",
             "autoOrganize": "ארגן אוטומטית נבחרים",
@@ -1503,11 +1504,14 @@
             "noMatchingNodes": "אין צמתים תואמים זמינים ב-workflow הנוכחי",
             "noTargetNodeSelected": "לא נבחר צומת יעד",
             "modelUpdated": "מודל עודכן ב-workflow",
-            "modelFailed": "עדכון צומת המודל נכשל"
+            "modelFailed": "עדכון צומת המודל נכשל",
+            "embeddingAdded": "Embedding נוסף ל-workflow",
+            "embeddingFailed": "הוספת Embedding נכשלה"
         },
         "nodeSelector": {
             "recipe": "מתכון",
             "lora": "LoRA",
+            "embedding": "Embedding",
             "replace": "החלף",
             "append": "הוסף",
             "selectTargetNode": "בחר צומת יעד",

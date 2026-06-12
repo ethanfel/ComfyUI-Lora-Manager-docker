@@ -113,6 +113,7 @@
             "replacePreview": "Replace Preview",
             "copyCheckpointName": "Copy checkpoint name",
             "copyEmbeddingName": "Copy embedding name",
+            "embeddingNameCopied": "Embedding syntax copied",
             "sendCheckpointToWorkflow": "Send to ComfyUI",
             "sendEmbeddingToWorkflow": "Send to ComfyUI"
         },
@@ -695,7 +696,7 @@
             "copyAll": "Copy Selected Syntax",
             "refreshAll": "Refresh Selected Metadata",
             "repairMetadata": "Repair Metadata for Selected",
-            "reimportMetadata": "Re-import Metadata for Selected",
+            "reimportMetadata": "Re-import from Source",
             "checkUpdates": "Check Updates for Selected",
             "moveAll": "Move Selected to Folder",
             "autoOrganize": "Auto-Organize Selected",
@@ -1503,11 +1504,14 @@
             "noMatchingNodes": "No compatible nodes available in the current workflow",
             "noTargetNodeSelected": "No target node selected",
             "modelUpdated": "Model updated in workflow",
-            "modelFailed": "Failed to update model node"
+            "modelFailed": "Failed to update model node",
+            "embeddingAdded": "Embedding added to workflow",
+            "embeddingFailed": "Failed to add embedding"
         },
         "nodeSelector": {
             "recipe": "Recipe",
             "lora": "LoRA",
+            "embedding": "Embedding",
             "replace": "Replace",
             "append": "Append",
             "selectTargetNode": "Select target node",
