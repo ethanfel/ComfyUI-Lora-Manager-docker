@@ -451,7 +451,9 @@
                 "modelName": "模型名称",
                 "fileName": "文件名"
             },
-            "modelNameDisplayHelp": "选择在模型卡片底部显示的内容"
+            "modelNameDisplayHelp": "选择在模型卡片底部显示的内容",
+            "cardBlurAmount": "卡片叠加模糊强度",
+            "cardBlurAmountHelp": "调整模型和配方卡片上页眉和页脚叠加层的模糊强度（0 = 无模糊，20 = 最大模糊）。"
         },
         "folderSettings": {
             "activeLibrary": "活动库",
@@ -956,9 +958,13 @@
     },
     "sidebar": {
         "modelRoot": "根目录",
+        "moreOptions": "更多选项",
         "collapseAll": "折叠所有文件夹",
         "pinSidebar": "固定侧边栏",
         "unpinSidebar": "取消固定侧边栏",
+        "hideOnThisPage": "隐藏此页面侧边栏",
+        "showSidebar": "显示侧边栏",
+        "sidebarHiddenNotification": "{page}页面的文件夹侧边栏已隐藏",
         "switchToListView": "切换到列表视图",
         "switchToTreeView": "切换到树状视图",
         "recursiveOn": "包含子文件夹",

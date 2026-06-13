@@ -451,7 +451,9 @@
                 "modelName": "Modellname",
                 "fileName": "Dateiname"
             },
-            "modelNameDisplayHelp": "Wählen Sie aus, was in der Fußzeile der Modellkarte angezeigt werden soll"
+            "modelNameDisplayHelp": "Wählen Sie aus, was in der Fußzeile der Modellkarte angezeigt werden soll",
+            "cardBlurAmount": "Karten-Overlay-Unschärfe",
+            "cardBlurAmountHelp": "Passen Sie die Unschärfeintensität der Kopf- und Fußzeilen-Overlays auf Modell- und Rezeptkarten an (0 = keine Unschärfe, 20 = maximale Unschärfe)."
         },
         "folderSettings": {
             "activeLibrary": "Aktive Bibliothek",
@@ -956,9 +958,13 @@
     },
     "sidebar": {
         "modelRoot": "Stammverzeichnis",
+        "moreOptions": "Weitere Optionen",
         "collapseAll": "Alle Ordner einklappen",
         "pinSidebar": "Sidebar anheften",
         "unpinSidebar": "Sidebar lösen",
+        "hideOnThisPage": "Seitenleiste auf dieser Seite ausblenden",
+        "showSidebar": "Seitenleiste anzeigen",
+        "sidebarHiddenNotification": "Seitenleiste auf der Seite {page} ausgeblendet",
         "switchToListView": "Zur Listenansicht wechseln",
         "switchToTreeView": "Zur Baumansicht wechseln",
         "recursiveOn": "Unterordner einbeziehen",

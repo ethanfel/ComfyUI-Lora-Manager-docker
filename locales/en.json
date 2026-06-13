@@ -451,7 +451,9 @@
                 "modelName": "Model Name",
                 "fileName": "File Name"
             },
-            "modelNameDisplayHelp": "Choose what to display in the model card footer"
+            "modelNameDisplayHelp": "Choose what to display in the model card footer",
+            "cardBlurAmount": "Card Overlay Blur",
+            "cardBlurAmountHelp": "Adjust the blur intensity of the header and footer overlays on model and recipe cards (0 = no blur, 20 = maximum blur)."
         },
         "folderSettings": {
             "activeLibrary": "Active Library",
@@ -956,9 +958,13 @@
     },
     "sidebar": {
         "modelRoot": "Root",
+        "moreOptions": "More options",
         "collapseAll": "Collapse All Folders",
         "pinSidebar": "Pin Sidebar",
         "unpinSidebar": "Unpin Sidebar",
+        "hideOnThisPage": "Hide sidebar on this page",
+        "showSidebar": "Show sidebar",
+        "sidebarHiddenNotification": "Folder sidebar hidden on {page} page",
         "switchToListView": "Switch to List View",
         "switchToTreeView": "Switch to Tree View",
         "recursiveOn": "Include subfolders",

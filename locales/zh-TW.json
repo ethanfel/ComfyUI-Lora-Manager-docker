@@ -451,7 +451,9 @@
                 "modelName": "模型名稱",
                 "fileName": "檔案名稱"
             },
-            "modelNameDisplayHelp": "選擇在模型卡片底部顯示的內容"
+            "modelNameDisplayHelp": "選擇在模型卡片底部顯示的內容",
+            "cardBlurAmount": "卡片疊加模糊強度",
+            "cardBlurAmountHelp": "調整模型和配方卡片上頁首和頁尾疊加層的模糊強度（0 = 無模糊，20 = 最大模糊）。"
         },
         "folderSettings": {
             "activeLibrary": "使用中的資料庫",
@@ -956,9 +958,13 @@
     },
     "sidebar": {
         "modelRoot": "根目錄",
+        "moreOptions": "更多選項",
         "collapseAll": "全部摺疊資料夾",
         "pinSidebar": "固定側邊欄",
         "unpinSidebar": "取消固定側邊欄",
+        "hideOnThisPage": "隱藏此頁面側邊欄",
+        "showSidebar": "顯示側邊欄",
+        "sidebarHiddenNotification": "{page}頁面的資料夾側邊欄已隱藏",
         "switchToListView": "切換至列表檢視",
         "switchToTreeView": "切換到樹狀檢視",
         "recursiveOn": "包含子資料夾",

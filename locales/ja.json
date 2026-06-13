@@ -451,7 +451,9 @@
                 "modelName": "モデル名",
                 "fileName": "ファイル名"
             },
-            "modelNameDisplayHelp": "モデルカードのフッターに表示する内容を選択"
+            "modelNameDisplayHelp": "モデルカードのフッターに表示する内容を選択",
+            "cardBlurAmount": "カードオーバーレイのぼかし",
+            "cardBlurAmountHelp": "モデルカードとレシピカードのヘッダー・フッターオーバーレイのぼかし強度を調整します（0 = ぼかしなし、20 = 最大ぼかし）。"
         },
         "folderSettings": {
             "activeLibrary": "アクティブライブラリ",
@@ -956,9 +958,13 @@
     },
     "sidebar": {
         "modelRoot": "ルート",
+        "moreOptions": "その他のオプション",
         "collapseAll": "すべてのフォルダを折りたたむ",
         "pinSidebar": "サイドバーを固定",
         "unpinSidebar": "サイドバーの固定を解除",
+        "hideOnThisPage": "このページでサイドバーを非表示",
+        "showSidebar": "サイドバーを表示",
+        "sidebarHiddenNotification": "{page}ページでサイドバーが非表示になっています",
         "switchToListView": "リストビューに切り替え",
         "switchToTreeView": "ツリー表示に切り替え",
         "recursiveOn": "サブフォルダーを含める",
