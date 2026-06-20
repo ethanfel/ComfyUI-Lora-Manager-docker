@@ -89,6 +89,23 @@ def test_filter_excludes_author_case_insensitive():
     assert result[0]["id"] == 4
 
 
+def test_filter_handles_non_string_username_and_prompt():
+    """CivitAI sometimes returns numeric username/prompt; filtering must not crash.
+
+    Regression for AttributeError: 'int' object has no attribute 'lower'.
+    """
+    items = [
+        _make_image_item(image_id=1, username=12345),       # int username
+        _make_image_item(image_id=2, username="community_user"),
+        _make_image_item(image_id=3, username="x", prompt=42),  # int prompt -> too short, filtered
+    ]
+    # int author_username must also be coerced, not crash
+    result = filter_community_images(items, 999, model_name="Test")
+    ids = {r["id"] for r in result}
+    assert 1 in ids and 2 in ids
+    assert 3 not in ids
+
+
 def test_filter_excludes_missing_prompt():
     """Images without meta, with meta=None, or with empty meta should be excluded."""
     items = [

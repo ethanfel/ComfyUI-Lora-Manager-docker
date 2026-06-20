@@ -42,7 +42,7 @@ def _quality_filter(items: list[dict], model_name: str = "") -> tuple[list[dict]
         if not inner_meta or not isinstance(inner_meta, dict):
             counts["no_meta"] += 1
             continue
-        prompt = inner_meta.get("prompt") or ""
+        prompt = str(inner_meta.get("prompt") or "")
         if not prompt:
             counts["no_prompt"] += 1
             continue
@@ -64,14 +64,14 @@ def filter_community_images(
     - Skip images with prompt < _MIN_PROMPT_LENGTH chars
     - Return at most _MAX_IMAGES_PER_MODEL images
     """
-    author_lower = (author_username or "").lower()
+    author_lower = str(author_username or "").lower()
     tag = f"[{model_name}] " if model_name else ""
 
     # Split into community vs author images
     community_items: list[dict] = []
     author_items: list[dict] = []
     for item in items:
-        username = (item.get("username") or "").lower()
+        username = str(item.get("username") or "").lower()
         if username and author_lower and username == author_lower:
             author_items.append(item)
         else:
