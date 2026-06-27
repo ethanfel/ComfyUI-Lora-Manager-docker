@@ -13,7 +13,7 @@ from ...config import config as global_config
 
 logger = logging.getLogger(__name__)
 
-_CHUNK_SIZE = 256 * 1024  # 256 KB
+_CHUNK_SIZE = 1024 * 1024  # 1 MB — balance between streaming iteration overhead and per-chunk memory
 
 # Video file extensions that bypass native sendfile on Windows
 # to avoid IOCP/ProactorEventLoop crashes during client disconnect.
@@ -59,25 +59,19 @@ class PreviewHandler:
             logger.debug("Preview file not found at %s", str(resolved))
             raise web.HTTPNotFound(text="Preview file not found")
 
-        # Video files: stream manually to avoid Windows native sendfile crash.
-        # aiohttp's FileResponse uses _sendfile_native on Windows (IOCP-based),
-        # which breaks when the client disconnects mid-transfer — this happens
-        # constantly when users scroll through a gallery of animated previews.
-        suffix = resolved.suffix.lower()
-        if suffix in _VIDEO_EXTENSIONS:
-            return await self._stream_file(request, resolved)
-
-        # Explicitly set content type — aiohttp's FileResponse uses its own
-        # MimeTypes instance which may not know .webp in minimal environments.
-        # Cache aggressively: preview assets are immutable for a resolved path.
-        content_type = mimetypes.guess_type(str(resolved))[0] or "application/octet-stream"
-        return web.FileResponse(
-            path=resolved, chunk_size=_CHUNK_SIZE,
-            headers={
-                "Content-Type": content_type,
-                "Cache-Control": "public, max-age=86400, immutable",
-            },
-        )
+        # aiohttp's FileResponse handles range requests, content headers, and
+        # uses kernel sendfile (zero-copy DMA) on Linux/macOS. On Windows it
+        # uses IOCP-based _sendfile_native which can crash when the client
+        # disconnects mid-transfer during fast scrolling. The _stream_file()
+        # fallback is kept for a future compat toggle.
+        #
+        # Set explicit Cache-Control so the browser can cache video (and image)
+        # previews across VirtualScroller recycling cycles. Without this,
+        # Chrome does not cache 206 Partial Content responses for <video>
+        # elements, causing the same video to be re-downloaded on every scroll.
+        resp = web.FileResponse(path=resolved, chunk_size=_CHUNK_SIZE)
+        resp.headers["Cache-Control"] = "public, max-age=86400"
+        return resp
 
     async def _stream_file(
         self, request: web.Request, path: Path
@@ -95,7 +89,9 @@ class PreviewHandler:
         resp = web.StreamResponse()
         resp.content_type = content_type
         resp.content_length = file_size
-        resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
+        # Allow browser caching: video previews rarely change during a session.
+        # The frontend already appends ?t={version} to bust cache on update.
+        resp.headers["Cache-Control"] = "public, max-age=86400"
 
         try:
             # prepare() writes the response headers and can itself raise a

@@ -1,9 +1,10 @@
 // PageControls.js - Manages controls for both LoRAs and Checkpoints pages
 import { state, getCurrentPageState, setCurrentPageType } from '../../state/index.js';
-import { getStorageItem, setStorageItem, getSessionItem, setSessionItem } from '../../utils/storageHelpers.js';
+import { getStorageItem, setStorageItem, removeStorageItem, getSessionItem, setSessionItem, removeSessionItem } from '../../utils/storageHelpers.js';
 import { showToast, openCivitaiByMetadata } from '../../utils/uiHelpers.js';
 import { performModelUpdateCheck } from '../../utils/updateCheckHelpers.js';
 import { sidebarManager } from '../SidebarManager.js';
+import { initSortDropdown } from './SortDropdown.js';
 
 /**
  * PageControls class - Unified control management for model pages
@@ -93,8 +94,7 @@ export class PageControls {
     async initSidebarManager() {
         try {
             this.sidebarManager.setHostPageControls(this);
-            const shouldShowSidebar = state?.global?.settings?.show_folder_sidebar !== false;
-            await this.sidebarManager.setSidebarEnabled(shouldShowSidebar);
+            await this.sidebarManager.initialize(this);
         } catch (error) {
             console.error('Failed to initialize SidebarManager:', error);
         }
@@ -107,6 +107,7 @@ export class PageControls {
         // Sort select handler
         const sortSelect = document.getElementById('sortSelect');
         if (sortSelect) {
+            initSortDropdown(sortSelect);
             sortSelect.value = this.pageState.sortBy;
             sortSelect.addEventListener('change', async (e) => {
                 this.pageState.sortBy = e.target.value;
@@ -130,6 +131,9 @@ export class PageControls {
             clearFilterBtn.addEventListener('click', () => this.clearCustomFilter());
         }
         
+        // Check for View Local Versions filter
+        this.checkVlmFilter();
+
         // Page-specific event listeners
         this.initPageSpecificListeners();
     }
@@ -317,7 +321,12 @@ export class PageControls {
      * Load sort preference from storage
      */
     loadSortPreference() {
-        const savedSort = getStorageItem(`${this.pageType}_sort`);
+        // Use separate keys for grouped vs non-grouped sort so each mode
+        // remembers its own preference independently
+        const key = state.global.settings.group_by_model
+            ? `${this.pageType}_sort_grouped`
+            : `${this.pageType}_sort`;
+        const savedSort = getStorageItem(key);
         if (savedSort) {
             // Handle legacy format conversion
             const convertedSort = this.convertLegacySortFormat(savedSort);
@@ -361,7 +370,11 @@ export class PageControls {
             };
             return;
         }
-        setStorageItem(`${this.pageType}_sort`, sortValue);
+        // Separate storage for grouped vs non-grouped sort
+        const key = state.global.settings.group_by_model
+            ? `${this.pageType}_sort_grouped`
+            : `${this.pageType}_sort`;
+        setStorageItem(key, sortValue);
     }
     
     /**
@@ -468,18 +481,222 @@ export class PageControls {
     /**
      * Clear custom filter
      */
+    /**
+     * Dynamically add the VLM sort option (version_id:desc) to the sort dropdown.
+     * It is not a permanent option — only present while VLM is active.
+     */
+    _addVlmSortOption() {
+        const sortSelect = document.getElementById('sortSelect');
+        if (!sortSelect) return;
+        // Only add if not already present
+        if (sortSelect.querySelector('option[value="version_id:desc"]')) return;
+        const opt = document.createElement('option');
+        opt.value = 'version_id:desc';
+        opt.textContent = this._t('loras.controls.sort.versionIdDesc', 'Newest version first');
+        sortSelect.appendChild(opt);
+    }
+
+    /**
+     * Remove the VLM sort option from the sort dropdown.
+     */
+    _removeVlmSortOption() {
+        const sortSelect = document.getElementById('sortSelect');
+        if (!sortSelect) return;
+        const opt = sortSelect.querySelector('option[value="version_id:desc"]');
+        if (opt) opt.remove();
+    }
+
+    /**
+     * Look up a translation key via the global i18n helper, falling back to
+     * a plain-text default when the key is missing or i18n is unavailable.
+     */
+    _t(key, fallback) {
+        if (typeof window.i18n?.t === 'function') {
+            return window.i18n.t(key, { defaultValue: fallback });
+        }
+        return fallback;
+    }
+
+    /**
+     * Restore the sort dropdown state after VLM is cleared.
+     * Shared by PageControls.clearCustomFilter() and subclass overrides.
+     */
+    _restoreSortAfterVlm() {
+        const prevSort = getSessionItem('vlm_prev_sort');
+        removeSessionItem('vlm_prev_sort');
+        const restoredSort = prevSort || 'name:asc';
+        this.pageState.sortBy = restoredSort;
+        this.saveSortPreference(restoredSort);
+        this._removeVlmSortOption();
+        const sortSelect = document.getElementById('sortSelect');
+        if (sortSelect) {
+            sortSelect.value = restoredSort;
+            sortSelect.disabled = false;
+        }
+    }
+
+    /**
+     * Trigger View Local Versions without page reload
+     * Sets sessionStorage and reloads data via the API.
+     */
+    triggerVlmView(modelId, modelName, baseModel, pageType) {
+        const targetPageType = pageType || this.pageType;
+        setSessionItem('vlm_model_id', String(modelId));
+        setSessionItem('vlm_model_name', modelName || String(modelId));
+        setSessionItem('vlm_page_type', targetPageType);
+        if (baseModel) {
+            setSessionItem('vlm_base_model', baseModel);
+        } else {
+            removeSessionItem('vlm_base_model');
+        }
+        // Save current sort preference so it can be restored when VLM is cleared
+        setSessionItem('vlm_prev_sort', this.pageState.sortBy);
+        // Inject the temporary sort option and force version_id:desc
+        this._addVlmSortOption();
+        this.pageState.sortBy = 'version_id:desc';
+        this.saveSortPreference('version_id:desc');
+        const sortSelect = document.getElementById('sortSelect');
+        if (sortSelect) {
+            sortSelect.value = 'version_id:desc';
+            sortSelect.disabled = true;
+        }
+        // Reload data via API (no page reload)
+        this.resetAndReload(true).then(() => {
+            // Show the VLM indicator after data loads
+            this.checkVlmFilter();
+        });
+    }
+
+    /**
+     * Called when group_by_model is toggled.
+     * Swaps between {pageType}_sort (non-group) and {pageType}_sort_grouped,
+     * so each mode remembers its own sort preference independently.
+     */
+    onGroupByModelToggled(isEnabled) {
+        const groupedKey = `${this.pageType}_sort_grouped`;
+
+        if (isEnabled) {
+            // Entering group mode: restore last-used grouped sort, if any
+            const savedGroupedSort = getStorageItem(groupedKey);
+            if (savedGroupedSort) {
+                this.pageState.sortBy = savedGroupedSort;
+                const sortSelect = document.getElementById('sortSelect');
+                if (sortSelect) {
+                    sortSelect.value = savedGroupedSort;
+                }
+            }
+        } else {
+            // Leaving group mode: persist current sort for next time, restore non-group sort
+            setStorageItem(groupedKey, this.pageState.sortBy);
+            const savedNormalSort = getStorageItem(`${this.pageType}_sort`);
+            if (savedNormalSort) {
+                this.pageState.sortBy = savedNormalSort;
+                const sortSelect = document.getElementById('sortSelect');
+                if (sortSelect) {
+                    sortSelect.value = savedNormalSort;
+                }
+            }
+        }
+    }
+
+    /**
+     * Check for View Local Versions filter in sessionStorage (page-type-scoped)
+     */
+    checkVlmFilter() {
+        const vlmModelId = getSessionItem('vlm_model_id');
+        const vlmPageType = getSessionItem('vlm_page_type');
+        const sortSelect = document.getElementById('sortSelect');
+
+        // Only show VLM indicator when it belongs to the current page type
+        if (vlmModelId && vlmPageType !== this.pageType) {
+            // Stale VLM data from a different page — clean up
+            removeSessionItem('vlm_model_id');
+            removeSessionItem('vlm_model_name');
+            removeSessionItem('vlm_base_model');
+            removeSessionItem('vlm_page_type');
+            removeSessionItem('vlm_prev_sort');
+            this._removeVlmSortOption();
+            if (sortSelect) sortSelect.disabled = false;
+            return;
+        }
+
+        const vlmModelName = getSessionItem('vlm_model_name');
+        const vlmBaseModel = getSessionItem('vlm_base_model');
+
+        if (vlmModelId && vlmModelName) {
+            // VLM is active — inject sort option, disable dropdown, show indicator
+            this._addVlmSortOption();
+            if (sortSelect) {
+                sortSelect.value = 'version_id:desc';
+                sortSelect.disabled = true;
+            }
+
+            const indicator = document.getElementById('customFilterIndicator');
+            const filterText = indicator?.querySelector('.customFilterText');
+
+            if (indicator && filterText) {
+                indicator.classList.remove('hidden');
+
+                const prefix = vlmBaseModel
+                    ? 'Showing same-base versions from'
+                    : 'Showing all versions from';
+                const displayText = `${prefix}: ${vlmModelName}`;
+
+                filterText.textContent = this._truncateText(displayText, 40);
+                filterText.setAttribute('title', displayText);
+            }
+        } else {
+            // No VLM — ensure sort option is removed and dropdown is enabled
+            this._removeVlmSortOption();
+            if (sortSelect) sortSelect.disabled = false;
+        }
+    }
+
+    /**
+     * Clear custom filter
+     */
     async clearCustomFilter() {
+        // Check for View Local Versions filter first
+        const vlmModelId = getSessionItem('vlm_model_id');
+        if (vlmModelId) {
+            removeSessionItem('vlm_model_id');
+            removeSessionItem('vlm_model_name');
+            removeSessionItem('vlm_base_model');
+            removeSessionItem('vlm_page_type');
+
+            this._restoreSortAfterVlm();
+
+            // Hide the indicator
+            const indicator = document.getElementById('customFilterIndicator');
+            if (indicator) {
+                indicator.classList.add('hidden');
+            }
+
+            // Reload data via API (no page reload)
+            await this.resetAndReload(true);
+            return;
+        }
+
+        // Otherwise delegate to subclass for recipe filters
         if (!this.api) {
             console.error('API methods not registered');
             return;
         }
-        
+
         try {
             await this.api.clearCustomFilter();
         } catch (error) {
             console.error('Error clearing custom filter:', error);
             showToast('toast.controls.clearFilterFailed', { message: error.message }, 'error');
         }
+    }
+
+    /**
+     * Truncate text with ellipsis
+     */
+    _truncateText(text, maxLength) {
+        if (!text) return '';
+        return text.length > maxLength ? `${text.substring(0, maxLength - 3)}...` : text;
     }
     
     /**
@@ -669,13 +886,6 @@ export class PageControls {
         }
 
         this.updateActionButtonStates();
-
-        if (this.sidebarManager) {
-            const shouldShowSidebar = !isExcludedView && state?.global?.settings?.show_folder_sidebar !== false;
-            this.sidebarManager.setSidebarEnabled(shouldShowSidebar).catch((error) => {
-                console.error('Failed to update sidebar visibility:', error);
-            });
-        }
     }
 
     suspendInteractiveModes() {

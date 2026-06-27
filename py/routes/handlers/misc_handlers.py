@@ -49,7 +49,10 @@ from ...utils.constants import (
     VALID_LORA_TYPES,
 )
 from ...utils.civitai_utils import rewrite_preview_url
-from ...utils.example_images_paths import is_valid_example_images_root
+from ...utils.example_images_paths import (
+    find_non_compliant_items_in_example_images_root,
+    is_valid_example_images_root,
+)
 from ...utils.lora_metadata import extract_trained_words
 from ...utils.session_logging import get_standalone_session_log_snapshot
 from ...utils.usage_stats import UsageStats
@@ -532,6 +535,7 @@ class NodeRegistry:
                     "capabilities": capabilities,
                     "widget_names": widget_names,
                     "mode": node.get("mode"),
+                    "marker_role": node.get("marker_role"),
                 }
             logger.debug("Registered %s nodes in registry", len(nodes))
             self._registry_updated.set()
@@ -1328,6 +1332,9 @@ class SettingsHandler:
             "folder_paths",
             "libraries",
             "active_library",
+            # Sensitive — never expose the actual value to the frontend;
+            # frontend receives a boolean instead (civitai_api_key_set).
+            "civitai_api_key",
         }
     )
 
@@ -1382,6 +1389,9 @@ class SettingsHandler:
                     value = self._settings.get(key)
                     if value is not None:
                         response_data[key] = value
+            # Sensitive fields: only expose a boolean indicating whether set
+            raw_key = self._settings.get("civitai_api_key")
+            response_data["civitai_api_key_set"] = bool(raw_key)
             settings_file = getattr(self._settings, "settings_file", None)
             if settings_file:
                 response_data["settings_file"] = settings_file
@@ -1492,6 +1502,16 @@ class SettingsHandler:
         if not os.path.isdir(folder_path):
             return "Please set a dedicated folder for example images."
         if not self._is_dedicated_example_images_folder(folder_path):
+            offending = find_non_compliant_items_in_example_images_root(folder_path)
+            if offending:
+                items_str = ", ".join(repr(item) for item in offending[:5])
+                if len(offending) > 5:
+                    items_str += f" … and {len(offending) - 5} more"
+                return (
+                    f"The folder contains items that are not valid example image "
+                    f"folders: {items_str}. Please use a dedicated, empty folder "
+                    f"for example images to prevent accidental data loss."
+                )
             return "Please set a dedicated folder for example images."
         return None
 
@@ -3085,13 +3105,17 @@ class NodeRegistryHandler:
         try:
             data = await request.json()
             widget_name = data.get("widget_name")
+            action = data.get("action")
             value = data.get("value")
             mode = data.get("mode", "replace")
             node_ids = data.get("node_ids")
 
-            if not isinstance(widget_name, str) or not widget_name:
+            if not action and (not isinstance(widget_name, str) or not widget_name):
                 return web.json_response(
-                    {"success": False, "error": "Missing widget_name parameter"},
+                    {
+                        "success": False,
+                        "error": "Missing parameter: provide either 'action' or 'widget_name'",
+                    },
                     status=400,
                 )
 
@@ -3130,12 +3154,15 @@ class NodeRegistryHandler:
                 except (TypeError, ValueError):
                     parsed_node_id = node_identifier
 
-                payload = {
+                payload: dict = {
                     "id": parsed_node_id,
-                    "widget_name": widget_name,
                     "value": value,
                     "mode": mode,
                 }
+                if action:
+                    payload["action"] = action
+                if widget_name:
+                    payload["widget_name"] = widget_name
 
                 if graph_identifier is not None:
                     payload["graph_id"] = str(graph_identifier)

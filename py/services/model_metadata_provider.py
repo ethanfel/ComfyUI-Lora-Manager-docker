@@ -65,7 +65,14 @@ class _RateLimitRetryHelper:
                 return await func(*args, **kwargs)
             except RateLimitError as exc:
                 attempt += 1
-                if attempt >= self._retry_limit:
+
+                # Determine effective retry limit based on rate-limit magnitude
+                effective_retry_limit = self._retry_limit  # default: 3
+                if exc.retry_after is not None and exc.retry_after >= 120.0:
+                    # Long rate-limit window (>=2 min) — retries are futile
+                    effective_retry_limit = 1  # total 1 attempt = 0 retries
+
+                if attempt >= effective_retry_limit:
                     exc.provider = exc.provider or label
                     raise
 
@@ -81,7 +88,11 @@ class _RateLimitRetryHelper:
 
     def _calculate_delay(self, retry_after: Optional[float], attempt: int) -> float:
         if retry_after is not None:
-            return min(self._max_delay, max(0.0, retry_after))
+            # Cap at 1800s (30 min) as a safety ceiling. The old 30s cap was
+            # too low — CivArchive can return retry_after ~1500s, causing all
+            # retries to fail. A generous ceiling protects against pathological
+            # server values while still respecting the server's guidance.
+            return min(1800.0, max(0.0, retry_after))
 
         base_delay = self._base_delay * (2 ** max(0, attempt - 1))
         jitter_span = base_delay * self._jitter_ratio
@@ -474,8 +485,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
                 if result:
                     return result, error
             except RateLimitError as exc:
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except Exception as e:
                 logger.debug("Provider %s failed for get_model_by_hash: %s", label, e)
                 continue
@@ -493,16 +508,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
                 if result:
                     return result
             except RateLimitError as exc:
-                if not_found_confirmed:
-                    logger.debug(
-                        "Suppressing rate limit from %s for model %s: "
-                        "already confirmed as not found by another provider",
-                        label,
-                        model_id,
-                    )
-                    return None
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except ResourceNotFoundError:
                 not_found_confirmed = True
                 logger.debug(
@@ -528,8 +539,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
                 if result:
                     return result
             except RateLimitError as exc:
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except Exception as e:
                 logger.debug("Provider %s failed for get_model_version: %s", label, e)
                 continue
@@ -546,8 +561,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
                 if result:
                     return result, error
             except RateLimitError as exc:
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except Exception as e:
                 logger.debug("Provider %s failed for get_model_version_info: %s", label, e)
                 continue
@@ -568,8 +587,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
             except NotImplementedError:
                 continue
             except RateLimitError as exc:
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except Exception as e:
                 logger.debug(
                     "Provider %s failed for get_model_versions_by_hashes: %s",
@@ -590,8 +613,12 @@ class FallbackMetadataProvider(ModelMetadataProvider):
                 if result is not None:
                     return result
             except RateLimitError as exc:
-                exc.provider = exc.provider or label
-                raise exc
+                logger.warning(
+                    "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                    label,
+                    exc.retry_after or 0,
+                )
+                continue
             except Exception as e:
                 logger.debug("Provider %s failed for get_user_models: %s", label, e)
                 continue

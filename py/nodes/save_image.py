@@ -11,7 +11,7 @@ from ..metadata_collector.metadata_processor import MetadataProcessor
 from ..metadata_collector import get_metadata
 from ..utils.constants import CARD_PREVIEW_WIDTH
 from ..utils.exif_utils import ExifUtils
-from ..utils.utils import calculate_recipe_fingerprint
+from ..utils.utils import calculate_recipe_fingerprint, sanitize_folder_name
 from PIL import Image, PngImagePlugin
 import piexif
 import logging
@@ -298,7 +298,12 @@ class SaveImageLM:
             key = parts[0]
 
             if key == "seed" and "seed" in metadata_dict:
-                filename = filename.replace(segment, str(metadata_dict.get("seed", "")))
+                seed_value = metadata_dict.get("seed")
+                if seed_value is not None:
+                    filename = filename.replace(segment, str(seed_value))
+                else:
+                    # Fallback if seed was not captured by metadata collector
+                    filename = filename.replace(segment, "0")
             elif key == "width" and "size" in metadata_dict:
                 size = metadata_dict.get("size", "x")
                 w = size.split("x")[0] if isinstance(size, str) else size[0]
@@ -309,12 +314,14 @@ class SaveImageLM:
                 filename = filename.replace(segment, str(h))
             elif key == "pprompt" and "prompt" in metadata_dict:
                 prompt = metadata_dict.get("prompt", "").replace("\n", " ")
+                prompt = sanitize_folder_name(prompt)
                 if len(parts) >= 2:
                     length = int(parts[1])
                     prompt = prompt[:length]
                 filename = filename.replace(segment, prompt.strip())
             elif key == "nprompt" and "negative_prompt" in metadata_dict:
                 prompt = metadata_dict.get("negative_prompt", "").replace("\n", " ")
+                prompt = sanitize_folder_name(prompt)
                 if len(parts) >= 2:
                     length = int(parts[1])
                     prompt = prompt[:length]
@@ -328,6 +335,7 @@ class SaveImageLM:
                     model = "model_unavailable"
                 else:
                     model = os.path.splitext(os.path.basename(model_value))[0]
+                    model = sanitize_folder_name(model)
                 if len(parts) >= 2:
                     length = int(parts[1])
                     model = model[:length]
@@ -600,7 +608,7 @@ class SaveImageLM:
             img = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
 
             # Generate filename with counter if needed
-            base_filename = filename
+            base_filename = filename.replace("%batch_num%", str(i))
             if add_counter_to_filename:
                 # Use counter + i to ensure unique filenames for all images in batch
                 current_counter = counter + i

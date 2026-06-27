@@ -20,7 +20,7 @@ const downloadManagerMock = {
 
 const sidebarManagerMock = {
   setHostPageControls: vi.fn(),
-  setSidebarEnabled: vi.fn(async () => {
+  initialize: vi.fn(async () => {
     sidebarManagerMock.isInitialized = true;
   }),
   refresh: vi.fn(async () => {}),
@@ -75,9 +75,6 @@ beforeEach(() => {
   performModelUpdateCheckMock.mockResolvedValue({ status: 'success', displayName: 'LoRA', records: [] });
 
   sidebarManagerMock.isInitialized = false;
-  sidebarManagerMock.setSidebarEnabled.mockImplementation(async (enabled) => {
-    sidebarManagerMock.isInitialized = enabled;
-  });
 
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
@@ -99,6 +96,7 @@ function renderControlsDom(pageKey) {
       <div class="search-container">
         <input id="searchInput" />
         <i class="fas fa-search search-icon"></i>
+        <span class="search-shortcut-cue" id="searchShortcutCue"><kbd>Ctrl</kbd><kbd>F</kbd></span>
         <button id="searchOptionsToggle" class="search-options-toggle"></button>
         <button id="filterButton" class="search-filter-toggle">
           <span id="activeFiltersCount" class="filter-badge" style="display: none">0</span>
@@ -217,6 +215,40 @@ describe('SearchManager filtering scenarios', () => {
     expect(getCurrentPageState().filters.search).toBe('flux');
     expect(loadMoreWithVirtualScrollMock).toHaveBeenCalledWith(true, false);
     expect(loadMoreWithVirtualScrollMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([
+    ['loras'],
+    ['checkpoints'],
+  ])('toggles clear button and shortcut cue visibility for %s page', async (pageKey) => {
+    vi.useFakeTimers();
+
+    renderControlsDom(pageKey);
+    const stateModule = await import('../../../static/js/state/index.js');
+    stateModule.initPageState(pageKey);
+    const { SearchManager } = await import('../../../static/js/managers/SearchManager.js');
+
+    new SearchManager({ page: pageKey, searchDelay: 0 });
+
+    const input = document.getElementById('searchInput');
+    const cue = document.getElementById('searchShortcutCue');
+    const clearBtn = document.querySelector('.search-clear');
+
+    // Initially empty: cue visible, clear hidden
+    expect(cue.classList.contains('hidden')).toBe(false);
+    expect(clearBtn.classList.contains('visible')).toBe(false);
+
+    // Type something: cue hidden, clear visible
+    input.value = 'flux';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(cue.classList.contains('hidden')).toBe(true);
+    expect(clearBtn.classList.contains('visible')).toBe(true);
+
+    // Clear via click: cue visible, clear hidden
+    clearBtn.click();
+    expect(input.value).toBe('');
+    expect(cue.classList.contains('hidden')).toBe(false);
+    expect(clearBtn.classList.contains('visible')).toBe(false);
   });
 });
 

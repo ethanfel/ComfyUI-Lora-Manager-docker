@@ -95,6 +95,23 @@ export class CheckpointsControls extends PageControls {
      * Clear checkpoint custom filter and reload
      */
     async clearCustomFilter() {
+        // Check for View Local Versions filter first
+        const vlmModelId = getSessionItem('vlm_model_id');
+        if (vlmModelId) {
+            removeSessionItem('vlm_model_id');
+            removeSessionItem('vlm_model_name');
+            removeSessionItem('vlm_base_model');
+            removeSessionItem('vlm_page_type');
+            this._restoreSortAfterVlm();
+            // Hide the indicator
+            const indicator = document.getElementById('customFilterIndicator');
+            if (indicator) {
+                indicator.classList.add('hidden');
+            }
+            await resetAndReload();
+            return;
+        }
+
         removeSessionItem('recipe_to_checkpoint_filterHash');
         removeSessionItem('recipe_to_checkpoint_filterHashes');
         removeSessionItem('filterCheckpointRecipeName');
@@ -105,15 +122,5 @@ export class CheckpointsControls extends PageControls {
         }
 
         await resetAndReload();
-    }
-
-    /**
-     * Helper to truncate text with ellipsis
-     * @param {string} text
-     * @param {number} maxLength
-     * @returns {string}
-     */
-    _truncateText(text, maxLength) {
-        return text.length > maxLength ? `${text.substring(0, maxLength - 3)}...` : text;
     }
 }

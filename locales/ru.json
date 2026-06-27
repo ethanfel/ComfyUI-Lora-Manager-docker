@@ -22,6 +22,7 @@
         },
         "status": {
             "loading": "Загрузка...",
+            "cancelling": "Отмена...",
             "unknown": "Неизвестно",
             "date": "Дата",
             "version": "Версия",
@@ -144,6 +145,10 @@
         },
         "usage": {
             "timesUsed": "Количество использований"
+        },
+        "footer": {
+            "versionCount": "{count} версий",
+            "viewAllVersions": "Показать все локальные версии"
         }
     },
     "globalContextMenu": {
@@ -182,6 +187,9 @@
         },
         "manageExcludedModels": {
             "label": "Управление исключёнными моделями"
+        },
+        "groupByModel": {
+            "label": "Группировать по модели"
         }
     },
     "header": {
@@ -195,13 +203,7 @@
             "community": "[TODO: Translate] Community"
         },
         "search": {
-            "placeholder": "Поиск...",
-            "placeholders": {
-                "loras": "Поиск LoRAs...",
-                "recipes": "Поиск рецептов...",
-                "checkpoints": "Поиск checkpoints...",
-                "embeddings": "Поиск embeddings..."
-            },
+            "placeholder": "Поиск",
             "options": "Опции поиска",
             "searchIn": "Искать в:",
             "notAvailable": "Поиск недоступен на странице статистики",
@@ -253,7 +255,18 @@
             "toggle": "Переключить тему",
             "switchToLight": "Переключить на светлую тему",
             "switchToDark": "Переключить на тёмную тему",
-            "switchToAuto": "Переключить на автоматическую тему"
+            "switchToAuto": "Переключить на автоматическую тему",
+            "presets": "Предустановки тем",
+            "default": "По умолчанию",
+            "nord": "Nord",
+            "midnight": "Midnight",
+            "monokai": "Monokai",
+            "dracula": "Dracula",
+            "solarized": "Solarized",
+            "mode": "Режим",
+            "light": "Светлый",
+            "dark": "Тёмный",
+            "auto": "Авто"
         },
         "actions": {
             "checkUpdates": "Проверить обновления",
@@ -265,6 +278,9 @@
         "civitaiApiKey": "Ключ API Civitai",
         "civitaiApiKeyPlaceholder": "Введите ваш ключ API Civitai",
         "civitaiApiKeyHelp": "Используется для аутентификации при загрузке моделей с Civitai",
+        "civitaiApiKeyConfigured": "Настроен",
+        "civitaiApiKeyNotConfigured": "Не настроен",
+        "civitaiApiKeySet": "Настроить",
         "civitaiHost": {
             "label": "Хост Civitai",
             "help": "Выберите, какой сайт Civitai будет открываться при использовании ссылок «View on Civitai».",
@@ -305,6 +321,7 @@
             "downloads": "Загрузки",
             "videoSettings": "Настройки видео",
             "layoutSettings": "Настройки макета",
+            "licenseIcons": "Значки лицензии",
             "misc": "Разное",
             "backup": "Резервные копии",
             "folderSettings": "Корневые папки",
@@ -312,7 +329,7 @@
             "extraFolderPaths": "Дополнительные пути к папкам",
             "downloadPathTemplates": "Шаблоны путей загрузки",
             "priorityTags": "Приоритетные теги",
-            "updateFlags": "Метки обновлений",
+            "versionScope": "Метки обновлений",
             "exampleImages": "Примеры изображений",
             "autoOrganize": "Автоорганизация",
             "metadata": "Метаданные",
@@ -417,6 +434,8 @@
             "help": "Если включено, LoRA Manager будет пропускать загрузку версии модели, если сервис истории загрузок записал, что эта конкретная версия уже загружена. Применяется ко всем потокам загрузки."
         },
         "layoutSettings": {
+            "groupByModel": "Группировать по модели",
+            "groupByModelHelp": "При включении отображается только последняя версия каждой модели Civitai в виде одной карточки. Старые версии скрыты.",
             "displayDensity": "Плотность отображения",
             "displayDensityOptions": {
                 "default": "По умолчанию",
@@ -573,7 +592,7 @@
             "download": "Загрузить",
             "restartRequired": "Требует перезапуска"
         },
-        "updateFlagStrategy": {
+        "versionGrouping": {
             "label": "Стратегия меток обновлений",
             "help": "Выберите, отображать ли значки обновления только когда новая версия имеет тот же базовый модель, что и локальные файлы, или всегда при наличии любого нового релиза для этой модели.",
             "options": {
@@ -584,6 +603,10 @@
         "hideEarlyAccessUpdates": {
             "label": "Скрыть обновления раннего доступа",
             "help": "Только обновления раннего доступа"
+        },
+        "licenseIcons": {
+            "useNewStyle": "Использовать обновлённые значки лицензии",
+            "useNewStyleHelp": "Отображать разрешения лицензии с цветными индикаторами (новый стиль) или только значки ограничений (классический стиль). Соответствует текущему дизайну CivitAI."
         },
         "misc": {
             "includeTriggerWords": "Включать триггерные слова в синтаксис LoRA",
@@ -653,7 +676,11 @@
                 "sizeAsc": "Наименьшим",
                 "usage": "Число использований",
                 "usageDesc": "Больше",
-                "usageAsc": "Меньше"
+                "usageAsc": "Меньше",
+                "versionsCount": "Локальные версии",
+                "versionsCountDesc": "Сначала больше версий",
+                "versionsCountAsc": "Сначала меньше версий",
+                "versionIdDesc": "Сначала новые версии"
             },
             "refresh": {
                 "title": "Обновить список моделей",
@@ -958,10 +985,7 @@
     },
     "sidebar": {
         "modelRoot": "Корень",
-        "moreOptions": "Дополнительные параметры",
         "collapseAll": "Свернуть все папки",
-        "pinSidebar": "Закрепить боковую панель",
-        "unpinSidebar": "Открепить боковую панель",
         "hideOnThisPage": "Скрыть боковую панель на этой странице",
         "showSidebar": "Показать боковую панель",
         "sidebarHiddenNotification": "Боковая панель скрыта на странице {page}",
@@ -1002,6 +1026,18 @@
             "storage": "Хранение",
             "insights": "Аналитика"
         },
+        "metrics": {
+            "totalModels": "Всего моделей",
+            "totalStorage": "Всего хранилища",
+            "totalGenerations": "Всего генераций",
+            "usageRate": "Коэффициент использования",
+            "loras": "LoRA",
+            "checkpoints": "Контрольные точки",
+            "embeddings": "Эмбеддинги",
+            "uniqueTags": "Уникальные теги",
+            "unusedModels": "Неиспользуемые модели",
+            "avgUsesPerModel": "Сред. использований/модель"
+        },
         "usage": {
             "mostUsedLoras": "Наиболее используемые LoRAs",
             "mostUsedCheckpoints": "Наиболее используемые Checkpoints",
@@ -1019,13 +1055,77 @@
         },
         "insights": {
             "smartInsights": "Умная аналитика",
-            "recommendations": "Рекомендации"
+            "recommendations": "Рекомендации",
+            "noInsights": "Нет доступных данных",
+            "unusedLoras": {
+                "high": {
+                    "title": "Большое количество неиспользуемых LoRA",
+                    "description": "{percent}% ваших LoRA ({count}/{total}) никогда не использовались.",
+                    "suggestion": "Рассмотрите возможность организации или архивирования неиспользуемых моделей для освобождения места."
+                }
+            },
+            "unusedCheckpoints": {
+                "detected": {
+                    "title": "Обнаружены неиспользуемые контрольные точки",
+                    "description": "{percent}% ваших контрольных точек ({count}/{total}) никогда не использовались.",
+                    "suggestion": "Проверьте и удалите ненужные контрольные точки."
+                }
+            },
+            "unusedEmbeddings": {
+                "high": {
+                    "title": "Большое количество неиспользуемых эмбеддингов",
+                    "description": "{percent}% ваших эмбеддингов ({count}/{total}) никогда не использовались.",
+                    "suggestion": "Организуйте или архивируйте неиспользуемые эмбеддинги для оптимизации коллекции."
+                }
+            },
+            "collection": {
+                "large": {
+                    "title": "Обнаружена большая коллекция",
+                    "description": "Ваша коллекция моделей использует {size} хранилища.",
+                    "suggestion": "Рассмотрите внешнее хранилище или облачные решения для лучшей организации."
+                }
+            },
+            "activity": {
+                "active": {
+                    "title": "Активный пользователь",
+                    "description": "Вы завершили {count} генераций!",
+                    "suggestion": "Продолжайте исследовать и создавать удивительный контент с вашими моделями."
+                }
+            }
         },
         "charts": {
             "collectionOverview": "Обзор коллекции",
             "baseModelDistribution": "Распределение базовых моделей",
             "usageTrends": "Тенденции использования (за последние 30 дней)",
-            "usageDistribution": "Распределение использования"
+            "usageDistribution": "Распределение использования",
+            "date": "Дата",
+            "usageCount": "Количество использований",
+            "fileSizeBytes": "Размер файла (байты)",
+            "models": "Модели",
+            "loraUsage": "Использование LoRA",
+            "checkpointUsage": "Использование Checkpoint",
+            "embeddingUsage": "Использование Embedding"
+        },
+        "modelTypes": {
+            "lora": "LoRA",
+            "locon": "LyCORIS",
+            "dora": "DoRA",
+            "checkpoint": "Контрольная точка",
+            "diffusion_model": "Диффузионная модель",
+            "embedding": "Эмбеддинги"
+        },
+        "placeholders": {
+            "loading": "Загрузка...",
+            "noModels": "Модели не найдены",
+            "errorLoading": "Ошибка загрузки данных",
+            "noStorageData": "Нет данных о хранилище",
+            "rootFolder": "Корень",
+            "chartLibraryMissing": "Для графика требуется библиотека Chart.js"
+        },
+        "tooltips": {
+            "tagCount": "{tag}: {count} моделей",
+            "chartUsage": "{name}: {size}, {count} использований",
+            "chartPercentage": "{label}: {value} ({pct}%)"
         }
     },
     "modals": {
@@ -1401,6 +1501,21 @@
                     "versionDeleted": "Версия удалена"
                 }
             }
+        },
+        "metadataFetchSummary": {
+            "title": "Сводка получения метаданных",
+            "statSuccess": "Успешно",
+            "statFailed": "Ошибка",
+            "statSkipped": "Пропущено",
+            "statTotal": "Всего проверено",
+            "statDuration": "Длительность",
+            "successMessage": "Все {count} {type}s успешно обновлены",
+            "failedItems": "Ошибочные элементы ({count})",
+            "close": "Закрыть",
+            "copyReport": "Копировать отчет",
+            "downloadCsv": "Скачать CSV",
+            "columnModelName": "Имя модели",
+            "columnError": "Ошибка"
         }
     },
     "modelTags": {
@@ -1412,15 +1527,6 @@
             "maxLength": "Тег не должен превышать 30 символов",
             "maxCount": "Максимум 30 тегов разрешено",
             "duplicate": "Этот тег уже существует"
-        }
-    },
-    "keyboard": {
-        "navigation": "Навигация с клавиатуры:",
-        "shortcuts": {
-            "pageUp": "Прокрутить на страницу вверх",
-            "pageDown": "Прокрутить на страницу вниз",
-            "home": "Перейти к началу",
-            "end": "Перейти к концу"
         }
     },
     "initialization": {
@@ -1512,12 +1618,15 @@
             "modelUpdated": "Модель обновлена в workflow",
             "modelFailed": "Не удалось обновить узел модели",
             "embeddingAdded": "Embedding добавлен в workflow",
-            "embeddingFailed": "Не удалось добавить embedding"
+            "embeddingFailed": "Не удалось добавить embedding",
+            "promptSent": "Запрос отправлен в workflow",
+            "promptFailed": "Не удалось отправить запрос"
         },
         "nodeSelector": {
             "recipe": "Рецепт",
             "lora": "LoRA",
             "embedding": "Эмбеддинг",
+            "prompt": "Запрос",
             "replace": "Заменить",
             "append": "Добавить",
             "selectTargetNode": "Выберите целевой узел",
@@ -1704,6 +1813,7 @@
             "enterLoraName": "Пожалуйста, введите название LoRA или синтаксис",
             "reconnectedSuccessfully": "LoRA успешно переподключена",
             "reconnectFailed": "Ошибка переподключения LoRA: {message}",
+            "noPromptToSend": "Нет запроса для отправки",
             "cannotSend": "Невозможно отправить рецепт: отсутствует ID рецепта",
             "sendFailed": "Не удалось отправить рецепт в workflow",
             "sendError": "Ошибка отправки рецепта в workflow",
@@ -1960,7 +2070,9 @@
             "bulkMoveSuccess": "Успешно перемещено {successCount} {type}s",
             "exampleImagesDownloadSuccess": "Примеры изображений успешно загружены!",
             "exampleImagesDownloadFailed": "Не удалось загрузить примеры изображений: {message}",
-            "moveFailed": "Failed to move item: {message}"
+            "moveFailed": "Failed to move item: {message}",
+            "copiedToClipboard": "Скопировано в буфер обмена",
+            "downloadStarted": "Загрузка начата"
         }
     },
     "doctor": {

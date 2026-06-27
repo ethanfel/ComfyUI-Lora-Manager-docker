@@ -84,6 +84,7 @@ class Aria2Downloader:
         self._transfers: Dict[str, Aria2Transfer] = {}
         self._poll_interval = 0.5
         self._state_store = Aria2TransferStateStore()
+        self._stderr_reader_task: Optional[asyncio.Task] = None
 
     @property
     def is_running(self) -> bool:
@@ -115,7 +116,7 @@ class Aria2Downloader:
 
         try:
             while True:
-                status = await self.get_status(download_id)
+                status = await self._get_status_with_retry(download_id)
                 if status is None:
                     return False, "aria2 download not found"
 
@@ -135,6 +136,35 @@ class Aria2Downloader:
                 await asyncio.sleep(self._poll_interval)
         finally:
             self._transfers.pop(download_id, None)
+
+    async def _get_status_with_retry(
+        self, download_id: str, *, max_retries: int = 4, retry_delay: float = 3.0
+    ) -> Optional[Dict[str, Any]]:
+        """Call get_status with retry for transient RPC failures.
+
+        Only retries on :exc:`Aria2Error` (RPC-level failure).  Returns
+        ``None`` immediately when the download_id is not tracked (a missing
+        transfer is not a transient condition, so retrying is pointless).
+
+        A single failed RPC call should not immediately fail the download,
+        because aria2 may be temporarily busy (e.g. finalizing multiple
+        concurrent downloads) and a retry will often succeed.
+        """
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                return await self.get_status(download_id)
+            except Aria2Error as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    logger.warning(
+                        "aria2 get_status transient failure (attempt %d/%d) for %s: %s",
+                        attempt + 1, max_retries, download_id, exc,
+                    )
+                    await asyncio.sleep(retry_delay)
+        raise Aria2Error(
+            f"Failed to query aria2 download status after {max_retries} attempts: {last_exc}"
+        ) from last_exc
 
     async def _schedule_download(
         self,
@@ -312,6 +342,16 @@ class Aria2Downloader:
     async def close(self) -> None:
         """Shut down the RPC process and session."""
 
+        # Cancel the background stderr reader first so it stops reading
+        # from the pipe before the subprocess is terminated.
+        if self._stderr_reader_task is not None:
+            self._stderr_reader_task.cancel()
+            try:
+                await asyncio.wait_for(self._stderr_reader_task, timeout=2.0)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
+            self._stderr_reader_task = None
+
         if self._rpc_session is not None:
             await self._rpc_session.close()
             self._rpc_session = None
@@ -330,6 +370,23 @@ class Aria2Downloader:
             except asyncio.TimeoutError:
                 process.kill()
                 await process.wait()
+
+    async def _drain_stderr(self) -> None:
+        """Continuously drain aria2's stderr pipe so it never blocks.
+
+        When the 64 KB pipe buffer fills up, aria2's ``write()`` to stderr
+        blocks, which freezes the entire ``aria2c`` process — including its
+        RPC handler.  This background task reads lines from stderr as they
+        arrive and forwards them to Python's logger.
+        """
+        try:
+            assert self._process is not None and self._process.stderr is not None
+            async for line in self._process.stderr:
+                text = line.decode("utf-8", errors="replace").rstrip()
+                if text:
+                    logger.debug("aria2 stderr: %s", text)
+        except Exception:
+            pass
 
     async def _dispatch_progress(self, callback, snapshot: DownloadProgress) -> None:
         try:
@@ -465,6 +522,17 @@ class Aria2Downloader:
 
             await self._wait_until_ready()
 
+            # Drain aria2's stderr in a background task so the pipe buffer
+            # never fills up.  If the pipe blocks, aria2 itself freezes and
+            # cannot respond to RPC — this was the root cause of the
+            # "Failed to query aria2 download status" timeout bug.
+            # Must start AFTER _wait_until_ready to avoid a race where the
+            # drain task consumes aria2's early-exit error message before
+            # _wait_until_ready can read it.
+            self._stderr_reader_task = asyncio.create_task(
+                self._drain_stderr()
+            )
+
     def _resolve_executable(self) -> str:
         settings = get_settings_manager()
         configured_path = (settings.get("aria2c_path") or "").strip()
@@ -584,7 +652,9 @@ class Aria2Downloader:
         if self._rpc_session is None or self._rpc_session.closed:
             async with self._rpc_session_lock:
                 if self._rpc_session is None or self._rpc_session.closed:
-                    timeout = aiohttp.ClientTimeout(total=30)
+                    timeout = aiohttp.ClientTimeout(
+                        total=None, sock_connect=10, sock_read=60
+                    )
                     self._rpc_session = aiohttp.ClientSession(timeout=timeout)
         return self._rpc_session
 

@@ -657,6 +657,9 @@ export class VirtualScroller {
             this.resizeObserver.disconnect();
         }
 
+        // Remove any active grid loading overlay
+        this.hideGridLoading();
+
         // Remove rendered elements
         this.clearRenderedItems();
 
@@ -931,6 +934,38 @@ export class VirtualScroller {
         return true;
     }
 
+    /**
+     * Remove multiple items by their file paths.
+     * More efficient than calling removeItemByFilePath individually.
+     * @param {string[]} filePaths - Array of file paths to remove
+     * @returns {boolean} - True if any items were removed
+     */
+    removeMultipleItemsByFilePath(filePaths) {
+        if (!Array.isArray(filePaths) || filePaths.length === 0 || this.disabled || this.items.length === 0) return false;
+
+        // Build a set for fast lookup
+        const pathsToRemove = new Set(filePaths);
+        const originalLength = this.items.length;
+
+        // Filter out removed items; keep those not in the set
+        this.items = this.items.filter(item => !pathsToRemove.has(item.file_path));
+
+        const removedCount = originalLength - this.items.length;
+        if (removedCount === 0) return false;
+
+        this.totalItems = Math.max(0, this.totalItems - removedCount);
+
+        // Update the spacer height
+        this.updateSpacerHeight();
+
+        // Re-render to fill gaps left by removed items
+        this.clearRenderedItems();
+        this.scheduleRender();
+
+        console.log(`Removed ${removedCount} items from virtual scroller data`);
+        return true;
+    }
+
     // Add keyboard navigation methods
     handlePageUpDown(direction) {
         // Prevent duplicate animations by checking last trigger time
@@ -1097,5 +1132,31 @@ export class VirtualScroller {
             item: this.items[targetIndex],
             index: targetIndex
         };
+    }
+
+    /**
+     * Show a grid-scoped loading indicator (replaces full-page overlay)
+     * Only covers the card grid area, leaving header/sidebar unaffected.
+     */
+    showGridLoading() {
+        // Remove any stale overlay from a prior deferred hide (e.g. from final rAF)
+        this.hideGridLoading();
+        const overlay = document.createElement('div');
+        overlay.className = 'grid-loading-overlay';
+        const spinner = document.createElement('div');
+        spinner.className = 'loading-spinner';
+        overlay.appendChild(spinner);
+        this.gridElement.appendChild(overlay);
+        this.gridLoadingOverlay = overlay;
+    }
+
+    /**
+     * Hide the grid-scoped loading indicator.
+     */
+    hideGridLoading() {
+        if (this.gridLoadingOverlay) {
+            this.gridLoadingOverlay.remove();
+            this.gridLoadingOverlay = null;
+        }
     }
 }

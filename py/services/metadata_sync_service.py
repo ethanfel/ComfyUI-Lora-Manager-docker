@@ -216,13 +216,19 @@ class MetadataSyncService:
             provider_used: Optional[str] = None
             last_error: Optional[str] = None
             civitai_api_not_found = False
+            any_rate_limited = False
 
             for provider_name, provider in provider_attempts:
                 try:
                     civitai_metadata_candidate, error = await provider.get_model_by_hash(sha256)
                 except RateLimitError as exc:
-                    exc.provider = exc.provider or (provider_name or provider.__class__.__name__)
-                    raise
+                    logger.warning(
+                        "Provider %s is rate-limited (retry_after=%.0fs); skipping to next provider",
+                        provider_name or provider.__class__.__name__,
+                        exc.retry_after or 0,
+                    )
+                    any_rate_limited = True
+                    continue
                 except Exception as exc:  # pragma: no cover - defensive logging
                     logger.error("Provider %s failed for hash %s: %s", provider_name, sha256, exc)
                     civitai_metadata_candidate, error = None, str(exc)
@@ -258,6 +264,14 @@ class MetadataSyncService:
                     model_data["last_checked_at"] = datetime.now().timestamp()
                     needs_save = True
 
+                # When the model was already classified as "not on CivitAI" via
+                # .metadata.json (civitai_deleted=True) but the SQLite cache is
+                # stale (because the pre-fix code never persisted these flags),
+                # ensure the flags are written to the scanner cache + SQLite.
+                if not needs_save and model_data.get("civitai_deleted") is True:
+                    model_data["last_checked_at"] = datetime.now().timestamp()
+                    needs_save = True
+
                 # Save metadata if any state was updated
                 if needs_save:
                     data_to_save = model_data.copy()
@@ -266,6 +280,7 @@ class MetadataSyncService:
                     if "last_checked_at" not in data_to_save:
                         data_to_save["last_checked_at"] = datetime.now().timestamp()
                     await self._metadata_manager.save_metadata(file_path, data_to_save)
+                    await update_cache_func(file_path, file_path, data_to_save)
 
                 default_error = (
                     "CivitAI model is deleted and metadata archive DB is not enabled"
@@ -276,17 +291,18 @@ class MetadataSyncService:
                 )
 
                 resolved_error = last_error or default_error
+                if any_rate_limited and "Rate limited" not in resolved_error:
+                    resolved_error = "Rate limited"
                 if is_expected_offline_error(resolved_error):
                     resolved_error = OFFLINE_FRIENDLY_MESSAGE
 
                 error_msg = (
                     f"Error fetching metadata: {resolved_error} "
-                    f"(model_name={model_data.get('model_name', '')})"
+                    f"(file={os.path.basename(file_path)}, sha256={sha256})"
                 )
-                if is_expected_offline_error(resolved_error):
-                    logger.info(error_msg)
-                else:
-                    logger.error(error_msg)
+                # Use case layer (BulkMetadataRefreshUseCase) logs failed models at WARNING level,
+                # so this level is demoted to DEBUG to avoid duplicate user-visible logging.
+                logger.debug(error_msg)
                 return False, error_msg
 
             model_data["from_civitai"] = True
@@ -411,7 +427,18 @@ class MetadataSyncService:
         metadata = await metadata_loader(metadata_path)
 
         for key, value in updates.items():
-            if isinstance(value, dict) and isinstance(metadata.get(key), dict):
+            if key == "tags" and isinstance(value, list):
+                # Normalize tags: trim, lowercase, deduplicate
+                normalized = []
+                seen = set()
+                for tag in value:
+                    if isinstance(tag, str):
+                        t = tag.strip().lower()
+                        if t and t not in seen:
+                            normalized.append(t)
+                            seen.add(t)
+                metadata[key] = normalized
+            elif isinstance(value, dict) and isinstance(metadata.get(key), dict):
                 metadata[key].update(value)
             else:
                 metadata[key] = value

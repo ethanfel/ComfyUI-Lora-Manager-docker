@@ -5,6 +5,7 @@ import { DEFAULT_PATH_TEMPLATES, DEFAULT_PRIORITY_TAG_CONFIG } from '../utils/co
 
 const DEFAULT_SETTINGS_BASE = Object.freeze({
     civitai_api_key: '',
+    civitai_api_key_set: false,
     civitai_host: 'civitai.com',
     download_backend: 'python',
     aria2c_path: '',
@@ -36,7 +37,6 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     autoplay_on_hover: false,
     display_density: 'default',
     card_info_display: 'always',
-    show_folder_sidebar: true,
     model_name_display: 'model_name',
     lora_syntax_format: 'legacy',
     model_card_footer_action: 'example_images',
@@ -44,7 +44,7 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     include_trigger_words: false,
     compact_mode: false,
     priority_tags: { ...DEFAULT_PRIORITY_TAG_CONFIG },
-    update_flag_strategy: 'same_base',
+    version_grouping: 'same_base',
     hide_early_access_updates: false,
     auto_organize_exclusions: [],
     metadata_refresh_skip_paths: [],
@@ -53,6 +53,8 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     backup_auto_enabled: true,
     backup_retention_count: 5,
     strip_lora_on_copy: false,
+    use_new_license_icons: true,
+    group_by_model: false,
 });
 
 export function createDefaultSettings() {

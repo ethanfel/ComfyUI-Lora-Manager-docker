@@ -13,12 +13,15 @@ coverage/
 .coverage
 model_cache/
 
-# agent
+# agent / dev tooling
 .opencode/
 .claude/
 .sisyphus/
 .codex
 .omo
+reasonix.toml
+.reasonix/
+.codegraph/
 
 # Browser extension (private)
 extension/
@@ -34,3 +37,6 @@ vue-widgets/dist/
 # Hypothesis test cache
 .hypothesis/
 .worktrees/
+
+# Working/research notes (not committed)
+.docs/

@@ -31,6 +31,8 @@ PREVIEW_EXTENSIONS = [
     ".mp4",
     ".gif",
     ".webm",
+    ".avif",
+    ".jxl",
 ]
 
 # Card preview image width
@@ -41,7 +43,7 @@ EXAMPLE_IMAGE_WIDTH = 832
 
 # Supported media extensions for example downloads
 SUPPORTED_MEDIA_EXTENSIONS = {
-    "images": [".jpg", ".jpeg", ".png", ".webp", ".gif"],
+    "images": [".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif", ".jxl"],
     "videos": [".mp4", ".webm"],
 }
 
@@ -145,6 +147,8 @@ DIFFUSION_MODEL_BASE_MODELS = frozenset(
         "Qwen",
         "ZImageBase",
         "ZImageTurbo",
+        # Krea 2 — loaded via UNETLoader in ComfyUI
+        "Krea 2",
     ]
 )
 

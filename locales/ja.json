@@ -22,6 +22,7 @@
         },
         "status": {
             "loading": "読み込み中...",
+            "cancelling": "キャンセル中...",
             "unknown": "不明",
             "date": "日付",
             "version": "バージョン",
@@ -144,6 +145,10 @@
         },
         "usage": {
             "timesUsed": "使用回数"
+        },
+        "footer": {
+            "versionCount": "{count} バージョン",
+            "viewAllVersions": "ローカルの全バージョンを表示"
         }
     },
     "globalContextMenu": {
@@ -182,6 +187,9 @@
         },
         "manageExcludedModels": {
             "label": "除外モデルを管理"
+        },
+        "groupByModel": {
+            "label": "モデルでグループ化"
         }
     },
     "header": {
@@ -195,13 +203,7 @@
             "community": "[TODO: Translate] Community"
         },
         "search": {
-            "placeholder": "検索...",
-            "placeholders": {
-                "loras": "LoRAを検索...",
-                "recipes": "レシピを検索...",
-                "checkpoints": "checkpointを検索...",
-                "embeddings": "embeddingを検索..."
-            },
+            "placeholder": "検索",
             "options": "検索オプション",
             "searchIn": "検索対象：",
             "notAvailable": "統計ページでは検索は利用できません",
@@ -253,7 +255,18 @@
             "toggle": "テーマの切り替え",
             "switchToLight": "ライトテーマに切り替え",
             "switchToDark": "ダークテーマに切り替え",
-            "switchToAuto": "自動テーマに切り替え"
+            "switchToAuto": "自動テーマに切り替え",
+            "presets": "テーマプリセット",
+            "default": "デフォルト",
+            "nord": "Nord",
+            "midnight": "Midnight",
+            "monokai": "Monokai",
+            "dracula": "Dracula",
+            "solarized": "Solarized",
+            "mode": "モード",
+            "light": "ライト",
+            "dark": "ダーク",
+            "auto": "自動"
         },
         "actions": {
             "checkUpdates": "更新確認",
@@ -265,6 +278,9 @@
         "civitaiApiKey": "Civitai APIキー",
         "civitaiApiKeyPlaceholder": "Civitai APIキーを入力してください",
         "civitaiApiKeyHelp": "Civitaiからモデルをダウンロードするときの認証に使用されます",
+        "civitaiApiKeyConfigured": "設定済み",
+        "civitaiApiKeyNotConfigured": "未設定",
+        "civitaiApiKeySet": "設定",
         "civitaiHost": {
             "label": "Civitai ホスト",
             "help": "「View on Civitai」リンクを使うときに開く Civitai サイトを選択します。",
@@ -305,6 +321,7 @@
             "downloads": "ダウンロード",
             "videoSettings": "動画設定",
             "layoutSettings": "レイアウト設定",
+            "licenseIcons": "ライセンスアイコン",
             "misc": "その他",
             "backup": "バックアップ",
             "folderSettings": "デフォルトルート",
@@ -312,7 +329,7 @@
             "extraFolderPaths": "追加フォルダーパス",
             "downloadPathTemplates": "ダウンロードパステンプレート",
             "priorityTags": "優先タグ",
-            "updateFlags": "アップデートフラグ",
+            "versionScope": "アップデートフラグ",
             "exampleImages": "例画像",
             "autoOrganize": "自動整理",
             "metadata": "メタデータ",
@@ -417,6 +434,8 @@
             "help": "有効にすると、ダウンロード履歴サービスがそのバージョンが既にダウンロード済みと記録している場合、LoRA Managerはそのモデルバージョンのダウンロードをスキップします。すべてのダウンロードフローに適用されます。"
         },
         "layoutSettings": {
+            "groupByModel": "モデルでグループ化",
+            "groupByModelHelp": "有効にすると、各Civitaiモデルの最新バージョンのみが1枚のカードとして表示され、古いバージョンは非表示になります。",
             "displayDensity": "表示密度",
             "displayDensityOptions": {
                 "default": "デフォルト",
@@ -573,7 +592,7 @@
             "download": "ダウンロード",
             "restartRequired": "再起動が必要"
         },
-        "updateFlagStrategy": {
+        "versionGrouping": {
             "label": "アップデートフラグの表示戦略",
             "help": "新リリースがローカルファイルと同じベースモデルを共有する場合にのみ更新バッジを表示するか、そのモデルに新しいバージョンがあれば常に表示するかを決めます。",
             "options": {
@@ -584,6 +603,10 @@
         "hideEarlyAccessUpdates": {
             "label": "早期アクセス更新を非表示",
             "help": "早期アクセスのみの更新"
+        },
+        "licenseIcons": {
+            "useNewStyle": "更新されたライセンスアイコンを使用",
+            "useNewStyleHelp": "カラーインジケーター付きでライセンス許可を表示（新スタイル）するか、制限のみのアイコンを表示（クラシックスタイル）します。現在のCivitAIデザインを反映しています。"
         },
         "misc": {
             "includeTriggerWords": "LoRA構文にトリガーワードを含める",
@@ -653,7 +676,11 @@
                 "sizeAsc": "小さい順",
                 "usage": "使用回数",
                 "usageDesc": "多い",
-                "usageAsc": "少ない"
+                "usageAsc": "少ない",
+                "versionsCount": "ローカルバージョン数",
+                "versionsCountDesc": "バージョン数の多い順",
+                "versionsCountAsc": "バージョン数の少ない順",
+                "versionIdDesc": "最新バージョン順"
             },
             "refresh": {
                 "title": "モデルリストを更新",
@@ -958,10 +985,7 @@
     },
     "sidebar": {
         "modelRoot": "ルート",
-        "moreOptions": "その他のオプション",
         "collapseAll": "すべてのフォルダを折りたたむ",
-        "pinSidebar": "サイドバーを固定",
-        "unpinSidebar": "サイドバーの固定を解除",
         "hideOnThisPage": "このページでサイドバーを非表示",
         "showSidebar": "サイドバーを表示",
         "sidebarHiddenNotification": "{page}ページでサイドバーが非表示になっています",
@@ -1002,6 +1026,18 @@
             "storage": "ストレージ",
             "insights": "インサイト"
         },
+        "metrics": {
+            "totalModels": "モデル総数",
+            "totalStorage": "ストレージ合計",
+            "totalGenerations": "生成回数合計",
+            "usageRate": "使用率",
+            "loras": "LoRA",
+            "checkpoints": "Checkpoint",
+            "embeddings": "Embedding",
+            "uniqueTags": "ユニークタグ",
+            "unusedModels": "未使用モデル",
+            "avgUsesPerModel": "平均使用回数/モデル"
+        },
         "usage": {
             "mostUsedLoras": "最も使用されているLoRA",
             "mostUsedCheckpoints": "最も使用されているCheckpoint",
@@ -1019,13 +1055,77 @@
         },
         "insights": {
             "smartInsights": "スマートインサイト",
-            "recommendations": "推奨事項"
+            "recommendations": "推奨事項",
+            "noInsights": "インサイトはありません",
+            "unusedLoras": {
+                "high": {
+                    "title": "未使用のLoRAが多数あります",
+                    "description": "LoRAの{percent}%（{count}/{total}）が一度も使用されていません。",
+                    "suggestion": "未使用のモデルを整理またはアーカイブしてストレージを解放してください。"
+                }
+            },
+            "unusedCheckpoints": {
+                "detected": {
+                    "title": "未使用のCheckpointを検出",
+                    "description": "Checkpointの{percent}%（{count}/{total}）が一度も使用されていません。",
+                    "suggestion": "不要なCheckpointを確認して削除を検討してください。"
+                }
+            },
+            "unusedEmbeddings": {
+                "high": {
+                    "title": "未使用のEmbeddingが多数あります",
+                    "description": "Embeddingの{percent}%（{count}/{total}）が一度も使用されていません。",
+                    "suggestion": "未使用のEmbeddingを整理またはアーカイブしてコレクションを最適化してください。"
+                }
+            },
+            "collection": {
+                "large": {
+                    "title": "大規模コレクションを検出",
+                    "description": "モデルコレクションが{size}のストレージを使用しています。",
+                    "suggestion": "外部ストレージやクラウドソリューションの使用を検討してください。"
+                }
+            },
+            "activity": {
+                "active": {
+                    "title": "アクティブユーザー",
+                    "description": "これまでに{count}回の生成を完了しました！",
+                    "suggestion": "モデルを使って素晴らしいコンテンツを作り続けてください。"
+                }
+            }
         },
         "charts": {
             "collectionOverview": "コレクション概要",
             "baseModelDistribution": "ベースモデル分布",
             "usageTrends": "使用傾向（過去30日）",
-            "usageDistribution": "使用分布"
+            "usageDistribution": "使用分布",
+            "date": "日付",
+            "usageCount": "使用回数",
+            "fileSizeBytes": "ファイルサイズ（バイト）",
+            "models": "モデル",
+            "loraUsage": "LoRA 使用量",
+            "checkpointUsage": "Checkpoint 使用量",
+            "embeddingUsage": "Embedding 使用量"
+        },
+        "modelTypes": {
+            "lora": "LoRA",
+            "locon": "LyCORIS",
+            "dora": "DoRA",
+            "checkpoint": "Checkpoint",
+            "diffusion_model": "拡散モデル",
+            "embedding": "Embedding"
+        },
+        "placeholders": {
+            "loading": "読み込み中...",
+            "noModels": "モデルが見つかりません",
+            "errorLoading": "データ読み込みエラー",
+            "noStorageData": "ストレージデータがありません",
+            "rootFolder": "ルート",
+            "chartLibraryMissing": "Chart.js ライブラリが必要です"
+        },
+        "tooltips": {
+            "tagCount": "{tag}: {count} モデル",
+            "chartUsage": "{name}: {size}, {count} 回使用",
+            "chartPercentage": "{label}: {value} ({pct}%)"
         }
     },
     "modals": {
@@ -1401,6 +1501,21 @@
                     "versionDeleted": "バージョンを削除しました"
                 }
             }
+        },
+        "metadataFetchSummary": {
+            "title": "メタデータ取得サマリー",
+            "statSuccess": "成功",
+            "statFailed": "失敗",
+            "statSkipped": "スキップ",
+            "statTotal": "スキャン合計",
+            "statDuration": "所要時間",
+            "successMessage": "すべての{count}件の{type}を正常に更新しました",
+            "failedItems": "失敗したアイテム ({count})",
+            "close": "閉じる",
+            "copyReport": "レポートをコピー",
+            "downloadCsv": "CSVをダウンロード",
+            "columnModelName": "モデル名",
+            "columnError": "エラー"
         }
     },
     "modelTags": {
@@ -1412,15 +1527,6 @@
             "maxLength": "タグは30文字を超えることはできません",
             "maxCount": "最大30タグまで許可されています",
             "duplicate": "このタグは既に存在します"
-        }
-    },
-    "keyboard": {
-        "navigation": "キーボードナビゲーション：",
-        "shortcuts": {
-            "pageUp": "1ページ上にスクロール",
-            "pageDown": "1ページ下にスクロール",
-            "home": "トップにジャンプ",
-            "end": "ボトムにジャンプ"
         }
     },
     "initialization": {
@@ -1512,12 +1618,15 @@
             "modelUpdated": "モデルがワークフローで更新されました",
             "modelFailed": "モデルノードの更新に失敗しました",
             "embeddingAdded": "Embeddingをワークフローに追加しました",
-            "embeddingFailed": "Embeddingの追加に失敗しました"
+            "embeddingFailed": "Embeddingの追加に失敗しました",
+            "promptSent": "プロンプトをワークフローに送信しました",
+            "promptFailed": "プロンプトの送信に失敗しました"
         },
         "nodeSelector": {
             "recipe": "レシピ",
             "lora": "LoRA",
             "embedding": "Embedding",
+            "prompt": "プロンプト",
             "replace": "置換",
             "append": "追加",
             "selectTargetNode": "ターゲットノードを選択",
@@ -1704,6 +1813,7 @@
             "enterLoraName": "LoRA名または構文を入力してください",
             "reconnectedSuccessfully": "LoRAが正常に再接続されました",
             "reconnectFailed": "LoRA再接続エラー：{message}",
+            "noPromptToSend": "送信するプロンプトがありません",
             "cannotSend": "レシピを送信できません：レシピIDがありません",
             "sendFailed": "レシピのワークフローへの送信に失敗しました",
             "sendError": "レシピのワークフロー送信エラー",
@@ -1960,7 +2070,9 @@
             "bulkMoveSuccess": "{successCount} {type}が正常に移動されました",
             "exampleImagesDownloadSuccess": "例画像が正常にダウンロードされました！",
             "exampleImagesDownloadFailed": "例画像のダウンロードに失敗しました：{message}",
-            "moveFailed": "Failed to move item: {message}"
+            "moveFailed": "Failed to move item: {message}",
+            "copiedToClipboard": "クリップボードにコピーしました",
+            "downloadStarted": "ダウンロードを開始しました"
         }
     },
     "doctor": {

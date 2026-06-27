@@ -22,6 +22,7 @@
         },
         "status": {
             "loading": "Cargando...",
+            "cancelling": "Cancelando...",
             "unknown": "Desconocido",
             "date": "Fecha",
             "version": "Versión",
@@ -144,6 +145,10 @@
         },
         "usage": {
             "timesUsed": "Veces usado"
+        },
+        "footer": {
+            "versionCount": "{count} versiones",
+            "viewAllVersions": "Ver todas las versiones locales"
         }
     },
     "globalContextMenu": {
@@ -182,6 +187,9 @@
         },
         "manageExcludedModels": {
             "label": "Gestionar modelos excluidos"
+        },
+        "groupByModel": {
+            "label": "Agrupar por modelo"
         }
     },
     "header": {
@@ -195,13 +203,7 @@
             "community": "[TODO: Translate] Community"
         },
         "search": {
-            "placeholder": "Buscar...",
-            "placeholders": {
-                "loras": "Buscar LoRAs...",
-                "recipes": "Buscar recetas...",
-                "checkpoints": "Buscar checkpoints...",
-                "embeddings": "Buscar embeddings..."
-            },
+            "placeholder": "Buscar",
             "options": "Opciones de búsqueda",
             "searchIn": "Buscar en:",
             "notAvailable": "Búsqueda no disponible en la página de estadísticas",
@@ -253,7 +255,18 @@
             "toggle": "Cambiar tema",
             "switchToLight": "Cambiar a tema claro",
             "switchToDark": "Cambiar a tema oscuro",
-            "switchToAuto": "Cambiar a tema automático"
+            "switchToAuto": "Cambiar a tema automático",
+            "presets": "Preajustes de tema",
+            "default": "Predeterminado",
+            "nord": "Nord",
+            "midnight": "Midnight",
+            "monokai": "Monokai",
+            "dracula": "Dracula",
+            "solarized": "Solarized",
+            "mode": "Modo",
+            "light": "Claro",
+            "dark": "Oscuro",
+            "auto": "Auto"
         },
         "actions": {
             "checkUpdates": "Comprobar actualizaciones",
@@ -265,6 +278,9 @@
         "civitaiApiKey": "Clave API de Civitai",
         "civitaiApiKeyPlaceholder": "Introduce tu clave API de Civitai",
         "civitaiApiKeyHelp": "Utilizada para autenticación al descargar modelos de Civitai",
+        "civitaiApiKeyConfigured": "Configurado",
+        "civitaiApiKeyNotConfigured": "No configurado",
+        "civitaiApiKeySet": "Configurar",
         "civitaiHost": {
             "label": "Host de Civitai",
             "help": "Elige qué sitio de Civitai se abre al usar los enlaces de \"View on Civitai\".",
@@ -305,6 +321,7 @@
             "downloads": "Descargas",
             "videoSettings": "Configuración de video",
             "layoutSettings": "Configuración de diseño",
+            "licenseIcons": "Iconos de licencia",
             "misc": "Varios",
             "backup": "Copias de seguridad",
             "folderSettings": "Raíces predeterminadas",
@@ -312,7 +329,7 @@
             "extraFolderPaths": "Rutas de carpetas adicionales",
             "downloadPathTemplates": "Plantillas de rutas de descarga",
             "priorityTags": "Etiquetas prioritarias",
-            "updateFlags": "Indicadores de actualización",
+            "versionScope": "Indicadores de actualización",
             "exampleImages": "Imágenes de ejemplo",
             "autoOrganize": "Organización automática",
             "metadata": "Metadatos",
@@ -417,6 +434,8 @@
             "help": "Cuando está habilitado, LoRA Manager omitirá la descarga de una versión de modelo si el servicio de historial de descargas registra esa versión exacta como ya descargada. Aplica a todos los flujos de descarga."
         },
         "layoutSettings": {
+            "groupByModel": "Agrupar por modelo",
+            "groupByModelHelp": "Cuando está activado, solo se muestra la versión más reciente de cada modelo de Civitai como una tarjeta única. Las versiones anteriores están ocultas.",
             "displayDensity": "Densidad de visualización",
             "displayDensityOptions": {
                 "default": "Predeterminado",
@@ -573,7 +592,7 @@
             "download": "Descargar",
             "restartRequired": "Requiere reinicio"
         },
-        "updateFlagStrategy": {
+        "versionGrouping": {
             "label": "Estrategia de indicadores de actualización",
             "help": "Decide si las insignias de actualización deben mostrarse solo cuando una nueva versión comparte el mismo modelo base que tus archivos locales o siempre que exista cualquier versión más reciente de ese modelo.",
             "options": {
@@ -584,6 +603,10 @@
         "hideEarlyAccessUpdates": {
             "label": "Ocultar actualizaciones de acceso temprano",
             "help": "Solo actualizaciones de acceso temprano"
+        },
+        "licenseIcons": {
+            "useNewStyle": "Usar iconos de licencia actualizados",
+            "useNewStyleHelp": "Mostrar permisos de licencia con indicadores de color (nuevo estilo) o solo iconos de restricción (estilo clásico). Refleja el diseño actual de CivitAI."
         },
         "misc": {
             "includeTriggerWords": "Incluir palabras clave en la sintaxis de LoRA",
@@ -653,7 +676,11 @@
                 "sizeAsc": "Menor",
                 "usage": "Número de usos",
                 "usageDesc": "Más",
-                "usageAsc": "Menos"
+                "usageAsc": "Menos",
+                "versionsCount": "Versiones locales",
+                "versionsCountDesc": "Más versiones primero",
+                "versionsCountAsc": "Menos versiones primero",
+                "versionIdDesc": "Versión más nueva primero"
             },
             "refresh": {
                 "title": "Actualizar lista de modelos",
@@ -958,10 +985,7 @@
     },
     "sidebar": {
         "modelRoot": "Raíz",
-        "moreOptions": "Más opciones",
         "collapseAll": "Colapsar todas las carpetas",
-        "pinSidebar": "Fijar barra lateral",
-        "unpinSidebar": "Desfijar barra lateral",
         "hideOnThisPage": "Ocultar barra lateral en esta página",
         "showSidebar": "Mostrar barra lateral",
         "sidebarHiddenNotification": "Barra lateral oculta en la página {page}",
@@ -1002,6 +1026,18 @@
             "storage": "Almacenamiento",
             "insights": "Perspectivas"
         },
+        "metrics": {
+            "totalModels": "Total de modelos",
+            "totalStorage": "Almacenamiento total",
+            "totalGenerations": "Generaciones totales",
+            "usageRate": "Tasa de uso",
+            "loras": "LoRAs",
+            "checkpoints": "Puntos de control",
+            "embeddings": "Embeddings",
+            "uniqueTags": "Etiquetas únicas",
+            "unusedModels": "Modelos no usados",
+            "avgUsesPerModel": "Prom. usos/modelo"
+        },
         "usage": {
             "mostUsedLoras": "LoRAs más utilizados",
             "mostUsedCheckpoints": "Checkpoints más utilizados",
@@ -1019,13 +1055,77 @@
         },
         "insights": {
             "smartInsights": "Perspectivas inteligentes",
-            "recommendations": "Recomendaciones"
+            "recommendations": "Recomendaciones",
+            "noInsights": "No hay información disponible",
+            "unusedLoras": {
+                "high": {
+                    "title": "Alta cantidad de LoRAs no utilizadas",
+                    "description": "El {percent}% de tus LoRAs ({count}/{total}) nunca se han utilizado.",
+                    "suggestion": "Considera organizar o archivar modelos no utilizados para liberar espacio."
+                }
+            },
+            "unusedCheckpoints": {
+                "detected": {
+                    "title": "Puntos de control no utilizados detectados",
+                    "description": "El {percent}% de tus puntos de control ({count}/{total}) nunca se han utilizado.",
+                    "suggestion": "Revisa y considera eliminar los puntos de control que ya no necesites."
+                }
+            },
+            "unusedEmbeddings": {
+                "high": {
+                    "title": "Alta cantidad de Embeddings no utilizados",
+                    "description": "El {percent}% de tus embeddings ({count}/{total}) nunca se han utilizado.",
+                    "suggestion": "Considera organizar o archivar embeddings no utilizados para optimizar tu colección."
+                }
+            },
+            "collection": {
+                "large": {
+                    "title": "Colección grande detectada",
+                    "description": "Tu colección de modelos está usando {size} de almacenamiento.",
+                    "suggestion": "Considera usar almacenamiento externo o soluciones en la nube para una mejor organización."
+                }
+            },
+            "activity": {
+                "active": {
+                    "title": "Usuario activo",
+                    "description": "¡Has completado {count} generaciones hasta ahora!",
+                    "suggestion": "Sigue explorando y creando contenido increíble con tus modelos."
+                }
+            }
         },
         "charts": {
             "collectionOverview": "Resumen de colección",
             "baseModelDistribution": "Distribución de modelo base",
             "usageTrends": "Tendencias de uso (Últimos 30 días)",
-            "usageDistribution": "Distribución de uso"
+            "usageDistribution": "Distribución de uso",
+            "date": "Fecha",
+            "usageCount": "Conteo de uso",
+            "fileSizeBytes": "Tamaño del archivo (bytes)",
+            "models": "Modelos",
+            "loraUsage": "Uso de LoRA",
+            "checkpointUsage": "Uso de Checkpoint",
+            "embeddingUsage": "Uso de Embedding"
+        },
+        "modelTypes": {
+            "lora": "LoRA",
+            "locon": "LyCORIS",
+            "dora": "DoRA",
+            "checkpoint": "Punto de control",
+            "diffusion_model": "Modelo de difusión",
+            "embedding": "Embeddings"
+        },
+        "placeholders": {
+            "loading": "Cargando...",
+            "noModels": "No se encontraron modelos",
+            "errorLoading": "Error al cargar datos",
+            "noStorageData": "No hay datos de almacenamiento disponibles",
+            "rootFolder": "Raíz",
+            "chartLibraryMissing": "El gráfico requiere la librería Chart.js"
+        },
+        "tooltips": {
+            "tagCount": "{tag}: {count} modelos",
+            "chartUsage": "{name}: {size}, {count} usos",
+            "chartPercentage": "{label}: {value} ({pct}%)"
         }
     },
     "modals": {
@@ -1401,6 +1501,21 @@
                     "versionDeleted": "Versión eliminada"
                 }
             }
+        },
+        "metadataFetchSummary": {
+            "title": "Resumen de obtención de metadatos",
+            "statSuccess": "Éxito",
+            "statFailed": "Fallido",
+            "statSkipped": "Omitido",
+            "statTotal": "Total escaneado",
+            "statDuration": "Duración",
+            "successMessage": "¡Todos los {count} {type}s actualizados correctamente!",
+            "failedItems": "Elementos fallidos ({count})",
+            "close": "Cerrar",
+            "copyReport": "Copiar informe",
+            "downloadCsv": "Descargar CSV",
+            "columnModelName": "Nombre del modelo",
+            "columnError": "Error"
         }
     },
     "modelTags": {
@@ -1412,15 +1527,6 @@
             "maxLength": "La etiqueta no debe exceder los 30 caracteres",
             "maxCount": "Máximo 30 etiquetas permitidas",
             "duplicate": "Esta etiqueta ya existe"
-        }
-    },
-    "keyboard": {
-        "navigation": "Navegación por teclado:",
-        "shortcuts": {
-            "pageUp": "Desplazar hacia arriba una página",
-            "pageDown": "Desplazar hacia abajo una página",
-            "home": "Saltar al inicio",
-            "end": "Saltar al final"
         }
     },
     "initialization": {
@@ -1512,12 +1618,15 @@
             "modelUpdated": "Modelo actualizado en el flujo de trabajo",
             "modelFailed": "Error al actualizar nodo de modelo",
             "embeddingAdded": "Embedding añadido al flujo de trabajo",
-            "embeddingFailed": "Error al añadir el embedding"
+            "embeddingFailed": "Error al añadir el embedding",
+            "promptSent": "Prompt enviado al flujo de trabajo",
+            "promptFailed": "Error al enviar el prompt"
         },
         "nodeSelector": {
             "recipe": "Receta",
             "lora": "LoRA",
             "embedding": "Embedding",
+            "prompt": "Prompt",
             "replace": "Reemplazar",
             "append": "Añadir",
             "selectTargetNode": "Seleccionar nodo de destino",
@@ -1704,6 +1813,7 @@
             "enterLoraName": "Por favor introduce un nombre de LoRA o sintaxis",
             "reconnectedSuccessfully": "LoRA reconectado exitosamente",
             "reconnectFailed": "Error reconectando LoRA: {message}",
+            "noPromptToSend": "No hay prompt para enviar",
             "cannotSend": "No se puede enviar receta: Falta ID de receta",
             "sendFailed": "Error al enviar receta al flujo de trabajo",
             "sendError": "Error enviando receta al flujo de trabajo",
@@ -1960,7 +2070,9 @@
             "bulkMoveSuccess": "Movidos exitosamente {successCount} {type}s",
             "exampleImagesDownloadSuccess": "¡Imágenes de ejemplo descargadas exitosamente!",
             "exampleImagesDownloadFailed": "Error al descargar imágenes de ejemplo: {message}",
-            "moveFailed": "Failed to move item: {message}"
+            "moveFailed": "Failed to move item: {message}",
+            "copiedToClipboard": "Copiado al portapapeles",
+            "downloadStarted": "Descarga iniciada"
         }
     },
     "doctor": {

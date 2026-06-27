@@ -4,12 +4,13 @@ import { ImportManager } from './managers/ImportManager.js';
 import { BatchImportManager } from './managers/BatchImportManager.js';
 import { RecipeModal } from './components/RecipeModal.js';
 import { state, getCurrentPageState } from './state/index.js';
-import { getSessionItem, removeSessionItem } from './utils/storageHelpers.js';
+import { getStorageItem, setStorageItem, getSessionItem, removeSessionItem } from './utils/storageHelpers.js';
 import { RecipeContextMenu } from './components/ContextMenu/index.js';
 import { DuplicatesManager } from './components/DuplicatesManager.js';
 import { refreshVirtualScroll } from './utils/infiniteScroll.js';
 import { refreshRecipes, RecipeSidebarApiClient } from './api/recipeApi.js';
 import { sidebarManager } from './components/SidebarManager.js';
+import { initSortDropdown } from './components/controls/SortDropdown.js';
 
 class RecipePageControls {
     constructor() {
@@ -95,8 +96,7 @@ class RecipeManager {
     async _initSidebar() {
         try {
             sidebarManager.setHostPageControls(this.pageControls);
-            const shouldShowSidebar = state?.global?.settings?.show_folder_sidebar !== false;
-            await sidebarManager.setSidebarEnabled(shouldShowSidebar);
+            await sidebarManager.initialize(this.pageControls);
         } catch (error) {
             console.error('Failed to initialize recipe sidebar:', error);
         }
@@ -150,9 +150,10 @@ class RecipeManager {
 
     _showCustomFilterIndicator() {
         const indicator = document.getElementById('customFilterIndicator');
-        const textElement = document.getElementById('customFilterText');
+        if (!indicator) return;
+        const textElement = indicator.querySelector('.customFilterText');
 
-        if (!indicator || !textElement) return;
+        if (!textElement) return;
 
         // Update text based on filter type
         let filterText = '';
@@ -236,12 +237,18 @@ class RecipeManager {
     }
 
     initEventListeners() {
-        // Sort select
+        // Sort select — load saved preference, persist on change
         const sortSelect = document.getElementById('sortSelect');
         if (sortSelect) {
+            const savedSort = getStorageItem('recipes_sort');
+            if (savedSort) {
+                this.pageState.sortBy = savedSort;
+            }
+            initSortDropdown(sortSelect);
             sortSelect.value = this.pageState.sortBy || 'date:desc';
             sortSelect.addEventListener('change', () => {
                 this.pageState.sortBy = sortSelect.value;
+                setStorageItem('recipes_sort', sortSelect.value);
                 refreshVirtualScroll();
             });
         }
@@ -249,6 +256,11 @@ class RecipeManager {
         const bulkButton = document.querySelector('[data-action="bulk"]');
         if (bulkButton) {
             bulkButton.addEventListener('click', () => window.bulkManager?.toggleBulkMode());
+        }
+
+        const duplicatesButton = document.querySelector('[data-action="find-duplicates"]');
+        if (duplicatesButton) {
+            duplicatesButton.addEventListener('click', () => this.findDuplicateRecipes());
         }
 
         const favoriteFilterBtn = document.getElementById('favoriteFilterBtn');

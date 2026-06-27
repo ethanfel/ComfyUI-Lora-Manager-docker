@@ -233,6 +233,8 @@ class ModelListingHandler:
         start_time = time.perf_counter()
         try:
             params = self._parse_common_params(request)
+            # group_by_model is meaningless for excluded view; strip it
+            params.pop("group_by_model", None)
             result = await self._service.get_excluded_paginated_data(**params)
 
             format_start = time.perf_counter()
@@ -372,6 +374,19 @@ class ModelListingHandler:
             request.query.get("name_pattern_use_regex", "false").lower() == "true"
         )
 
+        # Group-by-model flag: deduplicate versions sharing the same civitai modelId
+        group_by_model = (
+            request.query.get("group_by_model", "false").lower() == "true"
+        )
+
+        # View-local-versions filter: show all local versions of a specific model
+        civitai_model_id = request.query.get("civitai_model_id")
+        if civitai_model_id is not None:
+            try:
+                civitai_model_id = int(civitai_model_id)
+            except (TypeError, ValueError):
+                civitai_model_id = None
+
         return {
             "page": page,
             "page_size": page_size,
@@ -396,6 +411,8 @@ class ModelListingHandler:
             "name_pattern_include": name_pattern_include,
             "name_pattern_exclude": name_pattern_exclude,
             "name_pattern_use_regex": name_pattern_use_regex,
+            "group_by_model": group_by_model,
+            "civitai_model_id": civitai_model_id,
             **self._parse_specific_params(request),
         }
 
@@ -1279,6 +1296,14 @@ class ModelQueryHandler:
                     license_flags = (model_data or {}).get("license_flags")
                     if license_flags is not None:
                         response_payload["license_flags"] = int(license_flags)
+                    # Include the user's license icon style preference so the
+                    # ComfyUI tooltip can pick the right set without a separate
+                    # API call.
+                    try:
+                        settings = get_settings_manager()
+                        response_payload["use_new_license_icons"] = settings.get("use_new_license_icons", True)
+                    except Exception:
+                        pass
                 return web.json_response(response_payload)
             return web.json_response(
                 {
@@ -1827,6 +1852,39 @@ class ModelDownloadHandler:
             )
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
+    async def update_download_queue_status(self, request: web.Request) -> web.Response:
+        """Update the status of a queue item (non-terminal transitions).
+
+        Supported transitions include ``queued → downloading``,
+        ``downloading → paused``, ``paused → downloading``, etc.
+        Terminal transitions (``completed``, ``failed``, ``canceled``)
+        should use ``complete_download_in_queue`` instead.
+        """
+        try:
+            download_id = request.query.get("download_id")
+            status = request.query.get("status")
+            if not download_id or not status:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "download_id and status are required",
+                    },
+                    status=400,
+                )
+            service = await DownloadQueueService.get_instance()
+            updated = await service.update_status(download_id, status)
+            if not updated:
+                return web.json_response(
+                    {"success": False, "error": "Download not found in queue"},
+                    status=404,
+                )
+            return web.json_response({"success": True})
+        except Exception as exc:
+            self._logger.error(
+                "Error updating download queue status: %s", exc, exc_info=True
+            )
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
 
 class ModelCivitaiHandler:
     """CivitAI integration endpoints."""
@@ -1868,7 +1926,9 @@ class ModelCivitaiHandler:
             return web.json_response(result)
         except Exception as exc:
             self._logger.error(
-                "Error in fetch_all_civitai for %ss: %s", self._service.model_type, exc
+                "Error in fetch_all_civitai for %ss: %s",
+                self._service.model_type, exc,
+                exc_info=True,
             )
             return web.Response(text=str(exc), status=500)
 
@@ -2869,6 +2929,7 @@ class ModelHandlerSet:
             "retry_all_failed_downloads": self.download.retry_all_failed_downloads,
             "complete_download_in_queue": self.download.complete_download_in_queue,
             "get_download_stats": self.download.get_download_stats,
+            "update_download_queue_status": self.download.update_download_queue_status,
             "get_civitai_versions": self.civitai.get_civitai_versions,
             "get_civitai_model_by_version": self.civitai.get_civitai_model_by_version,
             "get_civitai_model_by_hash": self.civitai.get_civitai_model_by_hash,

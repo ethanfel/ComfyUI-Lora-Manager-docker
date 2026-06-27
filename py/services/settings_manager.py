@@ -91,7 +91,6 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "autoplay_on_hover": False,
     "display_density": "default",
     "card_info_display": "always",
-    "show_folder_sidebar": True,
     "include_trigger_words": False,
     "compact_mode": False,
     "priority_tags": DEFAULT_PRIORITY_TAG_CONFIG.copy(),
@@ -99,13 +98,15 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "lora_syntax_format": "legacy",
     "model_card_footer_action": "replace_preview",
     "show_version_on_card": True,
-    "update_flag_strategy": "same_base",
+    "version_grouping": "same_base",
     "auto_organize_exclusions": [],
     "metadata_refresh_skip_paths": [],
     "skip_previously_downloaded_model_versions": False,
     "download_skip_base_models": [],
     "backup_auto_enabled": True,
     "backup_retention_count": 5,
+    "use_new_license_icons": True,
+    "group_by_model": False,
 }
 
 
@@ -134,6 +135,9 @@ class SettingsManager:
         self._template_path = (
             Path(__file__).resolve().parents[2] / "settings.json.example"
         )
+        # Known placeholder value in settings.json.example; any file containing
+        # this value should be treated as "not configured".
+        self._TEMPLATE_PLACEHOLDER_API_KEY = "your_civitai_api_key_here"
         self.settings = self._load_settings()
         self._migrate_setting_keys()
         self._ensure_default_settings()
@@ -165,6 +169,12 @@ class SettingsManager:
                     self._original_disk_payload = copy.deepcopy(data)
                     if self._matches_template_payload(data):
                         self._preserve_disk_template = True
+                    # Clean up the template placeholder so it is not treated
+                    # as a real key (affects both the frontend boolean and
+                    # the downloader's Authorization header).
+                    placeholder = self._TEMPLATE_PLACEHOLDER_API_KEY
+                    if data.get("civitai_api_key") == placeholder:
+                        data["civitai_api_key"] = ""
                 return data
             except json.JSONDecodeError as exc:
                 logger.error("Failed to parse settings.json: %s", exc)
@@ -735,6 +745,7 @@ class SettingsManager:
             "includeTriggerWords": "include_trigger_words",
             "compactMode": "compact_mode",
             "modelCardFooterAction": "model_card_footer_action",
+            "update_flag_strategy": "version_grouping",
         }
 
         updated = False

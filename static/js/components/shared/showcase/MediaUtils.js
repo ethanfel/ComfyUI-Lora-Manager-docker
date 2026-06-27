@@ -3,7 +3,7 @@
  * Media-specific utility functions for showcase components
  * (Moved from uiHelpers.js to better organize code)
  */
-import { showToast, copyToClipboard, getNSFWLevelName } from '../../../utils/uiHelpers.js';
+import { showToast, copyToClipboard, getNSFWLevelName, sendPromptToWorkflow, stripLoraTags, sendGenParamsToWorkflow } from '../../../utils/uiHelpers.js';
 import { state } from '../../../state/index.js';
 import { getModelApiClient } from '../../../api/modelApiFactory.js';
 import { NSFW_LEVELS, getMatureBlurThreshold } from '../../../utils/constants.js';
@@ -317,6 +317,74 @@ export function initMetadataPanelHandlers(container) {
                     }
                 });
             });
+            
+            // Handle send prompt buttons
+            const sendBtns = metadataPanel.querySelectorAll('.send-prompt-btn');
+            sendBtns.forEach(sendBtn => {
+                const promptIndex = sendBtn.dataset.promptIndex;
+                const promptElement = wrapper.querySelector(`#prompt-${promptIndex}`);
+                
+                sendBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    
+                    if (!promptElement) return;
+                    
+                    let promptText = promptElement.textContent || '';
+                    if (!promptText.trim()) {
+                        showToast('toast.recipes.noPromptToSend', {}, 'warning');
+                        return;
+                    }
+                    
+                    // Respect strip <lora> setting from global state
+                    if (state.global.settings?.strip_lora_on_copy) {
+                        promptText = stripLoraTags(promptText);
+                    }
+                    
+                    sendPromptToWorkflow(promptText);
+                });
+            });
+            
+            // Handle send params buttons
+            const paramsBtn = metadataPanel.querySelector('.send-params-btn');
+            if (paramsBtn) {
+                paramsBtn.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    
+                    // Collect gen params from the param-tag elements
+                    const tagsContainer = wrapper.querySelector('.params-tags');
+                    if (!tagsContainer) return;
+                    
+                    const paramTags = tagsContainer.querySelectorAll('.param-tag');
+                    const genParams = {};
+                    
+                    // Map display labels to genParams keys
+                    const labelToKey = {
+                        'Seed': 'seed',
+                        'Steps': 'steps',
+                        'Sampler': 'sampler',
+                        'CFG': 'cfg_scale',
+                    };
+                    
+                    paramTags.forEach(tag => {
+                        const nameEl = tag.querySelector('.param-name');
+                        const valueEl = tag.querySelector('.param-value');
+                        if (!nameEl || !valueEl) return;
+                        
+                        const label = nameEl.textContent.replace(':', '').trim();
+                        const key = labelToKey[label];
+                        if (key) {
+                            genParams[key] = valueEl.textContent.trim();
+                        }
+                    });
+                    
+                    if (Object.keys(genParams).length === 0) {
+                        showToast('No sendable parameters found', {}, 'warning');
+                        return;
+                    }
+                    
+                    await sendGenParamsToWorkflow(genParams);
+                });
+            }
             
             // Prevent panel scroll from causing modal scroll
             metadataPanel.addEventListener('wheel', (e) => {

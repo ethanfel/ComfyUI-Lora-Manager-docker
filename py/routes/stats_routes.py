@@ -11,6 +11,8 @@ from ..config import config
 from ..services.settings_manager import get_settings_manager
 from ..services.server_i18n import server_i18n
 from ..services.service_registry import ServiceRegistry
+from ..services.model_query import normalize_sub_type, resolve_sub_type
+from ..utils.constants import VALID_LORA_SUB_TYPES, VALID_CHECKPOINT_SUB_TYPES
 from ..utils.usage_stats import UsageStats
 
 logger = logging.getLogger(__name__)
@@ -140,6 +142,21 @@ class StatsRoutes:
             # Get usage statistics
             usage_data = await self.usage_stats.get_stats()
             
+            # CivitAI model type distribution across all model types
+            # Use the same logic as the filter panel: normalize_sub_type(resolve_sub_type(entry))
+            # with sub-type validation per model type
+            model_types_counter: Counter[str] = Counter()
+            for entry in lora_cache.raw_data:
+                ntype = normalize_sub_type(resolve_sub_type(entry))
+                if ntype and ntype in VALID_LORA_SUB_TYPES:
+                    model_types_counter[ntype] += 1
+            for entry in checkpoint_cache.raw_data:
+                ntype = normalize_sub_type(resolve_sub_type(entry))
+                if ntype and ntype in VALID_CHECKPOINT_SUB_TYPES:
+                    model_types_counter[ntype] += 1
+            # Embeddings: always count as "embedding" regardless of CivitAI sub-type
+            model_types_counter['embedding'] = len(embedding_cache.raw_data)
+            
             return web.json_response({
                 'success': True,
                 'data': {
@@ -154,7 +171,8 @@ class StatsRoutes:
                     'total_generations': usage_data.get('total_executions', 0),
                     'unused_loras': self._count_unused_models(lora_cache.raw_data, usage_data.get('loras', {})),
                     'unused_checkpoints': self._count_unused_models(checkpoint_cache.raw_data, usage_data.get('checkpoints', {})),
-                    'unused_embeddings': self._count_unused_models(embedding_cache.raw_data, usage_data.get('embeddings', {}))
+                    'unused_embeddings': self._count_unused_models(embedding_cache.raw_data, usage_data.get('embeddings', {})),
+                    'model_types_distribution': dict(model_types_counter.most_common())
                 }
             })
             
@@ -459,9 +477,12 @@ class StatsRoutes:
                 if unused_lora_percent > 50:
                     insights.append({
                         'type': 'warning',
-                        'title': 'High Number of Unused LoRAs',
-                        'description': f'{unused_lora_percent:.1f}% of your LoRAs ({unused_loras}/{total_loras}) have never been used.',
-                        'suggestion': 'Consider organizing or archiving unused models to free up storage space.'
+                        'key': 'insights.unusedLoras.high',
+                        'params': {
+                            'percent': f'{unused_lora_percent:.1f}',
+                            'count': str(unused_loras),
+                            'total': str(total_loras)
+                        }
                     })
             
             if total_checkpoints > 0:
@@ -469,9 +490,12 @@ class StatsRoutes:
                 if unused_checkpoint_percent > 30:
                     insights.append({
                         'type': 'warning',
-                        'title': 'Unused Checkpoints Detected',
-                        'description': f'{unused_checkpoint_percent:.1f}% of your checkpoints ({unused_checkpoints}/{total_checkpoints}) have never been used.',
-                        'suggestion': 'Review and consider removing checkpoints you no longer need.'
+                        'key': 'insights.unusedCheckpoints.detected',
+                        'params': {
+                            'percent': f'{unused_checkpoint_percent:.1f}',
+                            'count': str(unused_checkpoints),
+                            'total': str(total_checkpoints)
+                        }
                     })
             
             if total_embeddings > 0:
@@ -479,9 +503,12 @@ class StatsRoutes:
                 if unused_embedding_percent > 50:
                     insights.append({
                         'type': 'warning',
-                        'title': 'High Number of Unused Embeddings',
-                        'description': f'{unused_embedding_percent:.1f}% of your embeddings ({unused_embeddings}/{total_embeddings}) have never been used.',
-                        'suggestion': 'Consider organizing or archiving unused embeddings to optimize your collection.'
+                        'key': 'insights.unusedEmbeddings.high',
+                        'params': {
+                            'percent': f'{unused_embedding_percent:.1f}',
+                            'count': str(unused_embeddings),
+                            'total': str(total_embeddings)
+                        }
                     })
             
             # Storage insights
@@ -492,18 +519,20 @@ class StatsRoutes:
             if total_size > 100 * 1024 * 1024 * 1024:  # 100GB
                 insights.append({
                     'type': 'info',
-                    'title': 'Large Collection Detected',
-                    'description': f'Your model collection is using {self._format_size(total_size)} of storage.',
-                    'suggestion': 'Consider using external storage or cloud solutions for better organization.'
+                    'key': 'insights.collection.large',
+                    'params': {
+                        'size': self._format_size(total_size)
+                    }
                 })
             
             # Recent activity insight
             if usage_data.get('total_executions', 0) > 100:
                 insights.append({
                     'type': 'success',
-                    'title': 'Active User',
-                    'description': f'You\'ve completed {usage_data["total_executions"]} generations so far!',
-                    'suggestion': 'Keep exploring and creating amazing content with your models.'
+                    'key': 'insights.activity.active',
+                    'params': {
+                        'count': str(usage_data['total_executions'])
+                    }
                 })
             
             return web.json_response({

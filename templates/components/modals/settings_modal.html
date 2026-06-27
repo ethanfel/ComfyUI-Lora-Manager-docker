@@ -95,21 +95,35 @@
                         <div class="setting-item api-key-item">
                             <div class="setting-row">
                                 <div class="setting-info">
-                                    <label for="civitaiApiKey">{{ t('settings.civitaiApiKey') }}</label>
+                                    <label>{{ t('settings.civitaiApiKey') }}</label>
                                     <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.civitaiApiKeyHelp') }}"></i>
                                 </div>
                                 <div class="setting-control">
-                                    <div class="api-key-input">
-                                        <input type="password" 
-                                            id="civitaiApiKey" 
-                                            placeholder="{{ t('settings.civitaiApiKeyPlaceholder') }}"
-                                            value="{{ settings.get('civitai_api_key', '') }}"
-                                            autocomplete="new-password"
-                                            onblur="settingsManager.saveInputSetting('civitaiApiKey', 'civitai_api_key')"
-                                            onkeydown="if(event.key === 'Enter') { this.blur(); }" />
-                                        <button class="toggle-visibility">
-                                            <i class="fas fa-eye"></i>
+                                    <!-- Status display (shown when not editing) -->
+                                    <div id="civitaiApiKeyStatus" class="api-key-status">
+                                        <span id="civitaiApiKeyStatusText" class="api-key-status-text api-key-status--unconfigured">
+                                            <i class="fas fa-times-circle text-error"></i>
+                                            {{ t('settings.civitaiApiKeyNotConfigured') }}
+                                        </span>
+                                        <button type="button" class="secondary-btn" id="civitaiApiKeyActionBtn" onclick="settingsManager.editApiKey()">
+                                            {{ t('settings.civitaiApiKeySet') }}
                                         </button>
+                                    </div>
+                                    <!-- Inline edit view (shown when editing) -->
+                                    <div id="civitaiApiKeyEdit" class="api-key-edit is-hidden">
+                                        <div class="api-key-input">
+                                            <input type="text"
+                                                id="civitaiApiKey"
+                                                class="api-key-masked"
+                                                placeholder="{{ t('settings.civitaiApiKeyPlaceholder') }}"
+                                                autocomplete="off"
+                                                data-mask="css" />
+                                            <button type="button" class="toggle-visibility">
+                                                <i class="fas fa-eye"></i>
+                                            </button>
+                                        </div>
+                                        <button type="button" class="primary-btn" onclick="settingsManager.saveApiKey()">{{ t('common.actions.save') }}</button>
+                                        <button type="button" class="secondary-btn" onclick="settingsManager.cancelEditApiKey()">{{ t('common.actions.cancel') }}</button>
                                     </div>
                                 </div>
                             </div>
@@ -483,24 +497,6 @@
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
-                                        <label for="showFolderSidebar">
-                                        {{ t('settings.layoutSettings.showFolderSidebar') }}
-                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.layoutSettings.showFolderSidebarHelp') }}"></i>
-                                    </label>
-                                    </div>
-                                    <div class="setting-control">
-                                        <label class="toggle-switch">
-                                            <input type="checkbox" id="showFolderSidebar"
-                                                   onchange="settingsManager.saveToggleSetting('showFolderSidebar', 'show_folder_sidebar')">
-                                            <span class="toggle-slider"></span>
-                                        </label>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div class="setting-item">
-                                <div class="setting-row">
-                                    <div class="setting-info">
                                         <label for="displayDensity">
                                         {{ t('settings.layoutSettings.displayDensity') }}
                                         <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.layoutSettings.displayDensityHelp') }}"></i>
@@ -540,6 +536,25 @@
                                 </div>
                             </div>
 
+                            <!-- Group by model toggle -->
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="groupByModel">
+                                        {{ t('settings.layoutSettings.groupByModel') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.layoutSettings.groupByModelHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="groupByModel"
+                                                   onchange="settingsManager.saveToggleSetting('groupByModel', 'group_by_model')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
@@ -567,7 +582,7 @@
                                     </div>
                                     <div class="setting-control range-control">
                                         <input type="range" id="cardBlurAmount" min="0" max="20" value="8" step="1"
-                                               oninput="document.getElementById('cardBlurAmountValue').textContent = this.value + 'px'"
+                                               oninput="var pct = (this.value / 20) * 100; this.style.setProperty('--range-fill', pct + '%'); document.getElementById('cardBlurAmountValue').textContent = this.value + 'px'"
                                                onchange="settingsManager.saveRangeSetting('cardBlurAmount', 'cardBlurAmountValue', 'card_blur_amount')">
                                         <span id="cardBlurAmountValue" class="range-value">8px</span>
                                     </div>
@@ -610,6 +625,30 @@
                             </div>
                         </div>
                         
+                        <!-- License Icons -->
+                        <div class="settings-subsection">
+                            <div class="settings-subsection-header">
+                                <h4>{{ t('settings.sections.licenseIcons') }}</h4>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-row">
+                                    <div class="setting-info">
+                                        <label for="useNewLicenseIcons">
+                                        {{ t('settings.licenseIcons.useNewStyle') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.licenseIcons.useNewStyleHelp') }}"></i>
+                                    </label>
+                                    </div>
+                                    <div class="setting-control">
+                                        <label class="toggle-switch">
+                                            <input type="checkbox" id="useNewLicenseIcons"
+                                                   onchange="settingsManager.saveToggleSetting('useNewLicenseIcons', 'use_new_license_icons')">
+                                            <span class="toggle-slider"></span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
                         <!-- Miscellaneous -->
                         <div class="settings-subsection">
                             <div class="settings-subsection-header">
@@ -1061,23 +1100,23 @@
                             </div>
                         </div>
                         
-                        <!-- Update Flags -->
+                        <!-- Version Scope -->
                         <div class="settings-subsection">
                             <div class="settings-subsection-header">
-                                <h4>{{ t('settings.sections.updateFlags') }}</h4>
+                                <h4>{{ t('settings.sections.versionScope') }}</h4>
                             </div>
                             <div class="setting-item">
                                 <div class="setting-row">
                                     <div class="setting-info">
-                                        <label for="updateFlagStrategy">
-                                        {{ t('settings.updateFlagStrategy.label') }}
-                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.updateFlagStrategy.help') }}"></i>
+                                        <label for="versionGrouping">
+                                        {{ t('settings.versionGrouping.label') }}
+                                        <i class="fas fa-info-circle info-icon" data-tooltip="{{ t('settings.versionGrouping.help') }}"></i>
                                     </label>
                                     </div>
                                     <div class="setting-control select-control">
-                                        <select id="updateFlagStrategy" onchange="settingsManager.saveSelectSetting('updateFlagStrategy', 'update_flag_strategy')">
-                                            <option value="same_base">{{ t('settings.updateFlagStrategy.options.sameBase') }}</option>
-                                            <option value="any">{{ t('settings.updateFlagStrategy.options.any') }}</option>
+                                        <select id="versionGrouping" onchange="settingsManager.saveSelectSetting('versionGrouping', 'version_grouping')">
+                                            <option value="same_base">{{ t('settings.versionGrouping.options.sameBase') }}</option>
+                                            <option value="any">{{ t('settings.versionGrouping.options.any') }}</option>
                                         </select>
                                     </div>
                                 </div>

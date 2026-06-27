@@ -532,6 +532,13 @@ class ModelScanner:
         if not scan_result or not getattr(self, '_persistent_cache', None):
             return
 
+        if self.is_cancelled():
+            logger.info(
+                f"{self.model_type.capitalize()} Scanner: Skipping _save_persistent_cache "
+                "after cancellation"
+            )
+            return
+
         hash_snapshot = self._build_hash_index_snapshot(scan_result.hash_index)
         loop = asyncio.get_event_loop()
         try:
@@ -705,14 +712,20 @@ class ModelScanner:
             # Determine the page type based on model type
             # Scan for new data
             scan_result = await self._gather_model_data()
-            await self._apply_scan_result(scan_result)
-            await self._save_persistent_cache(scan_result)
-            await self._sync_download_history(scan_result.raw_data, source='scan')
+            if not self.is_cancelled():
+                await self._apply_scan_result(scan_result)
+                await self._save_persistent_cache(scan_result)
+                await self._sync_download_history(scan_result.raw_data, source='scan')
 
-            logger.info(
-                f"{self.model_type.capitalize()} Scanner: Cache initialization completed in {time.time() - start_time:.2f} seconds, "
-                f"found {len(scan_result.raw_data)} models"
-            )
+                logger.info(
+                    f"{self.model_type.capitalize()} Scanner: Cache initialization completed in {time.time() - start_time:.2f} seconds, "
+                    f"found {len(scan_result.raw_data)} models"
+                )
+            else:
+                logger.info(
+                    f"{self.model_type.capitalize()} Scanner: Cache initialization cancelled "
+                    f"after {time.time() - start_time:.2f} seconds"
+                )
         except Exception as e:
             logger.error(f"{self.model_type.capitalize()} Scanner: Error initializing cache: {e}")
             # Ensure cache is at least an empty structure on error
@@ -1067,8 +1080,11 @@ class ModelScanner:
 
         model_data = self._build_cache_entry(metadata, folder=normalized_folder)
 
-        # Compute SHA256 hash when metadata provided none (e.g., CivitAI API response has empty hashes)
-        if not model_data.get('sha256') and file_path:
+        # Compute SHA256 hash when metadata provided none (e.g., CivitAI API response has empty hashes).
+        # Respect hash_status='pending' (set by CheckpointScanner for large models) to defer
+        # hash calculation until on-demand — avoids reading entire checkpoint files at startup.
+        hash_status = model_data.get('hash_status', '')
+        if not model_data.get('sha256') and hash_status != 'pending' and file_path:
             try:
                 logger.info(f"Computing SHA256 hash for {file_path} (was empty from metadata)")
                 sha256 = await calculate_sha256(file_path)
@@ -1091,6 +1107,13 @@ class ModelScanner:
         """Apply scan results to the cache and associated indexes."""
 
         if scan_result is None:
+            return
+
+        if self.is_cancelled():
+            logger.info(
+                f"{self.model_type.capitalize()} Scanner: Skipping _apply_scan_result "
+                "after cancellation"
+            )
             return
 
         self._hash_index = scan_result.hash_index
@@ -1760,6 +1783,13 @@ class ModelScanner:
             bool: True if cache was updated and saved successfully
         """
         if not file_paths or self._cache is None:
+            return False
+
+        if self.is_cancelled():
+            logger.info(
+                f"{self.model_type.capitalize()} Scanner: Skipping cache update "
+                "after cancelled bulk delete"
+            )
             return False
             
         try:

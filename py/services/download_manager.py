@@ -29,6 +29,7 @@ from .metadata_service import get_default_metadata_provider, get_metadata_provid
 from .downloader import get_downloader, DownloadProgress, DownloadStreamControl
 from .aria2_downloader import Aria2Error, get_aria2_downloader
 from .aria2_transfer_state import Aria2TransferStateStore
+from .download_queue_service import DownloadQueueService
 
 # Download to temporary file first
 import tempfile
@@ -360,6 +361,15 @@ class DownloadManager:
                     if self._active_downloads[task_id].get("transfer_backend") == "aria2":
                         await self._persist_aria2_state(task_id)
 
+                # Update SQLite queue status to 'downloading'
+                try:
+                    queue_service = await DownloadQueueService.get_instance()
+                    await queue_service.update_status(task_id, "downloading")
+                except Exception:
+                    logger.warning(
+                        "Failed to update queue status for %s", task_id, exc_info=True
+                    )
+
                 # Use original download implementation
                 try:
                     # Check for cancellation before starting
@@ -396,6 +406,22 @@ class DownloadManager:
                         if self._active_downloads[task_id].get("transfer_backend") == "aria2":
                             await self._persist_aria2_state(task_id)
 
+                    # Move queue item to history on completion
+                    try:
+                        queue_service = await DownloadQueueService.get_instance()
+                        await queue_service.complete_download(
+                            download_id=task_id,
+                            status=result.get("status", "completed") if result.get("success") else "failed",
+                            error=result.get("error") if not result.get("success") else None,
+                            file_path=result.get("file_path"),
+                            bytes_downloaded=self._active_downloads.get(task_id, {}).get("bytes_downloaded", 0),
+                            total_bytes=self._active_downloads.get(task_id, {}).get("total_bytes"),
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to complete queue item for %s", task_id, exc_info=True
+                        )
+
                     return result
                 except asyncio.CancelledError:
                     # Handle cancellation
@@ -404,6 +430,19 @@ class DownloadManager:
                         self._active_downloads[task_id]["bytes_per_second"] = 0.0
                         if self._active_downloads[task_id].get("transfer_backend") == "aria2":
                             await self._persist_aria2_state(task_id)
+
+                    # Move queue item to history as canceled
+                    try:
+                        queue_service = await DownloadQueueService.get_instance()
+                        await queue_service.complete_download(
+                            download_id=task_id,
+                            status="canceled",
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to cancel queue item for %s", task_id, exc_info=True
+                        )
+
                     logger.info(f"Download cancelled for task {task_id}")
                     raise
                 except Exception as e:
@@ -417,6 +456,22 @@ class DownloadManager:
                         self._active_downloads[task_id]["bytes_per_second"] = 0.0
                         if self._active_downloads[task_id].get("transfer_backend") == "aria2":
                             await self._persist_aria2_state(task_id)
+
+                    # Move queue item to history as failed
+                    try:
+                        queue_service = await DownloadQueueService.get_instance()
+                        await queue_service.complete_download(
+                            download_id=task_id,
+                            status="failed",
+                            error=str(e),
+                            bytes_downloaded=self._active_downloads.get(task_id, {}).get("bytes_downloaded", 0),
+                            total_bytes=self._active_downloads.get(task_id, {}).get("total_bytes"),
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to complete queue item for %s", task_id, exc_info=True
+                        )
+
                     return {"success": False, "error": str(e)}
         finally:
             # Schedule cleanup of download record after delay
@@ -1233,10 +1288,24 @@ class DownloadManager:
                     "download_id": download_id,
                 }
 
-            # Check if this checkpoint should be treated as a diffusion model based on baseModel
+            # Check if this checkpoint should be treated as a diffusion model
+            # Priority: (1) any file has type "UNet" or "Diffusion Model",
+            #            (2) baseModel is in DIFFUSION_MODEL_BASE_MODELS
             is_diffusion_model = False
             if model_type == "checkpoint":
-                if base_model_value in DIFFUSION_MODEL_BASE_MODELS:
+                # Check file types first (more direct signal from CivitAI)
+                version_files = version_info.get("files", [])
+                for f in version_files:
+                    f_type = f.get("type", "")
+                    if f_type in ("UNet", "Diffusion Model"):
+                        is_diffusion_model = True
+                        logger.info(
+                            f"File type '{f_type}' detected, routing checkpoint to unet folder"
+                        )
+                        break
+
+                # Fallback to baseModel name check
+                if not is_diffusion_model and base_model_value in DIFFUSION_MODEL_BASE_MODELS:
                     is_diffusion_model = True
                     logger.info(
                         f"baseModel '{base_model_value}' is a known diffusion model, routing to unet folder"
@@ -1365,7 +1434,7 @@ class DownloadManager:
                             f
                             for f in files
                             if f.get("primary")
-                            and f.get("type") in ("Model", "Negative", "Diffusion Model")
+                            and f.get("type") in ("Model", "Negative", "Diffusion Model", "UNet")
                         ),
                         None,
                     )
@@ -1396,7 +1465,7 @@ class DownloadManager:
                     (
                         f
                         for f in files
-                        if f.get("primary") and f.get("type") in ("Model", "Negative", "Diffusion Model")
+                        if f.get("primary") and f.get("type") in ("Model", "Negative", "Diffusion Model", "UNet")
                     ),
                     None,
                 )
@@ -1974,7 +2043,21 @@ class DownloadManager:
                     break
 
                 last_error = result
-                if os.path.exists(save_path):
+                # For aria2: if the .aria2 control file is missing, aria2 considers
+                # the download complete.  A transient RPC failure may have made us
+                # think the download failed even though the file is fully on disk.
+                # Keep the file so a retry can find it already complete.
+                if (
+                    transfer_backend == "aria2"
+                    and os.path.exists(save_path)
+                    and not os.path.exists(f"{save_path}.aria2")
+                ):
+                    logger.warning(
+                        "aria2 download reported failure but .aria2 file is absent "
+                        "for %s — the file is likely complete.  Preserving it for retry.",
+                        save_path,
+                    )
+                elif os.path.exists(save_path):
                     try:
                         os.remove(save_path)
                     except Exception as e:

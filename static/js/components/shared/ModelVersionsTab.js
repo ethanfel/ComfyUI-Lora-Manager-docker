@@ -6,6 +6,7 @@ import { translate } from '../../utils/i18nHelpers.js';
 import { state } from '../../state/index.js';
 import { buildCivitaiModelUrl } from '../../utils/civitaiUtils.js';
 import { formatFileSize } from './utils.js';
+import { setSessionItem, removeSessionItem } from '../../utils/storageHelpers.js';
 
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.mkv'];
 const PREVIEW_PLACEHOLDER_URL = '/loras_static/images/no-preview.png';
@@ -306,7 +307,7 @@ function getToggleTooltipText(mode) {
 }
 
 function getDefaultDisplayMode() {
-    const strategy = state?.global?.settings?.update_flag_strategy;
+    const strategy = state?.global?.settings?.version_grouping;
     return strategy === DISPLAY_FILTER_MODES.SAME_BASE
         ? DISPLAY_FILTER_MODES.SAME_BASE
         : DISPLAY_FILTER_MODES.ANY;
@@ -338,7 +339,7 @@ function resolveUpdateAvailability(record, baseModel, currentVersionId) {
         return false;
     }
 
-    const strategy = state?.global?.settings?.update_flag_strategy;
+    const strategy = state?.global?.settings?.version_grouping;
     const sameBaseMode = strategy === DISPLAY_FILTER_MODES.SAME_BASE;
     const hideEarlyAccess = state?.global?.settings?.hide_early_access_updates;
 
@@ -744,7 +745,7 @@ function renderToolbar(record, toolbarState = {}) {
                 <button class="versions-toolbar-btn versions-toolbar-btn-primary" data-versions-action="toggle-model-ignore">
                     ${escapeHtml(ignoreText)}
                 </button>
-                <button class="versions-toolbar-btn versions-toolbar-btn-secondary" data-versions-action="view-local" title="${escapeHtml(translate('modals.model.versions.actions.viewLocalTooltip', {}, 'Coming soon'))}" disabled>
+                <button class="versions-toolbar-btn versions-toolbar-btn-secondary" data-versions-action="view-local" title="${escapeHtml(translate('modals.model.versions.actions.viewLocalTooltip', {}, 'Show all local versions of this model on the main page'))}">
                     ${escapeHtml(viewLocalText)}
                 </button>
             </div>
@@ -792,6 +793,7 @@ export function initVersionsTab({
     modelId,
     currentVersionId,
     currentBaseModel,
+    modelName,
     onUpdateStatusChange,
 }) {
     const pane = document.querySelector(`#${modalId} #versions-tab`);
@@ -1017,6 +1019,39 @@ export function initVersionsTab({
             return;
         }
         render(controller.record);
+    }
+
+    function handleViewLocalVersions() {
+        if (!controller.record || !modelId) {
+            return;
+        }
+        // Determine base model filter based on current display mode
+        const baseModelInfo = getCurrentVersionBaseModel(controller.record, normalizedCurrentVersionId);
+        const isFilteringActive =
+            displayMode === DISPLAY_FILTER_MODES.SAME_BASE &&
+            Boolean(baseModelInfo.normalized);
+
+        // Write filter params to sessionStorage (page-scoped)
+        setSessionItem('vlm_model_id', String(modelId));
+        setSessionItem('vlm_model_name', modelName || String(modelId));
+        setSessionItem('vlm_page_type', modelType);
+        if (isFilteringActive) {
+            // Use raw (non-normalized) base model for exact backend matching
+            setSessionItem('vlm_base_model', baseModelInfo.raw);
+        } else {
+            removeSessionItem('vlm_base_model');
+        }
+
+        // Close the modal and navigate via no-reload VLM flow
+        modalManager.closeModal(modalId);
+        if (window.pageControls && typeof window.pageControls.triggerVlmView === 'function') {
+            window.pageControls.triggerVlmView(
+                modelId,
+                modelName || String(modelId),
+                isFilteringActive ? baseModelInfo.raw : undefined,
+                modelType
+            );
+        }
     }
 
     async function handleToggleVersionIgnore(button, versionId) {
@@ -1347,6 +1382,10 @@ export function initVersionsTab({
                 case 'toggle-version-display-mode':
                     event.preventDefault();
                     handleToggleVersionDisplayMode();
+                    break;
+                case 'view-local':
+                    event.preventDefault();
+                    handleViewLocalVersions();
                     break;
                 default:
                     break;

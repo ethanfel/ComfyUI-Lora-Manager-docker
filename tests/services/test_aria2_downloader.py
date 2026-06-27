@@ -352,3 +352,104 @@ async def test_resolve_authenticated_redirect_url_returns_location(monkeypatch):
     )
 
     assert result == "https://signed.example.com/file.safetensors"
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_retry_passes_through_success(monkeypatch):
+    """A successful first call returns immediately, no retries."""
+    downloader = Aria2Downloader()
+    call_count = 0
+
+    async def fake_get_status(_id):
+        nonlocal call_count
+        call_count += 1
+        return {"status": "active", "completedLength": "50", "totalLength": "100"}
+
+    monkeypatch.setattr(downloader, "get_status", fake_get_status)
+
+    result = await downloader._get_status_with_retry("dummy")
+    assert result is not None
+    assert result["status"] == "active"
+    assert call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_retry_succeeds_after_transient_failure(monkeypatch):
+    """A transient Aria2Error on the first call is retried and succeeds."""
+    downloader = Aria2Downloader()
+    call_count = 0
+
+    async def fake_get_status(_id):
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise Aria2Error("timeout")
+        return {"status": "complete", "completedLength": "100", "totalLength": "100"}
+
+    monkeypatch.setattr(downloader, "get_status", fake_get_status)
+    monkeypatch.setattr("py.services.aria2_downloader.asyncio.sleep", AsyncMock())
+
+    result = await downloader._get_status_with_retry("dummy")
+    assert result is not None
+    assert result["status"] == "complete"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_retry_raises_after_all_retries_exhausted(monkeypatch):
+    """All retry attempts fail → Aria2Error with a descriptive message."""
+    downloader = Aria2Downloader()
+
+    async def fake_get_status(_id):
+        raise Aria2Error("connection reset")
+
+    monkeypatch.setattr(downloader, "get_status", fake_get_status)
+    monkeypatch.setattr("py.services.aria2_downloader.asyncio.sleep", AsyncMock())
+
+    with pytest.raises(Aria2Error) as exc_info:
+        await downloader._get_status_with_retry("dummy")
+
+    msg = str(exc_info.value)
+    assert "after 4 attempts" in msg
+    assert "connection reset" in msg
+
+
+@pytest.mark.asyncio
+async def test_get_status_with_retry_returns_none_when_not_tracked(monkeypatch):
+    """No transfer in _transfers → get_status returns None → no retry needed."""
+    downloader = Aria2Downloader()
+
+    # get_status returns None when the download_id has no transfer;
+    # _get_status_with_retry should propagate that without raising.
+    result = await downloader._get_status_with_retry("nonexistent")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_wait_until_ready_includes_stderr_in_error():
+    """When the subprocess exits early, its stderr output must be in Aria2Error."""
+    import sys
+
+    downloader = Aria2Downloader()
+
+    # Start a subprocess that writes a message to stderr and exits with code 28.
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c",
+        "import sys; print('ERROR: unknown option --fsync', file=sys.stderr); sys.exit(28)",
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    # Let the process exit
+    await asyncio.sleep(0.2)
+
+    # Point the downloader at this dead process and let _wait_until_ready
+    # discover the exit and read stderr.
+    downloader._process = proc
+
+    with pytest.raises(Aria2Error) as exc_info:
+        await downloader._wait_until_ready()
+
+    msg = str(exc_info.value)
+    assert "code 28" in msg
+    assert "ERROR: unknown option --fsync" in msg

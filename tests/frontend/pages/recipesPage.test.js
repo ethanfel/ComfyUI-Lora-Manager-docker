@@ -83,6 +83,15 @@ vi.mock('../../../static/js/api/recipeApi.js', () => ({
   })),
 }));
 
+vi.mock('../../../static/js/components/SidebarManager.js', () => ({
+  sidebarManager: {
+    setHostPageControls: vi.fn(),
+    initialize: vi.fn(async () => {}),
+    refresh: vi.fn(async () => {}),
+    cleanup: vi.fn(),
+  },
+}));
+
 describe('RecipeManager', () => {
   let RecipeManager;
   let pageState;
@@ -133,6 +142,19 @@ describe('RecipeManager', () => {
     getStorageItemMock.mockImplementation((_, defaultValue = null) => defaultValue);
 
     renderRecipesPage();
+
+    // Inject controls DOM that would normally come from components/controls.html
+    // (raw template rendering doesn't process Jinja2 {% include %} tags)
+    const customFilterIndicator = document.createElement('div');
+    customFilterIndicator.id = 'customFilterIndicator';
+    customFilterIndicator.className = 'control-group hidden';
+    customFilterIndicator.innerHTML = `
+      <div class="filter-active">
+        <i class="fas fa-filter"></i> <span class="customFilterText" title=""></span>
+        <i class="fas fa-times-circle clear-filter"></i>
+      </div>
+    `;
+    document.body.appendChild(customFilterIndicator);
 
     ({ RecipeManager } = await import('../../../static/js/recipes.js'));
   });
@@ -279,7 +301,7 @@ describe('RecipeManager', () => {
     });
 
     const indicator = document.getElementById('customFilterIndicator');
-    const filterText = indicator.querySelector('#customFilterText');
+    const filterText = indicator.querySelector('.customFilterText');
 
     expect(filterText.innerHTML).toContain('Recipes using checkpoint:');
     expect(filterText.innerHTML).toContain('Flux Base');

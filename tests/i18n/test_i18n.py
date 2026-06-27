@@ -80,6 +80,8 @@ FALSE_POSITIVES = {
     "array",
     "object",
     "non.existent.key",
+    "statistics.modelTypes.",
+    "statistics.",
 }
 
 SPECIAL_UI_HELPER_KEYS = {

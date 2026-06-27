@@ -22,6 +22,7 @@
         },
         "status": {
             "loading": "טוען...",
+            "cancelling": "מבטל...",
             "unknown": "לא ידוע",
             "date": "תאריך",
             "version": "גרסה",
@@ -144,6 +145,10 @@
         },
         "usage": {
             "timesUsed": "מספר שימושים"
+        },
+        "footer": {
+            "versionCount": "{count} גרסאות",
+            "viewAllVersions": "הצג את כל הגרסאות המקומיות"
         }
     },
     "globalContextMenu": {
@@ -182,6 +187,9 @@
         },
         "manageExcludedModels": {
             "label": "ניהול מודלים מוחרגים"
+        },
+        "groupByModel": {
+            "label": "קיבוץ לפי דגם"
         }
     },
     "header": {
@@ -195,13 +203,7 @@
             "community": "[TODO: Translate] Community"
         },
         "search": {
-            "placeholder": "חפש...",
-            "placeholders": {
-                "loras": "חפש LoRAs...",
-                "recipes": "חפש מתכונים...",
-                "checkpoints": "חפש checkpoints...",
-                "embeddings": "חפש embeddings..."
-            },
+            "placeholder": "חיפוש",
             "options": "אפשרויות חיפוש",
             "searchIn": "חפש ב:",
             "notAvailable": "חיפוש לא זמין בדף הסטטיסטיקה",
@@ -253,7 +255,18 @@
             "toggle": "החלף ערכת נושא",
             "switchToLight": "עבור לערכת נושא בהירה",
             "switchToDark": "עבור לערכת נושא כהה",
-            "switchToAuto": "עבור לערכת נושא אוטומטית"
+            "switchToAuto": "עבור לערכת נושא אוטומטית",
+            "presets": "ערכות נושא מוגדרות",
+            "default": "ברירת מחדל",
+            "nord": "Nord",
+            "midnight": "Midnight",
+            "monokai": "Monokai",
+            "dracula": "Dracula",
+            "solarized": "Solarized",
+            "mode": "מצב",
+            "light": "בהיר",
+            "dark": "כהה",
+            "auto": "אוטומטי"
         },
         "actions": {
             "checkUpdates": "בדוק עדכונים",
@@ -265,6 +278,9 @@
         "civitaiApiKey": "מפתח API של Civitai",
         "civitaiApiKeyPlaceholder": "הזן את מפתח ה-API שלך מ-Civitai",
         "civitaiApiKeyHelp": "משמש לאימות בעת הורדת מודלים מ-Civitai",
+        "civitaiApiKeyConfigured": "מוגדר",
+        "civitaiApiKeyNotConfigured": "לא מוגדר",
+        "civitaiApiKeySet": "הגדר",
         "civitaiHost": {
             "label": "מארח Civitai",
             "help": "בחר איזה אתר של Civitai ייפתח בעת שימוש בקישורי \"View on Civitai\".",
@@ -305,6 +321,7 @@
             "downloads": "הורדות",
             "videoSettings": "הגדרות וידאו",
             "layoutSettings": "הגדרות פריסה",
+            "licenseIcons": "סמלי רישיון",
             "misc": "שונות",
             "backup": "גיבויים",
             "folderSettings": "תיקיות ברירת מחדל",
@@ -312,7 +329,7 @@
             "extraFolderPaths": "נתיבי תיקיות נוספים",
             "downloadPathTemplates": "תבניות נתיב הורדה",
             "priorityTags": "תגיות עדיפות",
-            "updateFlags": "תגי עדכון",
+            "versionScope": "תגי עדכון",
             "exampleImages": "תמונות דוגמה",
             "autoOrganize": "ארגון אוטומטי",
             "metadata": "מטא-נתונים",
@@ -417,6 +434,8 @@
             "help": "כאשר מופעל, LoRA Manager ידלג על הורדת גרסת מודל אם שירות היסטוריית ההורדות רושם את הגרסה המדויקת הזו ככבר שהורדה. חל על כל תהליכי ההורדה."
         },
         "layoutSettings": {
+            "groupByModel": "קיבוץ לפי דגם",
+            "groupByModelHelp": "כאשר מופעל, רק הגרסה העדכנית ביותר של כל דגם Civitai מוצגת ככרטיס בודד. גרסאות ישנות יותר מוסתרות.",
             "displayDensity": "צפיפות תצוגה",
             "displayDensityOptions": {
                 "default": "ברירת מחדל",
@@ -573,7 +592,7 @@
             "download": "הורד",
             "restartRequired": "דורש הפעלה מחדש"
         },
-        "updateFlagStrategy": {
+        "versionGrouping": {
             "label": "אסטרטגיית תגי עדכון",
             "help": "בחרו אם תוויות העדכון יוצגו רק כאשר גרסה חדשה חולקת את אותו דגם בסיס כמו הקבצים המקומיים שלכם או בכל מקרה שבו קיימת גרסה חדשה עבור אותו דגם.",
             "options": {
@@ -584,6 +603,10 @@
         "hideEarlyAccessUpdates": {
             "label": "הסתר עדכוני גישה מוקדמת",
             "help": "רק עדכוני גישה מוקדמת"
+        },
+        "licenseIcons": {
+            "useNewStyle": "השתמש בסמלי רישיון מעודכנים",
+            "useNewStyleHelp": "הצג הרשאות רישיון עם מחוונים צבעוניים (סגנון חדש) או סמלי הגבלה בלבד (סגנון קלאסי). משקף את העיצוב העדכני של CivitAI."
         },
         "misc": {
             "includeTriggerWords": "כלול מילות טריגר בתחביר LoRA",
@@ -653,7 +676,11 @@
                 "sizeAsc": "הקטן ביותר",
                 "usage": "מספר שימושים",
                 "usageDesc": "הכי הרבה",
-                "usageAsc": "הכי פחות"
+                "usageAsc": "הכי פחות",
+                "versionsCount": "גרסאות מקומיות",
+                "versionsCountDesc": "הכי הרבה גרסאות ראשונות",
+                "versionsCountAsc": "הכי מעט גרסאות ראשונות",
+                "versionIdDesc": "גרסה חדשה ביותר ראשונה"
             },
             "refresh": {
                 "title": "רענן רשימת מודלים",
@@ -958,10 +985,7 @@
     },
     "sidebar": {
         "modelRoot": "שורש",
-        "moreOptions": "אפשרויות נוספות",
         "collapseAll": "כווץ את כל התיקיות",
-        "pinSidebar": "נעל סרגל צד",
-        "unpinSidebar": "שחרר סרגל צד",
         "hideOnThisPage": "הסתר סרגל צד בדף זה",
         "showSidebar": "הצג סרגל צד",
         "sidebarHiddenNotification": "סרגל הצד מוסתר בדף {page}",
@@ -1002,6 +1026,18 @@
             "storage": "אחסון",
             "insights": "תובנות"
         },
+        "metrics": {
+            "totalModels": "סה\"כ דגמים",
+            "totalStorage": "סה\"כ אחסון",
+            "totalGenerations": "סה\"כ יצירות",
+            "usageRate": "שיעור שימוש",
+            "loras": "LoRA",
+            "checkpoints": "נקודות ביקורת",
+            "embeddings": "הטמעות",
+            "uniqueTags": "תגיות ייחודיות",
+            "unusedModels": "דגמים שאינם בשימוש",
+            "avgUsesPerModel": "ממוצע שימושים/דגם"
+        },
         "usage": {
             "mostUsedLoras": "LoRAs הנפוצים ביותר",
             "mostUsedCheckpoints": "Checkpoints הנפוצים ביותר",
@@ -1019,13 +1055,77 @@
         },
         "insights": {
             "smartInsights": "תובנות חכמות",
-            "recommendations": "המלצות"
+            "recommendations": "המלצות",
+            "noInsights": "אין תובנות זמינות",
+            "unusedLoras": {
+                "high": {
+                    "title": "כמות גבוהה של LoRAs שאינן בשימוש",
+                    "description": "{percent}% מה-LoRAs שלך ({count}/{total}) מעולם לא נעשה בהם שימוש.",
+                    "suggestion": "שקול לארגן או לאחסן בארכיון מודלים שאינם בשימוש כדי לפנות שטח אחסון."
+                }
+            },
+            "unusedCheckpoints": {
+                "detected": {
+                    "title": "התגלו נקודות ביקורת שאינן בשימוש",
+                    "description": "{percent}% מנקודות הביקורת שלך ({count}/{total}) מעולם לא נעשה בהן שימוש.",
+                    "suggestion": "בדוק ושקול להסיר נקודות ביקורת שאינך צריך עוד."
+                }
+            },
+            "unusedEmbeddings": {
+                "high": {
+                    "title": "כמות גבוהה של Embeddings שאינם בשימוש",
+                    "description": "{percent}% מה-Embeddings שלך ({count}/{total}) מעולם לא נעשה בהם שימוש.",
+                    "suggestion": "שקול לארגן או לאחסן בארכיון Embeddings שאינם בשימוש כדי לייעל את האוסף."
+                }
+            },
+            "collection": {
+                "large": {
+                    "title": "התגלה אוסף גדול",
+                    "description": "אוסף המודלים שלך משתמש ב-{size} של אחסון.",
+                    "suggestion": "שקול להשתמש באחסון חיצוני או בפתרונות ענן לארגון טוב יותר."
+                }
+            },
+            "activity": {
+                "active": {
+                    "title": "משתמש פעיל",
+                    "description": "השלמת {count} יצירות עד כה!",
+                    "suggestion": "המשך לחקור וליצור תוכן מדהים עם המודלים שלך."
+                }
+            }
         },
         "charts": {
             "collectionOverview": "סקירת אוסף",
             "baseModelDistribution": "התפלגות מודלי בסיס",
             "usageTrends": "מגמות שימוש (30 יום אחרונים)",
-            "usageDistribution": "התפלגות שימוש"
+            "usageDistribution": "התפלגות שימוש",
+            "date": "תאריך",
+            "usageCount": "מספר שימושים",
+            "fileSizeBytes": "גודל קובץ (בתים)",
+            "models": "דגמים",
+            "loraUsage": "שימוש ב-LoRA",
+            "checkpointUsage": "שימוש ב-Checkpoint",
+            "embeddingUsage": "שימוש ב-Embedding"
+        },
+        "modelTypes": {
+            "lora": "LoRA",
+            "locon": "LyCORIS",
+            "dora": "DoRA",
+            "checkpoint": "נקודת ביקורת",
+            "diffusion_model": "מודל דיפוזיה",
+            "embedding": "הטמעות"
+        },
+        "placeholders": {
+            "loading": "טוען...",
+            "noModels": "לא נמצאו דגמים",
+            "errorLoading": "שגיאה בטעינת נתונים",
+            "noStorageData": "אין נתוני אחסון זמינים",
+            "rootFolder": "שורש",
+            "chartLibraryMissing": "הגרף דורש את ספריית Chart.js"
+        },
+        "tooltips": {
+            "tagCount": "{tag}: {count} דגמים",
+            "chartUsage": "{name}: {size}, {count} שימושים",
+            "chartPercentage": "{label}: {value} ({pct}%)"
         }
     },
     "modals": {
@@ -1401,6 +1501,21 @@
                     "versionDeleted": "הגרסה נמחקה"
                 }
             }
+        },
+        "metadataFetchSummary": {
+            "title": "סיכום שליפת מטא-דאטה",
+            "statSuccess": "הצלחה",
+            "statFailed": "נכשל",
+            "statSkipped": "דולג",
+            "statTotal": "סה\"כ נסרק",
+            "statDuration": "משך",
+            "successMessage": "כל {count} {type}s עודכנו בהצלחה!",
+            "failedItems": "פריטים נכשלים ({count})",
+            "close": "סגור",
+            "copyReport": "העתק דוח",
+            "downloadCsv": "הורד CSV",
+            "columnModelName": "שם המודל",
+            "columnError": "שגיאה"
         }
     },
     "modelTags": {
@@ -1412,15 +1527,6 @@
             "maxLength": "תגית לא תעלה על 30 תווים",
             "maxCount": "מותרות עד 30 תגיות",
             "duplicate": "תגית זו כבר קיימת"
-        }
-    },
-    "keyboard": {
-        "navigation": "ניווט במקלדת:",
-        "shortcuts": {
-            "pageUp": "גלול עמוד אחד למעלה",
-            "pageDown": "גלול עמוד אחד למטה",
-            "home": "קפוץ להתחלה",
-            "end": "קפוץ לסוף"
         }
     },
     "initialization": {
@@ -1512,12 +1618,15 @@
             "modelUpdated": "מודל עודכן ב-workflow",
             "modelFailed": "עדכון צומת המודל נכשל",
             "embeddingAdded": "Embedding נוסף ל-workflow",
-            "embeddingFailed": "הוספת Embedding נכשלה"
+            "embeddingFailed": "הוספת Embedding נכשלה",
+            "promptSent": "הנחיה נשלחה ל-workflow",
+            "promptFailed": "שליחת ההנחיה נכשלה"
         },
         "nodeSelector": {
             "recipe": "מתכון",
             "lora": "LoRA",
             "embedding": "Embedding",
+            "prompt": "הנחיה",
             "replace": "החלף",
             "append": "הוסף",
             "selectTargetNode": "בחר צומת יעד",
@@ -1704,6 +1813,7 @@
             "enterLoraName": "אנא הזן שם LoRA או תחביר",
             "reconnectedSuccessfully": "LoRA קושר מחדש בהצלחה",
             "reconnectFailed": "שגיאה בקישור מחדש של LoRA: {message}",
+            "noPromptToSend": "אין הנחיה לשליחה",
             "cannotSend": "לא ניתן לשלוח מתכון: חסר מזהה מתכון",
             "sendFailed": "שליחת המתכון ל-workflow נכשלה",
             "sendError": "שגיאה בשליחת המתכון ל-workflow",
@@ -1960,7 +2070,9 @@
             "bulkMoveSuccess": "הועברו בהצלחה {successCount} {type}s",
             "exampleImagesDownloadSuccess": "תמונות הדוגמה הורדו בהצלחה!",
             "exampleImagesDownloadFailed": "הורדת תמונות הדוגמה נכשלה: {message}",
-            "moveFailed": "Failed to move item: {message}"
+            "moveFailed": "Failed to move item: {message}",
+            "copiedToClipboard": "הועתק ללוח",
+            "downloadStarted": "ההורדה החלה"
         }
     },
     "doctor": {

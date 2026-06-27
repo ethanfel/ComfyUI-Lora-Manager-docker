@@ -15,7 +15,6 @@ import { i18n } from '../i18n/index.js';
 import { configureModelCardVideo } from '../components/shared/ModelCard.js';
 import { validatePriorityTagString, getPriorityTagSuggestionsMap, invalidatePriorityTagSuggestionsCache } from '../utils/priorityTagHelpers.js';
 import { bannerService } from './BannerService.js';
-import { sidebarManager } from '../components/SidebarManager.js';
 
 const VALID_MATURE_BLUR_LEVELS = new Set(['PG13', 'R', 'X', 'XXX']);
 
@@ -345,9 +344,14 @@ export class SettingsManager {
                     if (mutation.type === 'attributes' && mutation.attributeName === 'style') {
                         this.isOpen = settingsModal.style.display === 'block';
 
-                        // When modal is opened, update checkbox state from current settings
                         if (this.isOpen) {
                             this.loadSettingsToUI();
+                        } else {
+                            // Reset API key edit mode on close
+                            this.cancelEditApiKey(true);
+                            // Clear proxy password on close
+                            const proxyPasswordInput = document.getElementById('proxyPassword');
+                            if (proxyPasswordInput) proxyPasswordInput.value = '';
                         }
                     }
                 });
@@ -806,18 +810,23 @@ export class SettingsManager {
 
         // Set card blur amount slider
         const cardBlurAmountInput = document.getElementById('cardBlurAmount');
+        const cardBlurValue = state.global.settings.card_blur_amount ?? 8;
         if (cardBlurAmountInput) {
-            cardBlurAmountInput.value = state.global.settings.card_blur_amount ?? 8;
+            cardBlurAmountInput.value = cardBlurValue;
+            cardBlurAmountInput.style.setProperty('--range-fill', (cardBlurValue / 20 * 100) + '%');
         }
         const cardBlurAmountValue = document.getElementById('cardBlurAmountValue');
         if (cardBlurAmountValue) {
-            cardBlurAmountValue.textContent = `${state.global.settings.card_blur_amount ?? 8}px`;
+            cardBlurAmountValue.textContent = `${cardBlurValue}px`;
         }
 
         const usePortableCheckbox = document.getElementById('usePortableSettings');
         if (usePortableCheckbox) {
             usePortableCheckbox.checked = !!state.global.settings.use_portable_settings;
         }
+
+        // Update API key status display (do NOT pre-fill the input)
+        this.updateApiKeyStatus();
 
         const civitaiHostSelect = document.getElementById('civitaiHost');
         if (civitaiHostSelect) {
@@ -884,12 +893,6 @@ export class SettingsManager {
             cardInfoDisplaySelect.value = state.global.settings.card_info_display || 'always';
         }
 
-        const showFolderSidebarCheckbox = document.getElementById('showFolderSidebar');
-        if (showFolderSidebarCheckbox) {
-            const showSidebarSetting = state.global.settings.show_folder_sidebar;
-            showFolderSidebarCheckbox.checked = showSidebarSetting !== false;
-        }
-
         // Set model card footer action
         const modelCardFooterActionSelect = document.getElementById('modelCardFooterAction');
         if (modelCardFooterActionSelect) {
@@ -902,15 +905,21 @@ export class SettingsManager {
             showVersionOnCardCheckbox.checked = state.global.settings.show_version_on_card !== false;
         }
 
+        // Set group by model
+        const groupByModelCheckbox = document.getElementById('groupByModel');
+        if (groupByModelCheckbox) {
+            groupByModelCheckbox.checked = !!state.global.settings.group_by_model;
+        }
+
         // Set model name display setting
         const modelNameDisplaySelect = document.getElementById('modelNameDisplay');
         if (modelNameDisplaySelect) {
             modelNameDisplaySelect.value = state.global.settings.model_name_display || 'model_name';
         }
 
-        const updateFlagStrategySelect = document.getElementById('updateFlagStrategy');
-        if (updateFlagStrategySelect) {
-            updateFlagStrategySelect.value = state.global.settings.update_flag_strategy || 'same_base';
+        const versionGroupingSelect = document.getElementById('versionGrouping');
+        if (versionGroupingSelect) {
+            versionGroupingSelect.value = state.global.settings.version_grouping || 'same_base';
         }
 
         // Set hide early access updates setting
@@ -1008,6 +1017,12 @@ export class SettingsManager {
 
         this.loadDownloadBackendSettings();
         this.loadProxySettings();
+
+        // Set license icon style
+        const useNewLicenseIconsCheckbox = document.getElementById('useNewLicenseIcons');
+        if (useNewLicenseIconsCheckbox) {
+            useNewLicenseIconsCheckbox.checked = state.global.settings.use_new_license_icons !== false;
+        }
     }
 
     loadDownloadBackendSettings() {
@@ -2002,7 +2017,11 @@ export class SettingsManager {
                 }
             }
 
-            if (settingKey === 'show_only_sfw' || settingKey === 'blur_mature_content') {
+            if (settingKey === 'show_only_sfw' || settingKey === 'blur_mature_content' || settingKey === 'group_by_model') {
+                // Save/restore sort preference when toggling group_by_model
+                if (settingKey === 'group_by_model' && window.pageControls?.onGroupByModelToggled) {
+                    window.pageControls.onGroupByModelToggled(value);
+                }
                 this.reloadContent();
             }
 
@@ -2051,7 +2070,7 @@ export class SettingsManager {
             if (
                 settingKey === 'model_name_display'
                 || settingKey === 'model_card_footer_action'
-                || settingKey === 'update_flag_strategy'
+                || settingKey === 'version_grouping'
                 || settingKey === 'mature_blur_level'
             ) {
                 this.reloadContent();
@@ -2076,6 +2095,9 @@ export class SettingsManager {
             if (displayEl) {
                 displayEl.textContent = `${value}px`;
             }
+
+            const max = parseInt(element.max, 10) || 20;
+            element.style.setProperty('--range-fill', (value / max * 100) + '%');
 
             showToast('toast.settings.settingsUpdated', { setting: settingKey.replace(/_/g, ' ') }, 'success');
         } catch (error) {
@@ -2884,16 +2906,97 @@ export class SettingsManager {
         }
     }
 
+    // ── CivitAI API Key management ──────────────────────────────
+
+    updateApiKeyStatus() {
+        const hasKey = !!(state.global.settings.civitai_api_key_set ||
+                          state.global.settings.civitai_api_key);
+        const statusEl = document.getElementById('civitaiApiKeyStatus');
+        const statusText = document.getElementById('civitaiApiKeyStatusText');
+        const actionBtn = document.getElementById('civitaiApiKeyActionBtn');
+        if (!statusText || !actionBtn) return;
+
+        if (hasKey) {
+            statusText.classList.remove('api-key-status--unconfigured');
+            statusText.classList.add('api-key-status--configured');
+            statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> '
+                + translate('settings.civitaiApiKeyConfigured', {}, 'Configured');
+            actionBtn.textContent = translate('common.actions.change', {}, 'Change');
+        } else {
+            statusText.classList.remove('api-key-status--configured');
+            statusText.classList.add('api-key-status--unconfigured');
+            statusText.innerHTML = '<i class="fas fa-times-circle text-error"></i> '
+                + translate('settings.civitaiApiKeyNotConfigured', {}, 'Not configured');
+            actionBtn.textContent = translate('settings.civitaiApiKeySet', {}, 'Set up');
+        }
+    }
+
+    editApiKey() {
+        const statusEl = document.getElementById('civitaiApiKeyStatus');
+        if (statusEl) statusEl.classList.add('is-hidden');
+        const editContainer = document.getElementById('civitaiApiKeyEdit');
+        if (editContainer) editContainer.classList.remove('is-hidden');
+        // Focus the input
+        const input = document.getElementById('civitaiApiKey');
+        if (input) {
+            input.value = '';  // Never pre-fill the secret
+            setTimeout(() => input.focus(), 50);
+        }
+    }
+
+    cancelEditApiKey(silent) {
+        const editContainer = document.getElementById('civitaiApiKeyEdit');
+        if (editContainer) editContainer.classList.add('is-hidden');
+        const statusContainer = document.getElementById('civitaiApiKeyStatus');
+        if (statusContainer) statusContainer.classList.remove('is-hidden');
+        // Clear any typed value
+        const input = document.getElementById('civitaiApiKey');
+        if (input) input.value = '';
+        if (!silent) {
+            this.updateApiKeyStatus();
+        }
+    }
+
+    async saveApiKey() {
+        const input = document.getElementById('civitaiApiKey');
+        if (!input) return;
+
+        const value = input.value.trim();
+
+        try {
+            await this.saveSetting('civitai_api_key', value);
+            showToast('toast.settings.settingsUpdated',
+                { setting: 'CivitAI API Key' }, 'success');
+        } catch (error) {
+            showToast('toast.settings.settingSaveFailed',
+                { message: error.message }, 'error');
+            return;
+        }
+
+        // Update the in-memory flag so the UI reflects the change
+        state.global.settings.civitai_api_key_set = !!value;
+        this.cancelEditApiKey(true);
+        this.updateApiKeyStatus();
+    }
+
     toggleInputVisibility(button) {
         const input = button.parentElement.querySelector('input');
+        if (!input) return;
         const icon = button.querySelector('i');
-
-        if (input.type === 'password') {
+        if (input.dataset.mask === 'css') {
+            // CSS-masked input (CivitAI API key) — toggle class, not type
+            input.classList.toggle('api-key-masked');
+            if (icon) {
+                icon.className = input.classList.contains('api-key-masked')
+                    ? 'fas fa-eye'
+                    : 'fas fa-eye-slash';
+            }
+        } else if (input.type === 'password') {
             input.type = 'text';
-            icon.className = 'fas fa-eye-slash';
+            if (icon) icon.className = 'fas fa-eye-slash';
         } else {
             input.type = 'password';
-            icon.className = 'fas fa-eye';
+            if (icon) icon.className = 'fas fa-eye';
         }
     }
 
@@ -2949,12 +3052,14 @@ export class SettingsManager {
         const showVersionOnCard = state.global.settings.show_version_on_card !== false;
         document.body.classList.toggle('hide-card-version', !showVersionOnCard);
 
-        const shouldShowSidebar = state.global.settings.show_folder_sidebar !== false;
-        if (sidebarManager && typeof sidebarManager.setSidebarEnabled === 'function') {
-            sidebarManager.setSidebarEnabled(shouldShowSidebar).catch((error) => {
-                console.error('Failed to apply sidebar visibility setting:', error);
-            });
-        }
+        // Apply license icon style
+        const useNewLicenseIcons = state.global.settings.use_new_license_icons !== false;
+        document.body.classList.toggle('use-new-license-icons', useNewLicenseIcons);
+
+        // Apply group-by-model mode
+        const groupByModel = !!state.global.settings.group_by_model;
+        document.body.classList.toggle('group-by-model', groupByModel);
+
     }
 }
 

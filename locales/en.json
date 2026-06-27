@@ -22,6 +22,7 @@
         },
         "status": {
             "loading": "Loading...",
+            "cancelling": "Cancelling...",
             "unknown": "Unknown",
             "date": "Date",
             "version": "Version",
@@ -144,6 +145,10 @@
         },
         "usage": {
             "timesUsed": "Times used"
+        },
+        "footer": {
+            "versionCount": "{count} versions",
+            "viewAllVersions": "View all local versions"
         }
     },
     "globalContextMenu": {
@@ -182,6 +187,9 @@
         },
         "manageExcludedModels": {
             "label": "Manage Excluded Models"
+        },
+        "groupByModel": {
+            "label": "Group by Model"
         }
     },
     "header": {
@@ -195,13 +203,7 @@
             "community": "Community"
         },
         "search": {
-            "placeholder": "Search...",
-            "placeholders": {
-                "loras": "Search LoRAs...",
-                "recipes": "Search recipes...",
-                "checkpoints": "Search checkpoints...",
-                "embeddings": "Search embeddings..."
-            },
+            "placeholder": "Search",
             "options": "Search Options",
             "searchIn": "Search In:",
             "notAvailable": "Search not available on statistics page",
@@ -253,7 +255,18 @@
             "toggle": "Toggle theme",
             "switchToLight": "Switch to light theme",
             "switchToDark": "Switch to dark theme",
-            "switchToAuto": "Switch to auto theme"
+            "switchToAuto": "Switch to auto theme",
+            "presets": "Theme Presets",
+            "default": "Default",
+            "nord": "Nord",
+            "midnight": "Midnight",
+            "monokai": "Monokai",
+            "dracula": "Dracula",
+            "solarized": "Solarized",
+            "mode": "Mode",
+            "light": "Light",
+            "dark": "Dark",
+            "auto": "Auto"
         },
         "actions": {
             "checkUpdates": "Check Updates",
@@ -265,6 +278,9 @@
         "civitaiApiKey": "Civitai API Key",
         "civitaiApiKeyPlaceholder": "Enter your Civitai API key",
         "civitaiApiKeyHelp": "Used for authentication when downloading models from Civitai",
+        "civitaiApiKeyConfigured": "Configured",
+        "civitaiApiKeyNotConfigured": "Not configured",
+        "civitaiApiKeySet": "Set up",
         "civitaiHost": {
             "label": "Civitai host",
             "help": "Choose which Civitai site opens when using View on Civitai links.",
@@ -305,6 +321,7 @@
             "downloads": "Downloads",
             "videoSettings": "Video Settings",
             "layoutSettings": "Layout Settings",
+            "licenseIcons": "License Icons",
             "misc": "Miscellaneous",
             "backup": "Backups",
             "folderSettings": "Default Roots",
@@ -312,7 +329,7 @@
             "extraFolderPaths": "Extra Folder Paths",
             "downloadPathTemplates": "Download Path Templates",
             "priorityTags": "Priority Tags",
-            "updateFlags": "Update Flags",
+            "versionScope": "Version Scope",
             "exampleImages": "Example Images",
             "autoOrganize": "Auto-organize",
             "metadata": "Metadata",
@@ -417,6 +434,8 @@
             "help": "When enabled, versions downloaded before will be skipped."
         },
         "layoutSettings": {
+            "groupByModel": "Group by Model",
+            "groupByModelHelp": "When enabled, only the latest version of each Civitai model is shown as a single card. Older versions are hidden.",
             "displayDensity": "Display Density",
             "displayDensityOptions": {
                 "default": "Default",
@@ -573,17 +592,21 @@
             "download": "Download",
             "restartRequired": "Requires restart"
         },
-        "updateFlagStrategy": {
-            "label": "Update Flag Strategy",
-            "help": "Decide whether update badges should only appear when a new release shares the same base model as your local files or whenever any newer version exists for that model.",
+        "versionGrouping": {
+            "label": "Version Grouping",
+            "help": "Decide how versions are grouped for display: by base model or all together. Also controls update badge logic and the VLM version list filtering.",
             "options": {
-                "sameBase": "Match updates by base model",
-                "any": "Flag any available update"
+                "sameBase": "Group by base model (same_base)",
+                "any": "Show all versions (any)"
             }
         },
         "hideEarlyAccessUpdates": {
             "label": "Hide Early Access Updates",
             "help": "When enabled, models with only early access updates will not show 'Update available' badge"
+        },
+        "licenseIcons": {
+            "useNewStyle": "Use updated license icons",
+            "useNewStyleHelp": "Display license permissions with colored indicators (new style) or restriction-only icons (classic style). Mirroring the current CivitAI design."
         },
         "misc": {
             "includeTriggerWords": "Include Trigger Words in LoRA Syntax",
@@ -653,7 +676,11 @@
                 "sizeAsc": "Smallest",
                 "usage": "Use Count",
                 "usageDesc": "Most",
-                "usageAsc": "Least"
+                "usageAsc": "Least",
+                "versionsCount": "Local Versions",
+                "versionsCountDesc": "Most versions first",
+                "versionsCountAsc": "Fewest versions first",
+                "versionIdDesc": "Newest version first"
             },
             "refresh": {
                 "title": "Refresh model list",
@@ -958,10 +985,7 @@
     },
     "sidebar": {
         "modelRoot": "Root",
-        "moreOptions": "More options",
         "collapseAll": "Collapse All Folders",
-        "pinSidebar": "Pin Sidebar",
-        "unpinSidebar": "Unpin Sidebar",
         "hideOnThisPage": "Hide sidebar on this page",
         "showSidebar": "Show sidebar",
         "sidebarHiddenNotification": "Folder sidebar hidden on {page} page",
@@ -1002,6 +1026,18 @@
             "storage": "Storage",
             "insights": "Insights"
         },
+        "metrics": {
+            "totalModels": "Total Models",
+            "totalStorage": "Total Storage",
+            "totalGenerations": "Total Generations",
+            "usageRate": "Usage Rate",
+            "loras": "LoRAs",
+            "checkpoints": "Checkpoints",
+            "embeddings": "Embeddings",
+            "uniqueTags": "Unique Tags",
+            "unusedModels": "Unused Models",
+            "avgUsesPerModel": "Avg. Uses/Model"
+        },
         "usage": {
             "mostUsedLoras": "Most Used LoRAs",
             "mostUsedCheckpoints": "Most Used Checkpoints",
@@ -1019,13 +1055,77 @@
         },
         "insights": {
             "smartInsights": "Smart Insights",
-            "recommendations": "Recommendations"
+            "recommendations": "Recommendations",
+            "noInsights": "No insights available",
+            "unusedLoras": {
+                "high": {
+                    "title": "High Number of Unused LoRAs",
+                    "description": "{percent}% of your LoRAs ({count}/{total}) have never been used.",
+                    "suggestion": "Consider organizing or archiving unused models to free up storage space."
+                }
+            },
+            "unusedCheckpoints": {
+                "detected": {
+                    "title": "Unused Checkpoints Detected",
+                    "description": "{percent}% of your checkpoints ({count}/{total}) have never been used.",
+                    "suggestion": "Review and consider removing checkpoints you no longer need."
+                }
+            },
+            "unusedEmbeddings": {
+                "high": {
+                    "title": "High Number of Unused Embeddings",
+                    "description": "{percent}% of your embeddings ({count}/{total}) have never been used.",
+                    "suggestion": "Consider organizing or archiving unused embeddings to optimize your collection."
+                }
+            },
+            "collection": {
+                "large": {
+                    "title": "Large Collection Detected",
+                    "description": "Your model collection is using {size} of storage.",
+                    "suggestion": "Consider using external storage or cloud solutions for better organization."
+                }
+            },
+            "activity": {
+                "active": {
+                    "title": "Active User",
+                    "description": "You've completed {count} generations so far!",
+                    "suggestion": "Keep exploring and creating amazing content with your models."
+                }
+            }
         },
         "charts": {
             "collectionOverview": "Collection Overview",
             "baseModelDistribution": "Base Model Distribution",
             "usageTrends": "Usage Trends (Last 30 Days)",
-            "usageDistribution": "Usage Distribution"
+            "usageDistribution": "Usage Distribution",
+            "date": "Date",
+            "usageCount": "Usage Count",
+            "fileSizeBytes": "File Size (bytes)",
+            "models": "Models",
+            "loraUsage": "LoRA Usage",
+            "checkpointUsage": "Checkpoint Usage",
+            "embeddingUsage": "Embedding Usage"
+        },
+        "modelTypes": {
+            "lora": "LoRA",
+            "locon": "LyCORIS",
+            "dora": "DoRA",
+            "checkpoint": "Checkpoint",
+            "diffusion_model": "Diffusion Model",
+            "embedding": "Embeddings"
+        },
+        "placeholders": {
+            "loading": "Loading...",
+            "noModels": "No models found",
+            "errorLoading": "Error loading data",
+            "noStorageData": "No storage data available",
+            "rootFolder": "Root",
+            "chartLibraryMissing": "Chart requires Chart.js library"
+        },
+        "tooltips": {
+            "tagCount": "{tag}: {count} models",
+            "chartUsage": "{name}: {size}, {count} uses",
+            "chartPercentage": "{label}: {value} ({pct}%)"
         }
     },
     "modals": {
@@ -1373,7 +1473,7 @@
                     "resumeModelUpdates": "Resume updates for this model",
                     "ignoreModelUpdates": "Ignore updates for this model",
                     "viewLocalVersions": "View all local versions",
-                    "viewLocalTooltip": "Coming soon"
+                    "viewLocalTooltip": "Show all local versions of this model on the main page"
                 },
                 "filters": {
                     "label": "Base filter",
@@ -1401,6 +1501,21 @@
                     "versionDeleted": "Version deleted"
                 }
             }
+        },
+        "metadataFetchSummary": {
+            "title": "Metadata Fetch Summary",
+            "statSuccess": "Success",
+            "statFailed": "Failed",
+            "statSkipped": "Skipped",
+            "statTotal": "Total Scanned",
+            "statDuration": "Duration",
+            "successMessage": "All {count} {type}s updated successfully!",
+            "failedItems": "Failed Items ({count})",
+            "close": "Close",
+            "copyReport": "Copy Report",
+            "downloadCsv": "Download CSV",
+            "columnModelName": "Model Name",
+            "columnError": "Error"
         }
     },
     "modelTags": {
@@ -1412,15 +1527,6 @@
             "maxLength": "Tag should not exceed 30 characters",
             "maxCount": "Maximum 30 tags allowed",
             "duplicate": "This tag already exists"
-        }
-    },
-    "keyboard": {
-        "navigation": "Keyboard Navigation:",
-        "shortcuts": {
-            "pageUp": "Scroll up one page",
-            "pageDown": "Scroll down one page",
-            "home": "Jump to top",
-            "end": "Jump to bottom"
         }
     },
     "initialization": {
@@ -1512,12 +1618,15 @@
             "modelUpdated": "Model updated in workflow",
             "modelFailed": "Failed to update model node",
             "embeddingAdded": "Embedding added to workflow",
-            "embeddingFailed": "Failed to add embedding"
+            "embeddingFailed": "Failed to add embedding",
+            "promptSent": "Prompt sent to workflow",
+            "promptFailed": "Failed to send prompt"
         },
         "nodeSelector": {
             "recipe": "Recipe",
             "lora": "LoRA",
             "embedding": "Embedding",
+            "prompt": "Prompt",
             "replace": "Replace",
             "append": "Append",
             "selectTargetNode": "Select target node",
@@ -1704,6 +1813,7 @@
             "enterLoraName": "Please enter a LoRA name or syntax",
             "reconnectedSuccessfully": "LoRA reconnected successfully",
             "reconnectFailed": "Error reconnecting LoRA: {message}",
+            "noPromptToSend": "No prompt to send",
             "cannotSend": "Cannot send recipe: Missing recipe ID",
             "sendFailed": "Failed to send recipe to workflow",
             "sendError": "Error sending recipe to workflow",
@@ -1960,7 +2070,9 @@
             "bulkMoveSuccess": "Successfully moved {successCount} {type}s",
             "exampleImagesDownloadSuccess": "Successfully downloaded example images!",
             "exampleImagesDownloadFailed": "Failed to download example images: {message}",
-            "moveFailed": "Failed to move item: {message}"
+            "moveFailed": "Failed to move item: {message}",
+            "copiedToClipboard": "Copied to clipboard",
+            "downloadStarted": "Download started"
         }
     },
     "doctor": {

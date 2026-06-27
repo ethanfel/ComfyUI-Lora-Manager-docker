@@ -18,6 +18,8 @@ SUPPORTED_SORT_MODES = [
     ('size', 'desc'),
     ('usage', 'asc'),
     ('usage', 'desc'),
+    ('versions_count', 'asc'),
+    ('versions_count', 'desc'),
 ]
 # Is this in use?
 
@@ -283,6 +285,17 @@ class ModelCache:
             )
             without_stats.sort(key=lambda x: self._get_display_name(x).lower())
             result = with_stats + without_stats
+        elif sort_key == 'versions_count':
+            # Pre-dedup sort: fall back to name sort.
+            # Actual re-sort by version_count happens in get_paginated_data after dedup.
+            result = natsorted(
+                data,
+                key=lambda x: (
+                    self._get_display_name(x).lower(),
+                    x.get('file_path', '').lower()
+                ),
+                reverse=reverse
+            )
         else:
             # Fallback: no sort
             result = list(data)

@@ -112,6 +112,22 @@ export class LorasControls extends PageControls {
      * Clear the custom filter and reload the page
      */
     async clearCustomFilter() {
+        // Check for View Local Versions filter first (handles VLM and reloads)
+        const vlmModelId = getSessionItem('vlm_model_id');
+        if (vlmModelId) {
+            removeSessionItem('vlm_model_id');
+            removeSessionItem('vlm_model_name');
+            removeSessionItem('vlm_base_model');
+            removeSessionItem('vlm_page_type');
+            this._restoreSortAfterVlm();
+            const indicator = document.getElementById('customFilterIndicator');
+            if (indicator) {
+                indicator.classList.add('hidden');
+            }
+            await resetAndReload();
+            return;
+        }
+
         console.log("Clearing custom filter...");
         // Remove filter parameters from session storage
         removeSessionItem('recipe_to_lora_filterLoraHash');
@@ -132,16 +148,6 @@ export class LorasControls extends PageControls {
         
         // Reload the loras
         await resetAndReload();
-    }
-    
-    /**
-     * Helper to truncate text with ellipsis
-     * @param {string} text - Text to truncate
-     * @param {number} maxLength - Maximum length before truncating
-     * @returns {string} - Truncated text
-     */
-    _truncateText(text, maxLength) {
-        return text.length > maxLength ? text.substring(0, maxLength - 3) + '...' : text;
     }
     
     /**

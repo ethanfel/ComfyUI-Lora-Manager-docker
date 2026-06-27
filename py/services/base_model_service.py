@@ -105,6 +105,100 @@ class BaseModelService(ABC):
         fetch_duration = time.perf_counter() - t0
         initial_count = len(sorted_data)
 
+        # Optionally filter by civitai model ID (shows all local versions of a specific model)
+        civitai_model_id = kwargs.get("civitai_model_id")
+        if civitai_model_id is not None:
+            sorted_data = [
+                item for item in sorted_data
+                if self._extract_model_id(item) == civitai_model_id
+            ]
+            # VLM mode: always sort by version ID descending (newest version first),
+            # regardless of the current sort_by preference.
+            sorted_data.sort(
+                key=lambda x: self._extract_version_id(x) or 0,
+                reverse=True,
+            )
+
+        # Optionally group by civitai modelId, showing only the latest version per model
+        dedup_lost = 0
+        if kwargs.get("group_by_model") and civitai_model_id is None:
+            # Determine whether to further sub-group by base model
+            # When version_grouping is "same_base", versions with different
+            # base models are effectively different groups — the dedup key
+            # needs to include base_model so the version count and VLM flow
+            # stay consistent (card shows correct count for its base model).
+            ufs = self.settings.get("version_grouping", "same_base")
+            group_by_base = ufs == "same_base"
+
+            dedup_map = {}  # (modelId [,base_model]) -> (item, version_id)
+            version_counter = {}  # same-key -> count
+            standalone = []
+            for item in sorted_data:
+                mid = self._extract_model_id(item)
+                if mid is None:
+                    standalone.append(item)
+                    continue
+                key = (mid, item.get("base_model") or "") if group_by_base else mid
+                # Count all versions per key
+                version_counter[key] = version_counter.get(key, 0) + 1
+                vid = self._extract_version_id(item) or 0
+                if key not in dedup_map or vid > dedup_map[key][1]:
+                    dedup_map[key] = (item, vid)
+            # Attach version_count to each surviving grouped item (shallow copy
+            # to avoid mutating cached dicts — the cache is shared across requests)
+            for key, (item, vid) in dedup_map.items():
+                item = dict(item)
+                item["version_count"] = version_counter[key]
+                dedup_map[key] = (item, vid)
+            dedup_lost = len(sorted_data) - (len(dedup_map) + len(standalone))
+            sorted_data = [entry[0] for entry in dedup_map.values()] + standalone
+
+        # Re-sort by version_count (grouped: after dedup; non-grouped: group internally, sort, expand)
+        if sort_params.key == "versions_count" and civitai_model_id is None:
+            reverse = sort_params.order == "desc"
+            if kwargs.get("group_by_model"):
+                # Grouped mode: items are already dedup'd with version_count attached
+                sorted_data.sort(
+                    key=lambda x: (
+                        x.get("version_count", 0),
+                        (x.get("model_name") or x.get("file_name") or "").lower(),
+                        x.get("file_path", "").lower(),
+                    ),
+                    reverse=reverse,
+                )
+            else:
+                # Non-grouped mode: group internally, sort groups by count, expand
+                # Respect the version_grouping setting (same logic as grouped dedup)
+                ufs = self.settings.get("version_grouping", "same_base")
+                group_by_base = ufs == "same_base"
+
+                model_groups: Dict[Any, List[Dict]] = {}
+                ungrouped_standalone: List[Dict] = []
+                for item in sorted_data:
+                    mid = self._extract_model_id(item)
+                    if mid is None:
+                        ungrouped_standalone.append(item)
+                        continue
+                    key = (mid, item.get("base_model") or "") if group_by_base else mid
+                    model_groups.setdefault(key, []).append(item)
+                # Sort versions within each group by version id descending
+                for items in model_groups.values():
+                    items.sort(
+                        key=lambda x: self._extract_version_id(x) or 0,
+                        reverse=True,
+                    )
+                # Sort groups by version count
+                sorted_groups = sorted(
+                    model_groups.values(),
+                    key=lambda items: len(items),
+                    reverse=reverse,
+                )
+                # Flatten: grouped items first, standalone items last
+                sorted_data = []
+                for items in sorted_groups:
+                    sorted_data.extend(items)
+                sorted_data.extend(ungrouped_standalone)
+
         t1 = time.perf_counter()
         if hash_filters:
             filtered_data = await self._apply_hash_filters(sorted_data, hash_filters)
@@ -178,7 +272,7 @@ class BaseModelService(ABC):
         overall_duration = time.perf_counter() - overall_start
         logger.debug(
             "%s.get_paginated_data took %.3fs (fetch: %.3fs, filter: %.3fs, update_filter: %.3fs, pagination: %.3fs, annotate: %.3fs). "
-            "Counts: initial=%d, post_filter=%d, final=%d",
+            "Counts: initial=%d, dedup=%d, post_filter=%d, final=%d",
             self.__class__.__name__,
             overall_duration,
             fetch_duration,
@@ -187,6 +281,7 @@ class BaseModelService(ABC):
             pagination_duration,
             annotate_duration,
             initial_count,
+            dedup_lost,
             post_filter_count,
             final_count,
         )
@@ -528,7 +623,7 @@ class BaseModelService(ABC):
         if not ordered_ids:
             return annotated
 
-        strategy_value = self.settings.get("update_flag_strategy")
+        strategy_value = self.settings.get("version_grouping")
         if isinstance(strategy_value, str) and strategy_value.strip():
             strategy = strategy_value.strip().lower()
         else:

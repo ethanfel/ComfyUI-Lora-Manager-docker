@@ -246,12 +246,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -375,12 +370,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -474,12 +464,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -588,12 +573,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -682,12 +662,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -790,12 +765,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -873,12 +843,10 @@ describe('Interaction-level regression coverage', () => {
     });
 
     recipeModal.markFieldDirty('title');
-    recipeModal.markFieldDirty('tags');
     recipeModal.markFieldDirty('prompt');
     recipeModal.markFieldDirty('negative_prompt');
 
     document.querySelector('#recipeTitleEditor .title-input').value = 'Local Title';
-    document.querySelector('#recipeTagsEditor .tags-input').value = 'local-tag-1, local-tag-2';
     document.getElementById('recipePromptInput').value = 'local prompt';
     document.getElementById('recipeNegativePromptInput').value = 'local negative';
 
@@ -899,7 +867,6 @@ describe('Interaction-level regression coverage', () => {
     await flushAsyncTasks();
 
     expect(document.querySelector('#recipeTitleEditor .title-input').value).toBe('Local Title');
-    expect(document.querySelector('#recipeTagsEditor .tags-input').value).toBe('local-tag-1, local-tag-2');
     expect(document.getElementById('recipePromptInput').value).toBe('local prompt');
     expect(document.getElementById('recipeNegativePromptInput').value).toBe('local negative');
     expect(recipeModal.currentRecipe.title).toBe('Hydrated Title');
@@ -918,12 +885,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1057,12 +1019,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1160,9 +1117,9 @@ describe('Interaction-level regression coverage', () => {
     expect(document.getElementById('recipePrompt').textContent).toBe('No prompt information available');
     expect(document.getElementById('recipeNegativePrompt').textContent).toBe('No negative prompt information available');
     const otherParamsText = document.getElementById('recipeOtherParams').textContent;
-    expect(otherParamsText).toContain('sampler:');
+    expect(otherParamsText).toContain('Sampler:');
     expect(otherParamsText).toContain('dpmpp_2m');
-    expect(otherParamsText).not.toContain('cfg_scale');
+    expect(otherParamsText).not.toContain('CFG');
   });
 
   it('filters dirty generation params from recipe modal display', async () => {
@@ -1170,8 +1127,7 @@ describe('Interaction-level regression coverage', () => {
       <div id="recipeModal" class="modal">
         <div id="recipeModalTitle"></div>
         <div id="recipePreviewContainer"></div>
-        <div id="recipeTagsCompact"></div>
-        <div id="recipeTagsTooltip"><div id="recipeTagsTooltipContent"></div></div>
+        <div id="recipeTagsContainer"></div>
         <div id="recipePrompt"></div>
         <textarea id="recipePromptInput"></textarea>
         <div id="recipeNegativePrompt"></div>
@@ -1212,8 +1168,8 @@ describe('Interaction-level regression coverage', () => {
     const otherParamsText = document.getElementById('recipeOtherParams').textContent;
     expect(document.getElementById('recipePrompt').textContent).toContain('visible prompt');
     expect(document.getElementById('recipeNegativePrompt').textContent).toContain('visible negative');
-    expect(otherParamsText).toContain('sampler:');
-    expect(otherParamsText).toContain('cfg_scale:');
+    expect(otherParamsText).toContain('Sampler:');
+    expect(otherParamsText).toContain('CFG:');
     expect(otherParamsText).not.toContain('Version');
     expect(otherParamsText).not.toContain('raw_metadata');
     expect(otherParamsText).not.toContain('RNG');
@@ -1224,8 +1180,7 @@ describe('Interaction-level regression coverage', () => {
       <div id="recipeModal" class="modal">
         <div id="recipeModalTitle"></div>
         <div id="recipePreviewContainer"></div>
-        <div id="recipeTagsCompact"></div>
-        <div id="recipeTagsTooltip"><div id="recipeTagsTooltipContent"></div></div>
+        <div id="recipeTagsContainer"></div>
         <div id="recipePrompt"></div>
         <textarea id="recipePromptInput"></textarea>
         <div id="recipeNegativePrompt"></div>
@@ -1267,7 +1222,7 @@ describe('Interaction-level regression coverage', () => {
     expect(document.getElementById('recipePrompt').textContent).not.toContain('stale prompt');
     expect(document.getElementById('recipeNegativePrompt').textContent).toContain('fresh negative');
     expect(document.getElementById('recipeNegativePrompt').textContent).not.toContain('stale negative');
-    expect(otherParamsText).toContain('cfg_scale:');
+    expect(otherParamsText).toContain('CFG:');
     expect(otherParamsText).toContain('7');
     expect(otherParamsText).not.toContain('3');
   });
@@ -1300,12 +1255,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1418,12 +1368,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1541,12 +1486,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1654,12 +1594,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1776,12 +1711,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -1878,12 +1808,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -2007,12 +1932,7 @@ describe('Interaction-level regression coverage', () => {
         <div class="modal-content">
           <header class="recipe-modal-header">
             <h2 id="recipeModalTitle">Recipe Details</h2>
-            <div class="recipe-tags-container">
-              <div class="recipe-tags-compact" id="recipeTagsCompact"></div>
-              <div class="recipe-tags-tooltip" id="recipeTagsTooltip">
-                <div class="tooltip-content" id="recipeTagsTooltipContent"></div>
-              </div>
-            </div>
+            <div id="recipeTagsContainer"></div>
           </header>
           <div class="modal-body">
             <div class="recipe-top-section">
@@ -2190,6 +2110,7 @@ describe('Interaction-level regression coverage', () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ force: false }),
+      signal: expect.any(AbortSignal),
     });
 
     const updateResponse = await global.fetch.mock.results[1].value;
