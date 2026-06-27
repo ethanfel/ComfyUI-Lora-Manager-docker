@@ -185,6 +185,49 @@ async def test_preview_handler_allows_symlinked_recipes_path(tmp_path):
     assert Path(response._path) == preview_file.resolve()
 
 
+async def test_preview_handler_swallows_connection_reset_during_prepare(tmp_path):
+    """A client that disconnects before headers are written must not bubble up.
+
+    Video previews are streamed manually via _stream_file, which calls
+    resp.prepare() itself. If the client has already gone away, prepare() raises
+    ClientConnectionResetError ("Cannot write to closing transport"). That must
+    be handled like a mid-stream disconnect rather than escaping the handler.
+
+    See traceback at preview_handlers.py:_stream_file -> resp.prepare().
+    """
+    from aiohttp.client_exceptions import ClientConnectionResetError
+
+    library_root = tmp_path / "library"
+    library_root.mkdir()
+    video_file = library_root / "model.mp4"
+    video_file.write_bytes(b"\x00\x01\x02fake-video")
+
+    config = Config()
+    config.apply_library_settings(
+        {
+            "folder_paths": {
+                "loras": [str(library_root)],
+                "checkpoints": [],
+                "unet": [],
+                "embeddings": [],
+            }
+        }
+    )
+
+    handler = PreviewHandler(config=config)
+    encoded_path = urllib.parse.quote(str(video_file), safe="")
+    request = make_mocked_request("GET", f"/api/lm/previews?path={encoded_path}")
+
+    async def boom(self, _request):
+        raise ClientConnectionResetError("Cannot write to closing transport")
+
+    with patch.object(web.StreamResponse, "prepare", boom):
+        # Must not raise — the reset is swallowed and the response returned.
+        response = await handler.serve_preview(request)
+
+    assert isinstance(response, web.StreamResponse)
+
+
 def test_is_preview_path_allowed_case_insensitive_on_windows(tmp_path):
     """Test that preview path validation is case-insensitive on Windows.
 

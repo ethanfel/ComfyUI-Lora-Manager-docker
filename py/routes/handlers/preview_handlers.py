@@ -97,9 +97,12 @@ class PreviewHandler:
         resp.content_length = file_size
         resp.headers["Cache-Control"] = "public, max-age=86400, immutable"
 
-        await resp.prepare(request)
-
         try:
+            # prepare() writes the response headers and can itself raise a
+            # connection reset if the client has already gone away — keep it
+            # inside the guarded block so that case is handled like a mid-stream
+            # disconnect instead of bubbling up as an unhandled request error.
+            await resp.prepare(request)
             with open(path, "rb") as f:
                 while True:
                     chunk = f.read(_CHUNK_SIZE)
@@ -107,8 +110,9 @@ class PreviewHandler:
                         break
                     await resp.write(chunk)
         except (ConnectionResetError, ConnectionAbortedError):
-            # Client disconnected during streaming — expected when scrolling
-            # rapidly through a library with animated previews.
+            # Client disconnected before/while streaming — expected when
+            # scrolling rapidly through a library with animated previews.
+            # ClientConnectionResetError subclasses ConnectionResetError.
             pass
         except OSError as exc:
             logger.debug("I/O error streaming preview %s: %s", path, exc)
