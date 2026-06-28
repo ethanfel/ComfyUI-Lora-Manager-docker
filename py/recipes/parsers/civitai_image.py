@@ -514,16 +514,33 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
 
                         result["loras"].append(lora_entry)
 
-            # Process modelVersionIds from Civitai image API
-            # These are model version IDs returned at root level when meta doesn't contain resources
-            if "modelVersionIds" in metadata and isinstance(
-                metadata["modelVersionIds"], list
+            # Process modelVersionIds from Civitai image API.
+            # These are version IDs returned at root level of the API response.
+            # When resources or civitaiResources are already present in metadata
+            # (which they are when ?withMeta=true is passed), those sections have
+            # complete hash/type information — modelVersionIds is a fallback for
+            # when meta is null and only the flat ID list is available. Skipping
+            # it here avoids duplicates: the same file hash often resolves to
+            # different version IDs via hash lookup (resources) vs the original
+            # version ID in modelVersionIds, and both paths would create entries.
+            if (
+                "modelVersionIds" in metadata
+                and isinstance(metadata["modelVersionIds"], list)
+                and not result.get("loras")
             ):
+
                 for version_id in metadata["modelVersionIds"]:
                     version_id_str = str(version_id)
 
                     # Skip if we've already added this LoRA by version ID
                     if version_id_str in added_loras:
+                        continue
+
+                    # Skip if this version ID is already the recipe's checkpoint
+                    # (resolved earlier from embedded resources/Model hash,
+                    # avoiding a duplicate CivitAI API call).
+                    existing_model = result.get("model")
+                    if existing_model and str(existing_model.get("id")) == version_id_str:
                         continue
 
                     # Initialize lora entry with version ID
@@ -559,9 +576,40 @@ class CivitaiApiMetadataParser(RecipeMetadataParser):
                             )
 
                             if populated_entry is None:
-                                continue  # Skip invalid LoRA types
+                                # Not a LoRA — try as checkpoint (only if we
+                                # don't already have one).  Reuses the same
+                                # civitai_info from the API call above so no
+                                # extra query is made.
+                                if result["model"] is None:
+                                    checkpoint_entry = {
+                                        "id": version_id,
+                                        "modelId": 0,
+                                        "name": "Unknown Model",
+                                        "version": "",
+                                        "type": "checkpoint",
+                                        "existsLocally": False,
+                                        "localPath": None,
+                                        "file_name": "",
+                                        "hash": "",
+                                        "thumbnailUrl": (
+                                            "/loras_static/images/no-preview.png"
+                                        ),
+                                        "baseModel": "",
+                                        "size": 0,
+                                        "downloadUrl": "",
+                                        "isDeleted": False,
+                                    }
+                                    cp_populated = await (
+                                        self.populate_checkpoint_from_civitai(
+                                            checkpoint_entry, civitai_info
+                                        )
+                                    )
+                                    if cp_populated.get("modelId"):
+                                        result["model"] = cp_populated
+                                continue  # Not a LoRA, don't add to loras
 
                             lora_entry = populated_entry
+
                         except Exception as e:
                             logger.error(
                                 f"Error fetching Civitai info for model version {version_id}: {e}"
