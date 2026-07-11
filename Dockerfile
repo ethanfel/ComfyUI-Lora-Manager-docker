@@ -17,6 +17,8 @@ COPY . .
 # Seed portable settings so config + cache stay under /app
 RUN echo '{"use_portable_settings": true, "folder_paths": {"loras": ["/models/loras"], "checkpoints": ["/models/checkpoints"], "embeddings": ["/models/embeddings"]}}' > /app/settings.json
 
+LABEL org.opencontainers.image.source="https://github.com/ethanfel/ComfyUI-Lora-Manager-docker"
+
 ENV LORA_MANAGER_STANDALONE=1
 
 EXPOSE 8188
