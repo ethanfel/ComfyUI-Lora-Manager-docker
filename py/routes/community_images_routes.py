@@ -1,9 +1,11 @@
 """Route registrar for Community Creations endpoints."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
+import re
 import time
 
 import jinja2
@@ -22,6 +24,63 @@ logger = logging.getLogger(__name__)
 # Module-level fetch state — prevents concurrent fetches and supports cancel
 _fetch_in_progress = False
 _active_service: CommunityImagesFetchService | None = None
+_fetch_cancel_requested = False
+_refresh_model_in_progress = False
+_inventory_refresh_task: asyncio.Task | None = None
+_SHA256_RE = re.compile(r"^[0-9a-fA-F]{64}$")
+
+
+async def _get_refreshed_lora_cache(scanner):
+    """Coalesce scanner refreshes and avoid racing background initialization."""
+    global _inventory_refresh_task
+
+    task = _inventory_refresh_task
+    if task is None or task.done():
+        async def refresh_cache():
+            is_initializing = getattr(scanner, "is_initializing", None)
+            while callable(is_initializing) and is_initializing():
+                await asyncio.sleep(0.1)
+
+            # Reconciliation mutates the scanner's shared cache incrementally.
+            # Let it finish even if the image fetch is cancelled so other pages
+            # never observe a partially reconciled inventory.
+            return await scanner.get_cached_data(
+                force_refresh=True,
+                rebuild_cache=getattr(scanner, "_cache", None) is None,
+            )
+
+        task = asyncio.create_task(refresh_cache())
+        _inventory_refresh_task = task
+
+    try:
+        return await asyncio.shield(task)
+    finally:
+        if task.done() and _inventory_refresh_task is task:
+            _inventory_refresh_task = None
+
+
+def _normalize_hashes(value: object) -> list[str]:
+    """Return unique, normalized model hashes from a settings/API value."""
+    if not isinstance(value, list):
+        return []
+
+    hashes: list[str] = []
+    seen: set[str] = set()
+    for raw_hash in value:
+        if not isinstance(raw_hash, str):
+            continue
+        sha256 = raw_hash.strip().lower()
+        if not sha256 or sha256 in seen:
+            continue
+        seen.add(sha256)
+        hashes.append(sha256)
+    return hashes
+
+
+def _get_hidden_model_hashes() -> set[str]:
+    """Return community-only hidden model hashes from persistent settings."""
+    settings = get_settings_manager()
+    return set(_normalize_hashes(settings.get("community_hidden_model_hashes", [])))
 
 
 def _clean_image(img: dict) -> dict:
@@ -95,16 +154,134 @@ class CommunityImagesRoutes:
             return web.Response(text="Error loading page", status=500)
 
     @staticmethod
-    async def handle_fetch(request: web.Request) -> web.Response:
-        """POST /api/lm/community-images/fetch — trigger bulk fetch."""
-        global _active_service, _fetch_in_progress
+    async def _get_lora_models(
+        force_refresh: bool = False,
+    ) -> list[dict]:
+        """Return the active LoRA inventory, including models without images."""
+        try:
+            scanner = await ServiceRegistry.get_lora_scanner()
+            if force_refresh:
+                cache = await _get_refreshed_lora_cache(scanner)
+            else:
+                cache = await scanner.get_cached_data()
 
-        # If a fetch is already running, cancel it and let this one take over
+            models: list[dict] = []
+            models_by_hash: dict[str, dict] = {}
+            for item in cache.raw_data if cache else []:
+                if not item:
+                    continue
+                sha256 = item.get("sha256")
+                if not isinstance(sha256, str) or not sha256.strip():
+                    continue
+                normalized_hash = sha256.strip().lower()
+
+                civitai = item.get("civitai") or {}
+                model_name = (
+                    item.get("model_name")
+                    or item.get("file_name")
+                    or sha256[:8]
+                )
+                base_model = (
+                    item.get("base_model")
+                    or civitai.get("baseModel")
+                    or ""
+                )
+                candidate = {
+                    "sha256": sha256,
+                    "civitai_model_id": civitai.get("modelId"),
+                    "civitai_version_id": civitai.get("id"),
+                    "author_username": (
+                        (civitai.get("creator") or {}).get("username") or ""
+                    ),
+                    "model_name": str(model_name),
+                    "base_model": str(base_model),
+                }
+
+                existing = models_by_hash.get(normalized_hash)
+                if existing is None:
+                    models_by_hash[normalized_hash] = candidate
+                    models.append(candidate)
+                    continue
+
+                # Duplicate files may share a content hash but have different
+                # sidecar completeness. Prefer the copy with CivitAI metadata so
+                # the shared model remains fetchable.
+                if (
+                    not existing.get("civitai_model_id")
+                    and candidate.get("civitai_model_id")
+                ):
+                    original_hash = existing["sha256"]
+                    original_base_model = existing.get("base_model")
+                    existing.update(candidate)
+                    existing["sha256"] = original_hash
+                    if not existing.get("base_model") and original_base_model:
+                        existing["base_model"] = original_base_model
+                elif not existing.get("base_model") and candidate.get("base_model"):
+                    existing["base_model"] = candidate["base_model"]
+            return models
+        except Exception as exc:
+            logger.exception("Failed to get lora scanner data: %s", exc)
+            raise
+
+    @staticmethod
+    async def handle_fetch(request: web.Request) -> web.Response:
+        """POST /api/lm/community-images/fetch — fetch all or selected LoRAs."""
+        global _active_service, _fetch_cancel_requested, _fetch_in_progress
+
+        try:
+            body = await request.json() if request.can_read_body else {}
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON"}, status=400
+            )
+        if not isinstance(body, dict):
+            return web.json_response(
+                {"success": False, "error": "JSON body must be an object"},
+                status=400,
+            )
+
+        force = body.get("force") is True
+        requested_hashes: list[str] | None = None
+        if "hashes" in body:
+            raw_hashes = body.get("hashes")
+            if not isinstance(raw_hashes, list) or len(raw_hashes) > 5000:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "Invalid or too many hashes (max 5000)",
+                    },
+                    status=400,
+                )
+            requested_hashes = _normalize_hashes(raw_hashes)
+            if len(requested_hashes) != len(raw_hashes) or not requested_hashes:
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "Hashes must be unique, non-empty strings",
+                    },
+                    status=400,
+                )
+
+        if _refresh_model_in_progress:
+            return web.json_response(
+                {"success": False, "error": "A model refresh is already running"},
+                status=409,
+            )
+
+        # Scanner reconciliation happens before the fetch service exists. Reject
+        # overlapping requests during that preparation window so two bulk loops
+        # can never run while sharing the module-level cancellation state.
+        if _fetch_in_progress and _active_service is None:
+            return web.json_response(
+                {"success": False, "error": "A community fetch is starting"},
+                status=409,
+            )
+
+        # If a fetch is already running, cancel it and let this one take over.
         if _fetch_in_progress and _active_service is not None:
             logger.info("Cancelling previous fetch to start a new one")
             _active_service.cancel()
             # Wait briefly for the old fetch loop to notice the cancel
-            import asyncio
             for _ in range(20):
                 if not _fetch_in_progress:
                     break
@@ -114,46 +291,84 @@ class CommunityImagesRoutes:
                     {"success": False, "error": "Previous fetch still stopping, try again"},
                     status=409,
                 )
+
+        # A per-model refresh can start while the replacement fetch above is
+        # waiting for an older bulk fetch to stop. Recheck after that await so
+        # both fetch paths remain mutually exclusive.
+        if _refresh_model_in_progress:
+            return web.json_response(
+                {"success": False, "error": "A model refresh is already running"},
+                status=409,
+            )
         _fetch_in_progress = True
+        _fetch_cancel_requested = False
 
         try:
             db = CommunityImagesDB.get_instance()
             settings = get_settings_manager()
             api_key = settings.get("civitai_api_key", "")
 
-            # Collect LoRA models with civitai data
-            models = []
-            try:
-                scanner = await ServiceRegistry.get_lora_scanner()
-                cache = await scanner.get_cached_data()
-                for item in cache.raw_data:
-                    if not item:
-                        continue
-                    civitai = item.get("civitai") or {}
-                    model_id = civitai.get("modelId")
-                    version_id = civitai.get("id")
-                    sha256 = item.get("sha256")
-                    creator = (civitai.get("creator") or {}).get("username")
-                    if model_id and sha256:
-                        models.append({
-                            "sha256": sha256,
-                            "civitai_model_id": model_id,
-                            "civitai_version_id": version_id,
-                            "author_username": creator or "",
-                            "model_name": item.get("model_name") or item.get("file_name") or sha256[:8],
-                        })
-            except Exception as exc:
-                logger.info("Failed to get lora scanner data: %s", exc)
+            # Bulk actions reconcile the scanner so newly added LoRAs are picked
+            # up. Selected actions use the inventory already shown by the picker,
+            # avoiding a full filesystem walk before a targeted fetch starts.
+            inventory = await CommunityImagesRoutes._get_lora_models(
+                force_refresh=requested_hashes is None,
+            )
+            if _fetch_cancel_requested:
+                return web.json_response({
+                    "success": True,
+                    "stored": 0,
+                    "total": 0,
+                    "skipped": 0,
+                    "cancelled": True,
+                })
+            inventory_by_hash = {
+                model["sha256"].lower(): model for model in inventory
+            }
+
+            if requested_hashes is not None:
+                unknown = [
+                    sha256 for sha256 in requested_hashes
+                    if sha256 not in inventory_by_hash
+                ]
+                if unknown:
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "One or more selected models are no longer available",
+                            "unknown_hashes": unknown,
+                        },
+                        status=400,
+                    )
+                models = [inventory_by_hash[sha256] for sha256 in requested_hashes]
+                unavailable = [
+                    model["sha256"] for model in models
+                    if not model.get("civitai_model_id")
+                ]
+                if unavailable:
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "One or more selected models have no CivitAI metadata",
+                            "unavailable_hashes": unavailable,
+                        },
+                        status=400,
+                    )
+            else:
+                hidden_hashes = _get_hidden_model_hashes()
+                models = [
+                    model for model in inventory
+                    if model.get("civitai_model_id")
+                    and model["sha256"].lower() not in hidden_hashes
+                ]
 
             if not models:
-                return web.json_response({"success": True, "stored": 0, "total": 0})
-
-            # Check for force refresh option
-            try:
-                body = await request.json() if request.can_read_body else {}
-            except Exception:
-                body = {}
-            force = body.get("force", False)
+                return web.json_response({
+                    "success": True,
+                    "stored": 0,
+                    "total": 0,
+                    "skipped": 0,
+                })
 
             # Skip models that already have enough community images (unless force)
             skipped = 0
@@ -212,39 +427,139 @@ class CommunityImagesRoutes:
             )
         finally:
             _fetch_in_progress = False
+            _fetch_cancel_requested = False
 
     @staticmethod
     async def handle_cancel(request: web.Request) -> web.Response:
         """POST /api/lm/community-images/cancel — cancel in-progress fetch."""
+        global _fetch_cancel_requested
+
         if _active_service is not None:
             _active_service.cancel()
             return web.json_response({"success": True, "message": "Cancel requested"})
+        if _fetch_in_progress:
+            _fetch_cancel_requested = True
+            return web.json_response({
+                "success": True,
+                "message": "Fetch cancellation requested",
+            })
         return web.json_response({"success": True, "message": "No fetch in progress"})
 
     @staticmethod
     async def _get_lora_metadata() -> tuple[list[str], dict[str, str], dict[str, str]]:
-        """Return (hashes, name_map, base_model_map) from the lora scanner."""
+        """Return visible hashes and display metadata from the LoRA inventory."""
         lora_hashes: list[str] = []
         name_map: dict[str, str] = {}
         base_model_map: dict[str, str] = {}
-        try:
-            scanner = await ServiceRegistry.get_lora_scanner()
-            cache = await scanner.get_cached_data()
-            for item in cache.raw_data:
-                if not item:
-                    continue
-                sha256 = item.get("sha256")
-                if sha256:
-                    lora_hashes.append(sha256)
-                    name_map[sha256] = (
-                        item.get("model_name")
-                        or item.get("file_name")
-                        or "Unknown"
-                    )
-                    base_model_map[sha256] = item.get("base_model") or ""
-        except Exception as exc:
-            logger.info("Failed to get lora scanner data: %s", exc)
+        hidden_hashes = _get_hidden_model_hashes()
+        for model in await CommunityImagesRoutes._get_lora_models():
+            sha256 = model["sha256"]
+            if sha256.lower() in hidden_hashes:
+                continue
+            lora_hashes.append(sha256)
+            name_map[sha256] = model["model_name"]
+            base_model_map[sha256] = model["base_model"]
         return lora_hashes, name_map, base_model_map
+
+    @staticmethod
+    async def handle_models(request: web.Request) -> web.Response:
+        """GET /models — list all LoRAs, including new and hidden models."""
+        refresh = request.query.get("refresh", "").lower() in {
+            "1", "true", "yes",
+        }
+        try:
+            inventory = await CommunityImagesRoutes._get_lora_models(
+                force_refresh=refresh,
+            )
+            db = CommunityImagesDB.get_instance()
+            counts = db.get_image_counts(
+                [model["sha256"] for model in inventory]
+            )
+            hidden_hashes = _get_hidden_model_hashes()
+
+            models_out = []
+            for model in inventory:
+                sha256 = model["sha256"]
+                fetchable = bool(model.get("civitai_model_id"))
+                models_out.append({
+                    "sha256": sha256,
+                    "model_name": model["model_name"],
+                    "base_model": model["base_model"],
+                    "image_count": counts.get(sha256, 0),
+                    "hidden": sha256.lower() in hidden_hashes,
+                    "fetchable": fetchable,
+                    "unavailable_reason": (
+                        "No CivitAI metadata" if not fetchable else ""
+                    ),
+                })
+
+            models_out.sort(
+                key=lambda model: (
+                    not model["hidden"],
+                    model["model_name"].lower(),
+                    model["sha256"].lower(),
+                )
+            )
+            return web.json_response({
+                "success": True,
+                "models": models_out,
+                "total_models": len(models_out),
+                "hidden_count": sum(1 for model in models_out if model["hidden"]),
+            })
+        except Exception:
+            logger.exception("Failed to get community model inventory")
+            return web.json_response(
+                {"success": False, "error": "Internal server error"}, status=500
+            )
+
+    @staticmethod
+    async def handle_visibility(request: web.Request) -> web.Response:
+        """POST /visibility — hide or show a model on the Community page."""
+        try:
+            body = await request.json()
+        except Exception:
+            return web.json_response(
+                {"success": False, "error": "Invalid JSON"}, status=400
+            )
+        if not isinstance(body, dict):
+            return web.json_response(
+                {"success": False, "error": "JSON body must be an object"},
+                status=400,
+            )
+
+        raw_hash = body.get("sha256")
+        hidden = body.get("hidden")
+        if not isinstance(raw_hash, str) or not raw_hash.strip():
+            return web.json_response(
+                {"success": False, "error": "Missing sha256"}, status=400
+            )
+        if not _SHA256_RE.fullmatch(raw_hash.strip()):
+            return web.json_response(
+                {"success": False, "error": "Invalid sha256"}, status=400
+            )
+        if not isinstance(hidden, bool):
+            return web.json_response(
+                {"success": False, "error": "hidden must be a boolean"},
+                status=400,
+            )
+
+        sha256 = raw_hash.strip().lower()
+        settings = get_settings_manager()
+        hidden_hashes = set(_normalize_hashes(
+            settings.get("community_hidden_model_hashes", [])
+        ))
+        if hidden:
+            hidden_hashes.add(sha256)
+        else:
+            hidden_hashes.discard(sha256)
+        settings.set("community_hidden_model_hashes", sorted(hidden_hashes))
+
+        return web.json_response({
+            "success": True,
+            "sha256": raw_hash.strip(),
+            "hidden": hidden,
+            "hidden_count": len(hidden_hashes),
+        })
 
     @staticmethod
     async def handle_by_models(request: web.Request) -> web.Response:
@@ -387,10 +702,19 @@ class CommunityImagesRoutes:
 
         db = CommunityImagesDB.get_instance()
         conn = db._ensure_conn()
-        row = conn.execute(
-            "SELECT sha256 FROM community_images WHERE civitai_image_id = ?",
-            (image_id,),
-        ).fetchone()
+        sha256 = request.query.get("sha256", "").strip()
+        if sha256:
+            row = conn.execute(
+                "SELECT sha256 FROM community_images "
+                "WHERE civitai_image_id = ? AND lower(sha256) = lower(?)",
+                (image_id, sha256),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT sha256 FROM community_images WHERE civitai_image_id = ? "
+                "ORDER BY sha256 LIMIT 1",
+                (image_id,),
+            ).fetchone()
         if not row:
             return web.json_response(
                 {"success": False, "error": "Image not found"}, status=404
@@ -443,23 +767,38 @@ class CommunityImagesRoutes:
                 {"success": False, "error": "Missing sha256"}, status=400
             )
 
-        # Look up model's civitai info from scanner
+        global _refresh_model_in_progress
+        if _fetch_in_progress or _refresh_model_in_progress:
+            return web.json_response(
+                {"success": False, "error": "Another community fetch is running"},
+                status=409,
+            )
+
+        _refresh_model_in_progress = True
+        try:
+            return await CommunityImagesRoutes._refresh_model(sha256)
+        finally:
+            _refresh_model_in_progress = False
+
+    @staticmethod
+    async def _refresh_model(sha256: str) -> web.Response:
+        """Fetch fresh community images for one known model hash."""
+        # Use the normalized inventory so duplicate files with the same hash
+        # benefit from its metadata merge instead of stopping at an incomplete
+        # first scanner entry.
+        matched_sha256 = sha256
         civitai_model_id = None
         civitai_version_id = None
         author_username = ""
         model_name = ""
         try:
-            scanner = await ServiceRegistry.get_lora_scanner()
-            cache = await scanner.get_cached_data()
-            for item in cache.raw_data:
-                if not item:
-                    continue
-                if item.get("sha256") == sha256:
-                    civitai = item.get("civitai") or {}
-                    civitai_model_id = civitai.get("modelId")
-                    civitai_version_id = civitai.get("id")
-                    author_username = (civitai.get("creator") or {}).get("username", "")
-                    model_name = item.get("model_name") or item.get("file_name") or ""
+            for model in await CommunityImagesRoutes._get_lora_models():
+                if model["sha256"].lower() == sha256.lower():
+                    matched_sha256 = model["sha256"]
+                    civitai_model_id = model.get("civitai_model_id")
+                    civitai_version_id = model.get("civitai_version_id")
+                    author_username = model.get("author_username", "")
+                    model_name = model.get("model_name", "")
                     break
         except Exception as exc:
             logger.info("Failed to get lora scanner data: %s", exc)
@@ -479,7 +818,7 @@ class CommunityImagesRoutes:
                 # Fetch first — only delete old data after we have new results
                 before_fetch = time.time()
                 count = await service.fetch_images_for_model(
-                    sha256, civitai_model_id, author_username,
+                    matched_sha256, civitai_model_id, author_username,
                     civitai_version_id=civitai_version_id,
                     model_name=model_name,
                 )
@@ -493,13 +832,20 @@ class CommunityImagesRoutes:
                 })
 
             # Remove stale images that were not part of the fresh fetch
-            stale = db.delete_stale(sha256, before_fetch)
+            stale = db.delete_stale(matched_sha256, before_fetch)
             if stale:
-                logger.info("Removed %d stale community images for %s", stale, sha256)
+                logger.info(
+                    "Removed %d stale community images for %s",
+                    stale,
+                    matched_sha256,
+                )
 
             # Return the refreshed images
-            images = db.get_by_hashes([sha256])
-            clean_images = [_clean_image(img) for img in images.get(sha256, [])]
+            images = db.get_by_hashes([matched_sha256])
+            clean_images = [
+                _clean_image(img)
+                for img in images.get(matched_sha256, [])
+            ]
 
             return web.json_response({
                 "success": True,
@@ -588,6 +934,10 @@ class CommunityImagesRoutes:
         app.router.add_get("/community", cls.handle_page)
         app.router.add_post("/api/lm/community-images/fetch", cls.handle_fetch)
         app.router.add_post("/api/lm/community-images/cancel", cls.handle_cancel)
+        app.router.add_get("/api/lm/community-images/models", cls.handle_models)
+        app.router.add_post(
+            "/api/lm/community-images/visibility", cls.handle_visibility
+        )
         app.router.add_get("/api/lm/community-images/by-models", cls.handle_by_models)
         app.router.add_post("/api/lm/community-images/by-hashes", cls.handle_by_hashes)
         app.router.add_get(

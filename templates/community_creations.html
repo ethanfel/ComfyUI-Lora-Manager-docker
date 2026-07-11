@@ -18,6 +18,9 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
                 <div id="fetchDropdownMenu" class="fetch-dropdown-menu" style="display:none;">
+                    <button id="fetchMissingCommunityBtn" class="fetch-dropdown-item">
+                        <i class="fas fa-download"></i> Fetch All Incomplete
+                    </button>
                     <button id="refetchCommunityBtn" class="fetch-dropdown-item">
                         <i class="fas fa-sync-alt"></i> Re-fetch All
                     </button>
@@ -66,6 +69,61 @@
     <i class="fas fa-images"></i>
     <h3>No community images yet</h3>
     <p>Click "Fetch Community Images" to download top community creations for your LoRAs.</p>
+</div>
+
+<div id="communityModelManager" class="community-model-manager-overlay" hidden aria-hidden="true">
+    <section class="community-model-manager" role="dialog" aria-modal="true"
+             aria-labelledby="communityModelManagerTitle">
+        <header class="community-model-manager-header">
+            <div>
+                <h2 id="communityModelManagerTitle">Choose LoRAs to fetch</h2>
+                <p>Fetch community creations for selected models, or hide models you do not want on this page.</p>
+            </div>
+            <button id="communityModelManagerClose" class="community-model-manager-close" type="button"
+                    aria-label="Close model manager">
+                <i class="fas fa-times" aria-hidden="true"></i>
+            </button>
+        </header>
+
+        <div class="community-model-manager-toolbar">
+            <label class="community-model-manager-search">
+                <span class="sr-only">Search models</span>
+                <i class="fas fa-search" aria-hidden="true"></i>
+                <input id="communityModelManagerSearch" type="search" placeholder="Search LoRAs or base models..."
+                       autocomplete="off">
+            </label>
+            <button id="communitySelectNewBtn" class="community-manager-action" type="button">
+                <i class="fas fa-star" aria-hidden="true"></i> Select new
+            </button>
+            <button id="communitySelectVisibleBtn" class="community-manager-action" type="button">
+                <i class="fas fa-check-double" aria-hidden="true"></i> Select all visible
+            </button>
+            <button id="communityClearSelectionBtn" class="community-manager-action" type="button">
+                Clear
+            </button>
+            <button id="communityRefreshModelsBtn" class="community-manager-action" type="button">
+                <i class="fas fa-sync-alt" aria-hidden="true"></i> Refresh models
+            </button>
+        </div>
+
+        <div id="communityModelManagerStatus" class="community-model-manager-status" role="status"
+             aria-live="polite"></div>
+        <div id="communityModelManagerList" class="community-model-manager-list" role="list">
+            <div class="community-manager-loading">
+                <i class="fas fa-spinner fa-spin" aria-hidden="true"></i> Loading models...
+            </div>
+        </div>
+
+        <footer class="community-model-manager-footer">
+            <span id="communitySelectedCount" class="community-selected-count">0 selected</span>
+            <div class="community-model-manager-footer-actions">
+                <button id="communityModelManagerCancel" class="community-manager-secondary" type="button">Cancel</button>
+                <button id="communityFetchSelectedBtn" class="community-manager-primary" type="button" disabled>
+                    <i class="fas fa-images" aria-hidden="true"></i> Fetch selected
+                </button>
+            </div>
+        </footer>
+    </section>
 </div>
 {% endblock %}
 

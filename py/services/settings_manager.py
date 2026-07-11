@@ -99,6 +99,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "model_card_footer_action": "replace_preview",
     "show_version_on_card": True,
     "version_grouping": "same_base",
+    "community_hidden_model_hashes": [],
     "auto_organize_exclusions": [],
     "metadata_refresh_skip_paths": [],
     "skip_previously_downloaded_model_versions": False,

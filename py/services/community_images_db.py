@@ -12,9 +12,36 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA = """
-CREATE TABLE IF NOT EXISTS community_images (
-    civitai_image_id INTEGER PRIMARY KEY,
+_COMMUNITY_IMAGE_COLUMNS = (
+    "civitai_image_id",
+    "sha256",
+    "civitai_model_id",
+    "username",
+    "image_url",
+    "local_filename",
+    "width",
+    "height",
+    "prompt",
+    "negative_prompt",
+    "steps",
+    "sampler",
+    "cfg_scale",
+    "seed",
+    "denoise",
+    "base_model",
+    "like_count",
+    "heart_count",
+    "laugh_count",
+    "comment_count",
+    "has_workflow",
+    "media_type",
+    "resources",
+    "created_at",
+    "fetched_at",
+)
+
+_TABLE_DEFINITION = """
+    civitai_image_id INTEGER NOT NULL,
     sha256 TEXT NOT NULL,
     civitai_model_id INTEGER,
     username TEXT,
@@ -38,7 +65,13 @@ CREATE TABLE IF NOT EXISTS community_images (
     media_type TEXT DEFAULT 'image',
     resources TEXT,
     created_at TEXT,
-    fetched_at REAL
+    fetched_at REAL,
+    PRIMARY KEY (civitai_image_id, sha256)
+"""
+
+_SCHEMA = f"""
+CREATE TABLE IF NOT EXISTS community_images (
+{_TABLE_DEFINITION}
 );
 CREATE INDEX IF NOT EXISTS idx_community_sha256 ON community_images(sha256);
 """
@@ -52,7 +85,7 @@ _UPSERT_SQL = """
         like_count, heart_count, laugh_count, comment_count,
         has_workflow, media_type, resources, created_at, fetched_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(civitai_image_id) DO UPDATE SET
+    ON CONFLICT(civitai_image_id, sha256) DO UPDATE SET
       image_url = excluded.image_url,
       local_filename = COALESCE(excluded.local_filename, community_images.local_filename),
       like_count = excluded.like_count,
@@ -135,15 +168,15 @@ class CommunityImagesDB:
         self._migrate()
 
     def _migrate(self) -> None:
-        """Add columns that may be missing from older schema versions."""
+        """Bring older community image tables up to the current schema."""
         conn = self._conn
         if conn is None:
             return
         with self._db_lock:
-            # Check if has_workflow column exists
-            cols = {
-                row[1] for row in conn.execute("PRAGMA table_info(community_images)")
-            }
+            table_info = conn.execute(
+                "PRAGMA table_info(community_images)"
+            ).fetchall()
+            cols = {row[1] for row in table_info}
             if "has_workflow" not in cols:
                 conn.execute(
                     "ALTER TABLE community_images ADD COLUMN has_workflow INTEGER DEFAULT 0"
@@ -157,8 +190,51 @@ class CommunityImagesDB:
                     "ALTER TABLE community_images ADD COLUMN media_type TEXT DEFAULT 'image'"
                 )
             conn.commit()
+
+            # The original schema keyed rows only by civitai_image_id. A single
+            # CivitAI image can reference multiple LoRAs, so each image/model
+            # association needs its own row and local file path.
+            table_info = conn.execute(
+                "PRAGMA table_info(community_images)"
+            ).fetchall()
+            primary_key = [
+                row[1]
+                for row in sorted(table_info, key=lambda row: row[5])
+                if row[5]
+            ]
+            if primary_key != ["civitai_image_id", "sha256"]:
+                self._migrate_composite_primary_key(conn)
         # Backfill has_workflow for rows that have a .workflow.json on disk
         self._backfill_has_workflow()
+
+    @staticmethod
+    def _migrate_composite_primary_key(conn: sqlite3.Connection) -> None:
+        """Rebuild a legacy table with an image/model composite primary key."""
+        columns = ", ".join(_COMMUNITY_IMAGE_COLUMNS)
+        logger.info(
+            "Migrating community_images to composite image/model primary key"
+        )
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+            conn.execute("DROP TABLE IF EXISTS community_images_new")
+            conn.execute(
+                f"CREATE TABLE community_images_new ({_TABLE_DEFINITION})"
+            )
+            conn.execute(
+                f"INSERT INTO community_images_new ({columns}) "
+                f"SELECT {columns} FROM community_images"
+            )
+            conn.execute("DROP TABLE community_images")
+            conn.execute(
+                "ALTER TABLE community_images_new RENAME TO community_images"
+            )
+            conn.execute(
+                "CREATE INDEX idx_community_sha256 ON community_images(sha256)"
+            )
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
 
     def _backfill_has_workflow(self) -> None:
         """Set has_workflow=1 for any row whose .workflow.json exists on disk.
@@ -178,8 +254,7 @@ class CommunityImagesDB:
                 "SELECT civitai_image_id, sha256, local_filename FROM community_images "
                 "WHERE has_workflow = 0 AND local_filename IS NOT NULL"
             ).fetchall()
-        updated = 0
-        updates: list[int] = []
+        updates: list[tuple[int, str]] = []
         for row in rows:
             image_id = row["civitai_image_id"]
             sha256 = row["sha256"]
@@ -193,12 +268,13 @@ class CommunityImagesDB:
                 continue
             workflow_path = os.path.join(model_folder, "community", f"{image_id}.workflow.json")
             if os.path.exists(workflow_path):
-                updates.append(image_id)
+                updates.append((image_id, sha256))
         if updates:
             with self._db_lock:
                 conn.executemany(
-                    "UPDATE community_images SET has_workflow = 1 WHERE civitai_image_id = ?",
-                    [(iid,) for iid in updates],
+                    "UPDATE community_images SET has_workflow = 1 "
+                    "WHERE civitai_image_id = ? AND sha256 = ?",
+                    updates,
                 )
                 conn.commit()
             logger.info("Backfilled has_workflow=1 for %d community images", len(updates))

@@ -28,21 +28,37 @@ _THUMB_DIMENSION = 400  # thumbnail longest side
 _THUMB_QUALITY = 70
 
 
+def _get_generation_meta(item: dict) -> dict:
+    """Return generation metadata from either CivitAI response layout.
+
+    The images API may return generation parameters directly in ``meta`` or
+    nested one level deeper in ``meta.meta``. Preserve direct fields while
+    allowing the nested values to take precedence when both are present.
+    """
+    raw_meta = item.get("meta")
+    if not isinstance(raw_meta, dict):
+        return {}
+
+    generation_meta = {
+        key: value for key, value in raw_meta.items() if key != "meta"
+    }
+    nested_meta = raw_meta.get("meta")
+    if isinstance(nested_meta, dict):
+        generation_meta.update(nested_meta)
+    return generation_meta
+
+
 def _quality_filter(items: list[dict], model_name: str = "") -> tuple[list[dict], dict]:
     """Apply quality filters (meta/prompt checks). Returns (passed, skip_counts)."""
     result: list[dict] = []
     counts = {"no_meta": 0, "no_prompt": 0, "short": 0}
 
     for item in items:
-        meta = item.get("meta")
-        if not meta or not isinstance(meta, dict):
+        generation_meta = _get_generation_meta(item)
+        if not generation_meta:
             counts["no_meta"] += 1
             continue
-        inner_meta = meta.get("meta")
-        if not inner_meta or not isinstance(inner_meta, dict):
-            counts["no_meta"] += 1
-            continue
-        prompt = str(inner_meta.get("prompt") or "")
+        prompt = str(generation_meta.get("prompt") or "")
         if not prompt:
             counts["no_prompt"] += 1
             continue
@@ -60,7 +76,7 @@ def filter_community_images(
     """Filter CivitAI image items, preferring non-author community images.
 
     - Prefer non-author images, fall back to author images if none exist
-    - Skip images without meta.meta.prompt
+    - Skip images without meta.prompt or meta.meta.prompt
     - Skip images with prompt < _MIN_PROMPT_LENGTH chars
     - Return at most _MAX_IMAGES_PER_MODEL images
     """
@@ -126,12 +142,11 @@ def _extract_image_data(
 ) -> dict:
     """Convert a CivitAI API image item to DB row format."""
     stats = item.get("stats") or {}
-    meta = item.get("meta") or {}
-    inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
+    generation_meta = _get_generation_meta(item)
 
     # Build enriched resources list from civitaiResources
     resources_json = None
-    raw_resources = inner_meta.get("civitaiResources") or []
+    raw_resources = generation_meta.get("civitaiResources") or []
     if raw_resources:
         enriched = []
         cache = version_cache or {}
@@ -158,13 +173,13 @@ def _extract_image_data(
         "local_filename": None,
         "width": item.get("width"),
         "height": item.get("height"),
-        "prompt": inner_meta.get("prompt"),
-        "negative_prompt": inner_meta.get("negativePrompt"),
-        "steps": inner_meta.get("steps"),
-        "sampler": inner_meta.get("sampler"),
-        "cfg_scale": inner_meta.get("cfgScale"),
-        "seed": inner_meta.get("seed"),
-        "denoise": inner_meta.get("denoise"),
+        "prompt": generation_meta.get("prompt"),
+        "negative_prompt": generation_meta.get("negativePrompt"),
+        "steps": generation_meta.get("steps"),
+        "sampler": generation_meta.get("sampler"),
+        "cfg_scale": generation_meta.get("cfgScale"),
+        "seed": generation_meta.get("seed"),
+        "denoise": generation_meta.get("denoise"),
         "base_model": item.get("baseModel"),
         "like_count": stats.get("likeCount", 0),
         "heart_count": stats.get("heartCount", 0),
@@ -237,11 +252,8 @@ class CommunityImagesFetchService:
         """
         version_ids: set[int] = set()
         for item in items:
-            meta = item.get("meta")
-            if not meta or not isinstance(meta, dict):
-                continue
-            inner_meta = (meta.get("meta") or {}) if isinstance(meta, dict) else {}
-            for res in inner_meta.get("civitaiResources") or []:
+            generation_meta = _get_generation_meta(item)
+            for res in generation_meta.get("civitaiResources") or []:
                 vid = res.get("modelVersionId")
                 if vid and vid not in self._version_cache:
                     version_ids.add(vid)

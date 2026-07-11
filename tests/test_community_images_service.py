@@ -1,9 +1,11 @@
 """Tests for community images fetch service."""
 from __future__ import annotations
 
-import pytest
+import json
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from py.services.community_images_service import (
     filter_community_images,
@@ -138,6 +140,16 @@ def test_filter_excludes_short_prompt():
     assert result[1]["id"] == 3
 
 
+def test_filter_accepts_direct_generation_meta():
+    """CivitAI may return generation parameters directly under meta."""
+    item = _make_image_item(image_id=7, prompt="direct metadata prompt")
+    item["meta"] = item["meta"]["meta"]
+
+    result = filter_community_images([item], "nobody")
+
+    assert [image["id"] for image in result] == [7]
+
+
 def test_filter_limits_to_10():
     """Should return at most 10 images even if more pass the filter."""
     items = [_make_image_item(image_id=i, username=f"user{i}") for i in range(15)]
@@ -184,6 +196,50 @@ def test_extract_image_data_maps_fields():
     assert result["seed"] == 999
     assert result["denoise"] == 0.65
     assert result["base_model"] == "SDXL 1.0"
+
+
+def test_extract_image_data_maps_direct_generation_meta_and_resources():
+    """Direct meta fields and resources should map identically to nested meta."""
+    item = _make_image_item(
+        image_id=43,
+        prompt="A prompt in the direct CivitAI metadata layout",
+        cfg_scale=6.5,
+        steps=30,
+    )
+    item["meta"] = item["meta"]["meta"]
+    item["meta"]["civitaiResources"] = [
+        {"type": "lora", "weight": 0.8, "modelVersionId": 123}
+    ]
+
+    result = _extract_image_data(
+        item,
+        "direct-meta-hash",
+        78,
+        version_cache={123: {"name": "Supporting LoRA", "modelId": 456}},
+    )
+
+    assert result["prompt"] == "A prompt in the direct CivitAI metadata layout"
+    assert result["cfg_scale"] == 6.5
+    assert result["steps"] == 30
+    assert json.loads(result["resources"]) == [
+        {
+            "type": "lora",
+            "weight": 0.8,
+            "modelVersionId": 123,
+            "name": "Supporting LoRA",
+            "modelId": 456,
+        }
+    ]
+
+
+def test_nested_generation_meta_takes_precedence_over_direct_fields():
+    """Nested values win when CivitAI includes both response layouts."""
+    item = _make_image_item(image_id=44, prompt="nested prompt")
+    item["meta"]["prompt"] = "direct prompt"
+
+    result = _extract_image_data(item, "mixed-meta-hash", 79)
+
+    assert result["prompt"] == "nested prompt"
 
 
 # --- Async tests for CommunityImagesFetchService ---
