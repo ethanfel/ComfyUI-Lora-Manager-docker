@@ -283,6 +283,10 @@ class CommunityImagesFetchService:
             "sort": "Most Reactions",
             "limit": "20",
             "nsfw": "X",  # include all content levels
+            # CivitAI omits generation metadata from image responses unless
+            # it is requested explicitly. The quality filter needs the prompt
+            # stored in that metadata.
+            "withMeta": "true",
         }
         if version_id:
             params["modelVersionId"] = str(version_id)

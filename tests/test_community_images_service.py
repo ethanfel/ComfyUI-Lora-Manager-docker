@@ -254,6 +254,47 @@ def community_db(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_fetch_images_api_requests_generation_metadata(community_db):
+    """CivitAI only includes image prompts when withMeta is requested."""
+
+    class FakeResponse:
+        status = 200
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, traceback):
+            return False
+
+        async def json(self):
+            return {"items": []}
+
+    class FakeSession:
+        def __init__(self):
+            self.params = None
+
+        def get(self, url, params):
+            self.params = params
+            return FakeResponse()
+
+    service = CommunityImagesFetchService(db=community_db)
+    session = FakeSession()
+
+    with patch.object(
+        service,
+        "_get_session",
+        new_callable=AsyncMock,
+        return_value=session,
+    ):
+        await service._fetch_images_api(model_id=42, version_id=99)
+
+    assert session.params is not None
+    assert session.params["modelId"] == "42"
+    assert session.params["modelVersionId"] == "99"
+    assert session.params["withMeta"] == "true"
+
+
+@pytest.mark.asyncio
 async def test_fetch_images_for_model(community_db, tmp_path):
     """Should fetch from API, filter, download images, and store in DB."""
     api_items = [
