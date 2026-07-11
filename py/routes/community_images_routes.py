@@ -636,11 +636,17 @@ class CommunityImagesRoutes:
                     "images": clean_images,
                 })
 
-            # Collect available base models (only those with community images)
+            # Include installed base models even before their first Community
+            # fetch. Their zero count makes newly added model families visible
+            # in the tab bar without changing the total of populated models.
             hashes_with_images = db.get_hashes_with_images(
                 list(base_model_map.keys())
             )
-            base_model_counts: dict[str, int] = {}
+            base_model_counts: dict[str, int] = {
+                base_model: 0
+                for base_model in set(base_model_map.values())
+                if base_model
+            }
             for h in hashes_with_images:
                 bm = base_model_map.get(h, "")
                 if bm:

@@ -424,6 +424,38 @@ async def test_hidden_models_are_flagged_in_inventory_and_excluded_from_grid(
 
 
 @pytest.mark.asyncio
+async def test_grid_includes_zero_image_base_models_in_tabs(
+    route_client_factory,
+    community_db,
+):
+    populated = _model(
+        HASH_ALPHA,
+        "Alpha",
+        model_id=11,
+        base_model="SDXL 1.0",
+    )
+    new_family = _model(
+        HASH_BETA,
+        "Krea Style",
+        model_id=22,
+        base_model="Krea 2",
+    )
+    scanner = FakeScanner([populated, new_family])
+    _store_image(community_db, 1, HASH_ALPHA)
+    client, _ = await route_client_factory(scanner)
+
+    response = await client.get("/api/lm/community-images/by-models")
+    payload = await response.json()
+
+    assert response.status == 200
+    assert payload["total_models"] == 1
+    assert payload["base_models"] == {
+        "SDXL 1.0": 1,
+        "Krea 2": 0,
+    }
+
+
+@pytest.mark.asyncio
 async def test_visibility_update_persists_normalized_hash(
     route_client_factory,
 ):

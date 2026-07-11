@@ -29,7 +29,10 @@ function galleryPayload(models = []) {
     page_size: 10,
     total_models: models.length,
     total_pages: models.length ? 1 : 0,
-    base_models: {},
+    base_models: {
+      'SDXL 1.0': models.length ? 1 : 0,
+      'Krea 2': 0,
+    },
   };
 }
 
@@ -278,6 +281,14 @@ describe('Community Creations model manager', () => {
       });
     });
     expect(overlay.hidden).toBe(true);
+  });
+
+  it('shows installed base-model tabs before Community images are fetched', () => {
+    const kreaTab = [...document.querySelectorAll('.base-model-tab')]
+      .find((tab) => tab.dataset.baseModel === 'Krea 2');
+
+    expect(kreaTab).not.toBeNull();
+    expect(kreaTab.textContent).toBe('Krea 2 (0)');
   });
 
   it('joins a slow initial inventory load and still starts the automatic refresh after reopen', async () => {
