@@ -57,6 +57,9 @@ class LoraRoutes(BaseModelRoutes):
             prefix,
             self.get_lora_usage_tips_by_path,
         )
+        registrar.add_prefixed_route(
+            "GET", "/api/lm/{prefix}/resolve", prefix, self.resolve_lora
+        )
 
         # Randomizer routes
         registrar.add_prefixed_route(
@@ -147,6 +150,55 @@ class LoraRoutes(BaseModelRoutes):
 
         except Exception as e:
             logger.error(f"Error getting lora usage tips by path: {e}", exc_info=True)
+            return web.json_response({"success": False, "error": str(e)}, status=500)
+
+    async def resolve_lora(self, request: web.Request) -> web.Response:
+        """Resolve a ComfyUI loader value to a LoRA Manager card record."""
+        try:
+            name = str(request.query.get("name") or "").strip()
+            if not name:
+                return web.json_response(
+                    {"success": False, "error": "LoRA name is required"}, status=400
+                )
+
+            base_model = str(request.query.get("base_model") or "").strip() or None
+            matches = await self.service.find_models_by_name(
+                name, base_model=base_model
+            )
+            matches = await self.service.annotate_update_flags(matches)
+            formatted = []
+            for match in matches:
+                item = await self.service.format_response(match)
+                if item is not None:
+                    formatted.append(item)
+
+            if not formatted:
+                return web.json_response(
+                    {"success": True, "found": False, "query": name}
+                )
+
+            if len(formatted) > 1:
+                return web.json_response(
+                    {
+                        "success": True,
+                        "found": False,
+                        "ambiguous": True,
+                        "query": name,
+                        "candidates": formatted,
+                    }
+                )
+
+            return web.json_response(
+                {
+                    "success": True,
+                    "found": True,
+                    "query": name,
+                    "model": formatted[0],
+                }
+            )
+
+        except Exception as e:
+            logger.error(f"Error resolving LoRA: {e}", exc_info=True)
             return web.json_response({"success": False, "error": str(e)}, status=500)
 
     async def get_random_loras(self, request: web.Request) -> web.Response:

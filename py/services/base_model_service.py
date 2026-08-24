@@ -975,6 +975,18 @@ class BaseModelService(ABC):
         """Get model information by name"""
         return await self.scanner.get_model_info_by_name(name)
 
+    async def find_models_by_name(
+        self, name: str, *, base_model: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Return every model matching a loader name or relative path."""
+        return await self.scanner.find_models_by_name(name, base_model=base_model)
+
+    async def annotate_update_flags(
+        self, models: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Return model copies with their current update status attached."""
+        return await self._annotate_update_flags(models)
+
     def get_model_roots(self) -> List[str]:
         """Get model root directories"""
         return self.scanner.get_model_roots()

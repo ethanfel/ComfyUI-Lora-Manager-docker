@@ -49,6 +49,22 @@ class IntegrationScanner:
     async def get_cached_data(self, *_: object, **__: object) -> IntegrationCache:
         return self._cache
 
+    async def find_models_by_name(
+        self, name: str, *, base_model: str | None = None
+    ) -> List[Dict[str, object]]:
+        normalized = name.replace("\\", "/").removesuffix(".safetensors")
+        matches = []
+        for item in self._cache.raw_data:
+            file_name = str(item.get("file_name") or "").removesuffix(".safetensors")
+            folder = str(item.get("folder") or "").strip("/")
+            relative_path = f"{folder}/{file_name}" if folder else file_name
+            if normalized not in {file_name, relative_path}:
+                continue
+            if base_model and item.get("base_model") not in {None, "", base_model}:
+                continue
+            matches.append(dict(item))
+        return matches
+
     def get_model_roots(self) -> List[str]:  # pragma: no cover - documented surface
         return ["/"]
 
@@ -119,6 +135,15 @@ def test_lora_route_stack_returns_real_data():
             assert returned["model_name"] == "Alpha"
             assert returned["file_name"] == "alpha.safetensors"
             assert returned["usage_tips"] == "Use gently"
+
+            response = await client.get(
+                "/api/lm/loras/resolve?name=root%2Falpha.safetensors"
+            )
+            payload = await response.json()
+
+            assert response.status == 200
+            assert payload["found"] is True
+            assert payload["model"]["model_name"] == "Alpha"
 
     asyncio.run(scenario())
     ServiceRegistry.clear_services()
