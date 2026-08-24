@@ -51,6 +51,29 @@ LICENSE_FIELDS = (
 )
 
 
+_broadcast_models_changed_tasks: set = set()
+
+
+def _broadcast_models_changed() -> None:
+    """Notify connected clients that the local model library changed.
+
+    The ComfyUI graph page listens for this event to invalidate its cached
+    model availability data (loras widget missing-model cues / error flags)
+    without waiting for the cache TTL to expire.
+    """
+    try:
+        from ...services.websocket_manager import ws_manager
+
+        task = asyncio.create_task(ws_manager.broadcast({"type": "models_changed"}))
+        # Keep a reference so the task is not garbage-collected mid-await.
+        _broadcast_models_changed_tasks.add(task)
+        task.add_done_callback(_broadcast_models_changed_tasks.discard)
+    except Exception:
+        logging.getLogger(__name__).debug(
+            "Failed to broadcast models_changed", exc_info=True
+        )
+
+
 class ModelPageView:
     """Render the HTML view for model listings."""
 
@@ -71,7 +94,7 @@ class ModelPageView:
         self._server_i18n = server_i18n
         self._logger = logger
 
-    def _load_supporters(self) -> dict:
+    def _load_supporters(self) -> dict[str, Any]:
         """Load supporters data from JSON file."""
         try:
             current_file = os.path.abspath(__file__)
@@ -152,7 +175,15 @@ class ModelPageView:
                 self._template_env.filters["t"] = (
                     self._server_i18n.create_template_filter()
                 )
-                self._template_env._i18n_filter_added = True  # type: ignore[attr-defined]
+                self._template_env._i18n_filter_added = True  # pyright: ignore[reportAttributeAccessIssue]
+
+            from ...services.llm_service import PROVIDER_PRESETS
+
+            # Provider presets are embedded directly (local, no await needed).
+            # Provider model catalogs are fetched asynchronously by the
+            # frontend via GET /api/lm/llm/provider-models so page rendering
+            # never blocks on the remote model catalog (which can take up to
+            # 30s on cold cache).
 
             template_context = {
                 "is_initializing": is_initializing,
@@ -161,6 +192,8 @@ class ModelPageView:
                 "folders": [],
                 "t": self._server_i18n.get_translation,
                 "version": self._get_app_version(),
+                "provider_presets_json": json.dumps(PROVIDER_PRESETS),
+                "provider_models_json": "{}",
             }
 
             if not is_initializing:
@@ -189,7 +222,7 @@ class ModelListingHandler:
         self,
         *,
         service,
-        parse_specific_params: Callable[[web.Request], Dict],
+        parse_specific_params: Callable[[web.Request], Dict[str, Any]],
         logger: logging.Logger,
     ) -> None:
         self._service = service
@@ -203,11 +236,17 @@ class ModelListingHandler:
             result = await self._service.get_paginated_data(**params)
 
             format_start = time.perf_counter()
+            formatted_raw = [
+                await self._service.format_response(entry)
+                for entry in result["items"]
+            ]
+            # Filter out None entries returned for corrupted cache rows (issue #730).
+            # Note: "total" intentionally remains the pre-filter count to reflect
+            # the true number of models in the cache; corrupted entries are rare
+            # and adjusting total would cause pagination drift on every page.
+            formatted_items = [item for item in formatted_raw if item is not None]
             formatted_result = {
-                "items": [
-                    await self._service.format_response(item)
-                    for item in result["items"]
-                ],
+                "items": formatted_items,
                 "total": result["total"],
                 "page": result["page"],
                 "page_size": result["page_size"],
@@ -238,11 +277,15 @@ class ModelListingHandler:
             result = await self._service.get_excluded_paginated_data(**params)
 
             format_start = time.perf_counter()
+            formatted_raw = [
+                await self._service.format_response(entry)
+                for entry in result["items"]
+            ]
+            # Filter out None entries returned for corrupted cache rows (issue #730).
+            # "total" stays at the pre-filter count; see get_models for rationale.
+            formatted_items = [item for item in formatted_raw if item is not None]
             formatted_result = {
-                "items": [
-                    await self._service.format_response(item)
-                    for item in result["items"]
-                ],
+                "items": formatted_items,
                 "total": result["total"],
                 "page": result["page"],
                 "page_size": result["page_size"],
@@ -267,7 +310,7 @@ class ModelListingHandler:
             )
             return web.json_response({"error": str(exc)}, status=500)
 
-    def _parse_common_params(self, request: web.Request) -> Dict:
+    def _parse_common_params(self, request: web.Request) -> Dict[str, Any]:
         page = int(request.query.get("page", "1"))
         page_size = min(int(request.query.get("page_size", "20")), 100)
         sort_by = request.query.get("sort_by", "name")
@@ -321,6 +364,7 @@ class ModelListingHandler:
             == "true",
             "tags": request.query.get("search_tags", "false").lower() == "true",
             "creator": request.query.get("search_creator", "false").lower() == "true",
+            "hash": request.query.get("search_hash", "false").lower() == "true",
             "recursive": request.query.get("recursive", "true").lower() == "true",
         }
 
@@ -380,12 +424,14 @@ class ModelListingHandler:
         )
 
         # View-local-versions filter: show all local versions of a specific model
+        # Accepts either a CivitAI modelId (int) or a HF group key like "hf:user/repo"
         civitai_model_id = request.query.get("civitai_model_id")
         if civitai_model_id is not None:
             try:
                 civitai_model_id = int(civitai_model_id)
             except (TypeError, ValueError):
-                civitai_model_id = None
+                # Keep as string — could be an HF group key (e.g. "hf:user/repo")
+                pass
 
         return {
             "page": page,
@@ -445,6 +491,7 @@ class ModelManagementHandler:
                 return web.Response(text="Model path is required", status=400)
 
             result = await self._lifecycle_service.delete_model(file_path)
+            _broadcast_models_changed()
             return web.json_response(result)
         except ValueError as exc:
             return web.json_response({"success": False, "error": str(exc)}, status=400)
@@ -524,12 +571,39 @@ class ModelManagementHandler:
                     # Update model_data with new hash
                     model_data["sha256"] = sha256
                     model_data["hash_status"] = "completed"
+                    hash_status = "completed"
                 else:
                     return web.json_response(
                         {"success": False, "error": "No SHA256 hash found"}, status=400
                     )
 
             await MetadataManager.hydrate_model_data(model_data)
+
+            # hydrate_model_data replaces model_data with .metadata.json content,
+            # which may lack sha256. Restore from cache and persist the fix.
+            if not model_data.get("sha256"):
+                if sha256:
+                    model_data["sha256"] = sha256
+                    model_data["hash_status"] = model_data.get("hash_status", hash_status)
+                    data_to_save = model_data.copy()
+                    data_to_save.pop("folder", None)
+                    await MetadataManager.save_metadata(file_path, data_to_save)
+                else:
+                    sha256 = await calculate_sha256(file_path)
+                    if sha256:
+                        model_data["sha256"] = sha256.lower()
+                        model_data["hash_status"] = "completed"
+                        data_to_save = model_data.copy()
+                        data_to_save.pop("folder", None)
+                        await MetadataManager.save_metadata(file_path, data_to_save)
+                    else:
+                        return web.json_response(
+                            {
+                                "success": False,
+                                "error": "Failed to compute SHA256 hash for model",
+                            },
+                            status=500,
+                        )
 
             success, error = await self._metadata_sync.fetch_and_update_model(
                 sha256=model_data["sha256"],
@@ -540,15 +614,25 @@ class ModelManagementHandler:
             if not success:
                 return web.json_response({"success": False, "error": error})
 
-            formatted_metadata = await self._service.format_response(model_data)
-            return web.json_response({"success": True, "metadata": formatted_metadata})
+            formatted = await self._service.format_response(model_data)
+            if formatted is None:
+                return web.json_response(
+                    {"success": False, "error": "Model entry is corrupted (missing file_path)"},
+                    status=500,
+                )
+            return web.json_response({"success": True, "metadata": formatted})
         except Exception as exc:
             if is_expected_offline_error(str(exc)):
                 return web.json_response(
                     {"success": False, "error": OFFLINE_FRIENDLY_MESSAGE},
                     status=503,
                 )
-            self._logger.error("Error fetching from CivitAI: %s", exc, exc_info=True)
+            self._logger.error(
+                "Error fetching from CivitAI for %s: %s",
+                locals().get("file_path", "unknown"),
+                exc,
+                exc_info=True,
+            )
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
     async def relink_civitai(self, request: web.Request) -> web.Response:
@@ -606,7 +690,7 @@ class ModelManagementHandler:
         try:
             reader = await request.multipart()
 
-            field = await reader.next()
+            field: Any = await reader.next()
             if field is None or field.name != "preview_file":
                 raise ValueError("Expected 'preview_file' field")
             content_type = field.headers.get("Content-Type", "image/png")
@@ -648,7 +732,7 @@ class ModelManagementHandler:
                 {
                     "success": True,
                     "preview_url": config.get_preview_static_url(
-                        result["preview_path"]
+                        str(result["preview_path"])
                     ),
                     "preview_nsfw_level": result["preview_nsfw_level"],
                 }
@@ -729,7 +813,7 @@ class ModelManagementHandler:
 
             result = await self._preview_service.replace_preview(
                 model_path=model_path,
-                preview_data=preview_data,
+                preview_data=preview_bytes,
                 content_type=content_type,
                 original_filename=original_filename,
                 nsfw_level=nsfw_level,
@@ -741,7 +825,7 @@ class ModelManagementHandler:
                 {
                     "success": True,
                     "preview_url": config.get_preview_static_url(
-                        result["preview_path"]
+                        str(result["preview_path"])
                     ),
                     "preview_nsfw_level": result["preview_nsfw_level"],
                 }
@@ -879,6 +963,8 @@ class ModelManagementHandler:
                 file_path=file_path, new_file_name=new_file_name
             )
 
+            _broadcast_models_changed()
+
             return web.json_response(
                 {
                     **result,
@@ -907,6 +993,7 @@ class ModelManagementHandler:
                 )
 
             result = await self._lifecycle_service.bulk_delete_models(file_paths)
+            _broadcast_models_changed()
             return web.json_response(result)
         except ValueError as exc:
             return web.json_response({"success": False, "error": str(exc)}, status=400)
@@ -950,15 +1037,38 @@ class ModelQueryHandler:
         self._service = service
         self._logger = logger
 
+    @staticmethod
+    def _parse_include_empty(request: web.Request) -> bool:
+        """Parse the include_empty query flag (``1``/``true``)."""
+        return request.query.get("include_empty", "").lower() in ("1", "true")
+
     async def get_top_tags(self, request: web.Request) -> web.Response:
         try:
             limit = int(request.query.get("limit", "20"))
             if limit < 0:
                 limit = 20
+            elif limit > 200:
+                limit = 20
             top_tags = await self._service.get_top_tags(limit)
             return web.json_response({"success": True, "tags": top_tags})
         except Exception as exc:
             self._logger.error("Error getting top tags: %s", exc, exc_info=True)
+            return web.json_response(
+                {"success": False, "error": "Internal server error"}, status=500
+            )
+
+    async def search_tags(self, request: web.Request) -> web.Response:
+        try:
+            query = request.query.get("q", "")
+            limit = int(request.query.get("limit", "20"))
+            if limit < 0:
+                limit = 20
+            elif limit > 200:
+                limit = 20
+            tags = await self._service.search_tags(query, limit)
+            return web.json_response({"success": True, "tags": tags})
+        except Exception as exc:
+            self._logger.error("Error searching tags: %s", exc, exc_info=True)
             return web.json_response(
                 {"success": False, "error": "Internal server error"}, status=500
             )
@@ -991,6 +1101,7 @@ class ModelQueryHandler:
             await self._service.scan_models(
                 force_refresh=True, rebuild_cache=full_rebuild
             )
+            _broadcast_models_changed()
             if self._service.scanner.is_cancelled():
                 return web.json_response(
                     {
@@ -1025,8 +1136,14 @@ class ModelQueryHandler:
 
     async def get_folders(self, request: web.Request) -> web.Response:
         try:
-            cache = await self._service.scanner.get_cached_data()
-            return web.json_response({"folders": cache.folders})
+            include_empty = self._parse_include_empty(request)
+            if include_empty:
+                # Live enumeration includes empty OS-created directories.
+                folders = await self._service.scanner.get_all_folders()
+            else:
+                cache = await self._service.scanner.get_cached_data()
+                folders = cache.folders
+            return web.json_response({"folders": folders})
         except Exception as exc:
             self._logger.error("Error getting folders: %s", exc)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
@@ -1051,7 +1168,9 @@ class ModelQueryHandler:
                     {"success": False, "error": "model_root parameter is required"},
                     status=400,
                 )
-            folder_tree = await self._service.get_folder_tree(model_root)
+            folder_tree = await self._service.get_folder_tree(
+                model_root, include_empty=self._parse_include_empty(request)
+            )
             return web.json_response({"success": True, "tree": folder_tree})
         except Exception as exc:
             self._logger.error("Error getting folder tree: %s", exc)
@@ -1059,7 +1178,9 @@ class ModelQueryHandler:
 
     async def get_unified_folder_tree(self, request: web.Request) -> web.Response:
         try:
-            unified_tree = await self._service.get_unified_folder_tree()
+            unified_tree = await self._service.get_unified_folder_tree(
+                include_empty=self._parse_include_empty(request)
+            )
             return web.json_response({"success": True, "tree": unified_tree})
         except Exception as exc:
             self._logger.error("Error getting unified folder tree: %s", exc)
@@ -1098,10 +1219,12 @@ class ModelQueryHandler:
                 # Sort: originals first, copies last
                 sorted_models = self._sort_duplicate_group(filtered)
 
-                # Format response
+                # Format response, filtering out corrupted entries (issue #730)
                 group = {"hash": sha256, "models": []}
                 for model in sorted_models:
-                    group["models"].append(await self._service.format_response(model))
+                    formatted = await self._service.format_response(model)
+                    if formatted is not None:
+                        group["models"].append(formatted)
 
                 # Only include groups with 2+ models after filtering
                 if len(group["models"]) > 1:
@@ -1218,9 +1341,9 @@ class ModelQueryHandler:
                         (m for m in cache.raw_data if m["file_path"] == path), None
                     )
                     if model:
-                        group["models"].append(
-                            await self._service.format_response(model)
-                        )
+                        formatted = await self._service.format_response(model)
+                        if formatted is not None:
+                            group["models"].append(formatted)
                 hash_val = self._service.scanner.get_hash_by_filename(filename)
                 if hash_val:
                     main_path = self._service.get_path_by_hash(hash_val)
@@ -1230,9 +1353,9 @@ class ModelQueryHandler:
                             None,
                         )
                         if main_model:
-                            group["models"].insert(
-                                0, await self._service.format_response(main_model)
-                            )
+                            formatted = await self._service.format_response(main_model)
+                            if formatted is not None:
+                                group["models"].insert(0, formatted)
                 if group["models"]:
                     result.append(group)
             return web.json_response(
@@ -1255,9 +1378,13 @@ class ModelQueryHandler:
                     text=f"{self._service.model_type.capitalize()} file name is required",
                     status=400,
                 )
-            notes = await self._service.get_model_notes(model_name)
-            if notes is not None:
-                return web.json_response({"success": True, "notes": notes})
+            result = await self._service.get_model_notes(model_name)
+            if result is not None:
+                return web.json_response({
+                    "success": True,
+                    "notes": result["notes"],
+                    "file_path": result["file_path"],
+                })
             return web.json_response(
                 {
                     "success": False,
@@ -1293,9 +1420,20 @@ class ModelQueryHandler:
                 }
                 if include_license_flags:
                     model_data = await self._service.get_model_info_by_name(model_name)
-                    license_flags = (model_data or {}).get("license_flags")
-                    if license_flags is not None:
-                        response_payload["license_flags"] = int(license_flags)
+                    # Only return license_flags when real CivitAI model license
+                    # data exists. This mirrors ModelModal's guard
+                    # (modelData?.civitai?.model) so the preview tooltip never
+                    # shows misleading license icons for HF or other models
+                    # without actual license metadata.
+                    civitai_data = (model_data or {}).get("civitai") or {}
+                    has_license_data = (
+                        isinstance(civitai_data, dict)
+                        and isinstance(civitai_data.get("model"), dict)
+                    )
+                    if has_license_data:
+                        license_flags = (model_data or {}).get("license_flags")
+                        if license_flags is not None:
+                            response_payload["license_flags"] = int(license_flags)
                     # Include the user's license icon style preference so the
                     # ComfyUI tooltip can pick the right set without a separate
                     # API call.
@@ -1401,8 +1539,73 @@ class ModelQueryHandler:
             search = request.query.get("search", "").strip()
             limit = min(int(request.query.get("limit", "15")), 100)
             offset = max(0, int(request.query.get("offset", "0")))
+
+            folder = request.query.get("folder")
+            recursive = request.query.get("recursive", "true").lower() == "true"
+            base_models = list(request.query.getall("base_model", []))
+            model_types = list(request.query.getall("model_type", []))
+
+            tag_filters: Dict[str, str] = {}
+            for tag in request.query.getall("tag_include", []):
+                if tag:
+                    tag_filters[tag] = "include"
+            for tag in request.query.getall("tag_exclude", []):
+                if tag:
+                    tag_filters[tag] = "exclude"
+
+            auto_tag_filters: Dict[str, str] = {}
+            for tag in request.query.getall("auto_tag_include", []):
+                if tag:
+                    auto_tag_filters[tag] = "include"
+            for tag in request.query.getall("auto_tag_exclude", []):
+                if tag:
+                    auto_tag_filters[tag] = "exclude"
+
+            tag_logic = request.query.get("tag_logic", "any").lower()
+            if tag_logic not in ("any", "all"):
+                tag_logic = "any"
+
+            credit_required = request.query.get("credit_required")
+            if credit_required is not None:
+                credit_required = credit_required.lower() not in ("false", "0", "")
+
+            allow_selling_generated_content = request.query.get(
+                "allow_selling_generated_content"
+            )
+            if allow_selling_generated_content is not None:
+                allow_selling_generated_content = (
+                    allow_selling_generated_content.lower() not in ("false", "0", "")
+                )
+
+            # The presence of the recursive param (always sent by the loras
+            # widget when filter mode is on) signals that the filter pipeline
+            # must run even when no concrete filter is set, so global settings
+            # like show_only_sfw stay consistent with the list endpoint.
+            apply_filters = (
+                "recursive" in request.query
+                or folder is not None
+                or bool(base_models)
+                or bool(model_types)
+                or bool(tag_filters)
+                or bool(auto_tag_filters)
+                or credit_required is not None
+                or allow_selling_generated_content is not None
+            )
+
             matching_paths = await self._service.search_relative_paths(
-                search, limit, offset
+                search,
+                limit,
+                offset,
+                folder=folder,
+                recursive=recursive,
+                base_models=base_models,
+                model_types=model_types,
+                tags=tag_filters,
+                auto_tags=auto_tag_filters,
+                tag_logic=tag_logic,
+                credit_required=credit_required,
+                allow_selling_generated_content=allow_selling_generated_content,
+                apply_filters=apply_filters,
             )
             return web.json_response(
                 {"success": True, "relative_paths": matching_paths}
@@ -1479,7 +1682,8 @@ class ModelDownloadHandler:
                 import json
 
                 try:
-                    data["file_params"] = json.loads(file_params_json)
+                    # Normalize falsy payloads (e.g. {}) to None (#1058)
+                    data["file_params"] = json.loads(file_params_json) or None
                 except json.JSONDecodeError:
                     self._logger.warning(
                         "Invalid file_params JSON: %s", file_params_json
@@ -1631,7 +1835,8 @@ class ModelDownloadHandler:
 
             model_id = int(model_id_str) if model_id_str else None
             model_version_id = int(model_version_id_str) if model_version_id_str else None
-            file_params = json.loads(file_params_json) if file_params_json else None
+            # Normalize falsy payloads (e.g. {}) to None (#1058)
+            file_params = (json.loads(file_params_json) if file_params_json else None) or None
 
             service = await DownloadQueueService.get_instance()
             item = await service.add_to_queue(
@@ -1752,14 +1957,20 @@ class ModelDownloadHandler:
 
     async def delete_download_history_item(self, request: web.Request) -> web.Response:
         try:
-            item_id = int(request.query.get("id", "0"))
-            if not item_id:
+            download_id = request.query.get("download_id")
+            id_str = request.query.get("id")
+            item_id = int(id_str) if id_str else None
+
+            if not download_id and not item_id:
                 return web.json_response(
-                    {"success": False, "error": "id is required"}, status=400
+                    {"success": False, "error": "id or download_id is required"},
+                    status=400,
                 )
 
             service = await DownloadQueueService.get_instance()
-            deleted = await service.delete_history_item(item_id)
+            deleted = await service.delete_history_item(
+                id=item_id, download_id=download_id
+            )
             return web.json_response({"success": deleted})
         except Exception as exc:
             self._logger.error(
@@ -1769,14 +1980,20 @@ class ModelDownloadHandler:
 
     async def retry_download_from_history(self, request: web.Request) -> web.Response:
         try:
-            item_id = int(request.query.get("id", "0"))
-            if not item_id:
+            download_id = request.query.get("download_id")
+            id_str = request.query.get("id")
+            item_id = int(id_str) if id_str else None
+
+            if not download_id and not item_id:
                 return web.json_response(
-                    {"success": False, "error": "id is required"}, status=400
+                    {"success": False, "error": "id or download_id is required"},
+                    status=400,
                 )
 
             service = await DownloadQueueService.get_instance()
-            item = await service.retry_from_history(item_id)
+            item = await service.retry_from_history(
+                item_id=item_id, download_id=download_id
+            )
             if item is None:
                 return web.json_response(
                     {"success": False, "error": "History item not found or not retryable"},
@@ -1896,7 +2113,7 @@ class ModelCivitaiHandler:
         settings_service: SettingsManager,
         ws_manager: WebSocketManager,
         logger: logging.Logger,
-        metadata_provider_factory: Callable[[], Awaitable],
+        metadata_provider_factory: Callable[[], Awaitable[Any]],
         validate_model_type: Callable[[str], bool],
         expected_model_types: Callable[[], str],
         find_model_file: Callable[
@@ -1961,7 +2178,7 @@ class ModelCivitaiHandler:
                 downloaded_version_ids = set(
                     await history_service.get_downloaded_version_ids(
                         self._service.model_type,
-                        model_id,
+                        int(model_id),
                     )
                 )
             except Exception as exc:  # pragma: no cover - defensive logging
@@ -1995,6 +2212,19 @@ class ModelCivitaiHandler:
                 else:
                     version.pop("localPath", None)
 
+                # Per-file downloaded state so multi-file versions can show
+                # which individual files are already in the library (#1058)
+                local_entries: List[Any] = []
+                if version_id is not None and cache:
+                    files_getter = getattr(cache, "get_files_by_version_id", None)
+                    if files_getter is not None:
+                        local_entries = files_getter(version_id)
+                    elif cache_entry is not None:
+                        local_entries = [cache_entry]
+                version["downloadedFiles"] = self._match_downloaded_files(
+                    version, local_entries
+                )
+
                 model_file = (
                     self._find_model_file(version.get("files", []))
                     if isinstance(version.get("files"), Iterable)
@@ -2008,6 +2238,64 @@ class ModelCivitaiHandler:
                 "Error fetching %s model versions: %s", self._service.model_type, exc
             )
             return web.Response(status=500, text=str(exc))
+
+    @staticmethod
+    def _match_downloaded_files(
+        version: Mapping[str, Any], local_entries: List[Any]
+    ) -> List[Dict[str, Any]]:
+        """Map local library entries back to individual files of a version.
+
+        Matching follows rule D2 (#1058): SHA256 is authoritative when the
+        local entry carries one; otherwise fall back to extension-less file
+        name equality. Returns ``[{fileId, fileName, filePath}]``.
+        """
+        files = version.get("files")
+        if not isinstance(files, list) or not local_entries:
+            return []
+
+        by_hash: Dict[str, Mapping[str, Any]] = {}
+        by_name: Dict[str, Mapping[str, Any]] = {}
+        for file_info in files:
+            if not isinstance(file_info, Mapping):
+                continue
+            sha = str(
+                (file_info.get("hashes") or {}).get("SHA256") or ""
+            ).strip().lower()
+            if sha:
+                by_hash.setdefault(sha, file_info)
+            name = str(file_info.get("name") or "").strip()
+            if name:
+                by_name.setdefault(os.path.splitext(name)[0], file_info)
+
+        downloaded: List[Dict[str, Any]] = []
+        seen_keys: set = set()
+        for entry in local_entries:
+            if not isinstance(entry, Mapping):
+                continue
+            matched: Optional[Mapping[str, Any]] = None
+            local_hash = str(entry.get("sha256") or "").strip().lower()
+            if local_hash:
+                matched = by_hash.get(local_hash)
+            if matched is None:
+                local_name = str(entry.get("file_name") or "").strip()
+                if local_name:
+                    matched = by_name.get(local_name)
+            if matched is None:
+                continue
+
+            file_id = matched.get("id")
+            dedupe_key = file_id if file_id is not None else matched.get("name")
+            if dedupe_key in seen_keys:
+                continue
+            seen_keys.add(dedupe_key)
+            downloaded.append(
+                {
+                    "fileId": file_id,
+                    "fileName": matched.get("name"),
+                    "filePath": entry.get("file_path"),
+                }
+            )
+        return downloaded
 
     async def get_civitai_model_by_version(self, request: web.Request) -> web.Response:
         try:
@@ -2071,6 +2359,8 @@ class ModelMoveHandler:
             result = await self._move_service.move_model(
                 file_path, target_path, use_default_paths=use_default_paths
             )
+            if result.get("success"):
+                _broadcast_models_changed()
             status = 200 if result.get("success") else 500
             return web.json_response(result, status=status)
         except Exception as exc:
@@ -2090,6 +2380,8 @@ class ModelMoveHandler:
             result = await self._move_service.move_models_bulk(
                 file_paths, target_path, use_default_paths=use_default_paths
             )
+            if result.get("success"):
+                _broadcast_models_changed()
             return web.json_response(result)
         except Exception as exc:
             self._logger.error("Error moving models in bulk: %s", exc, exc_info=True)
@@ -2135,6 +2427,7 @@ class ModelAutoOrganizeHandler:
                 progress_callback=self._progress_callback,
                 exclusion_patterns=exclusion_patterns,
             )
+            _broadcast_models_changed()
             return web.json_response(result.to_dict())
         except AutoOrganizeInProgressError:
             return web.json_response(
@@ -2238,8 +2531,8 @@ class ModelUpdateHandler:
             self._logger.error("Failed to fetch license info: %s", exc, exc_info=True)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
-        updated: List[Dict[str, str]] = []
-        errors: List[Dict[str, str]] = []
+        updated: List[Dict[str, Any]] = []
+        errors: List[Dict[str, Any]] = []
         for model_id in model_ids:
             license_payload = license_map.get(model_id)
             if not license_payload:
@@ -2252,6 +2545,7 @@ class ModelUpdateHandler:
                 model_section = civitai_section.get("model")
                 if not isinstance(model_section, Mapping):
                     model_section = {}
+                model_section = dict(model_section)
                 model_section.update(resolved_payload)
                 civitai_section["model"] = model_section
                 metadata_payload["civitai"] = civitai_section
@@ -2267,7 +2561,7 @@ class ModelUpdateHandler:
                     )
                     errors.append({"filePath": metadata_path, "error": str(exc)})
 
-        response_payload = {"success": True, "updated": updated}
+        response_payload: Dict[str, Any] = {"success": True, "updated": updated}
         missing_model_ids = [mid for mid in model_ids if mid not in license_map]
         if missing_model_ids:
             response_payload["missingModelIds"] = missing_model_ids
@@ -2337,6 +2631,7 @@ class ModelUpdateHandler:
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
         hide_early_access = False
+        hide_paid = False
         if self._settings is not None:
             try:
                 hide_early_access = bool(
@@ -2344,12 +2639,17 @@ class ModelUpdateHandler:
                 )
             except Exception:
                 pass
+            try:
+                hide_paid = bool(self._settings.get("hide_paid_updates", False))
+            except Exception:
+                pass
 
         serialized_records = []
         for record in records.values():
             has_update_fn = getattr(record, "has_update", None)
             if callable(has_update_fn) and has_update_fn(
-                hide_early_access=hide_early_access
+                hide_early_access=hide_early_access,
+                hide_paid=hide_paid,
             ):
                 serialized_records.append(self._serialize_record(record))
 
@@ -2503,10 +2803,16 @@ class ModelUpdateHandler:
         if not record or not record.versions:
             return record
 
-        # Find versions that need enrichment
+        # Find versions that need enrichment. Permanent paid versions are not
+        # early access (mirror _is_early_access_active) and never carry an end
+        # time, so skip them to avoid pointless per-version API calls.
         versions_needing_update = []
         for version in record.versions:
-            if version.is_early_access and not version.early_access_ends_at:
+            if (
+                version.is_early_access
+                and not version.early_access_ends_at
+                and not getattr(version, "is_paid", False)
+            ):
                 versions_needing_update.append(version)
 
         if not versions_needing_update:
@@ -2616,6 +2922,7 @@ class ModelUpdateHandler:
             civitai_payload = metadata_payload.get("civitai")
             if not isinstance(civitai_payload, Mapping):
                 civitai_payload = {}
+            civitai_payload = dict(civitai_payload)
 
             model_payload = civitai_payload.get("model")
             if not isinstance(model_payload, Mapping):
@@ -2660,7 +2967,7 @@ class ModelUpdateHandler:
 
         return aggregated
 
-    def _extract_target_model_ids(self, payload: Dict) -> Optional[List[int]]:
+    def _extract_target_model_ids(self, payload: Dict[str, Any]) -> Optional[List[int]]:
         if not isinstance(payload, Mapping):
             return None
 
@@ -2688,7 +2995,7 @@ class ModelUpdateHandler:
             return {}
 
         to_dict = getattr(metadata, "to_dict", None)
-        if callable(to_dict):
+        if to_dict:
             try:
                 return to_dict()
             except Exception:
@@ -2699,7 +3006,7 @@ class ModelUpdateHandler:
 
         return {}
 
-    async def _read_json(self, request: web.Request) -> Dict:
+    async def _read_json(self, request: web.Request) -> Dict[str, Any]:
         if not request.can_read_body:
             return {}
         try:
@@ -2731,15 +3038,20 @@ class ModelUpdateHandler:
         record,
         *,
         version_context: Optional[Dict[int, Dict[str, Any]]] = None,
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         context = version_context or {}
         # Check user setting for hiding early access versions
         hide_early_access = False
+        hide_paid = False
         if self._settings is not None:
             try:
                 hide_early_access = bool(
                     self._settings.get("hide_early_access_updates", False)
                 )
+            except Exception:
+                pass
+            try:
+                hide_paid = bool(self._settings.get("hide_paid_updates", False))
             except Exception:
                 pass
         return {
@@ -2750,7 +3062,10 @@ class ModelUpdateHandler:
             "inLibraryVersionIds": record.in_library_version_ids,
             "lastCheckedAt": record.last_checked_at,
             "shouldIgnore": record.should_ignore_model,
-            "hasUpdate": record.has_update(hide_early_access=hide_early_access),
+            "hasUpdate": record.has_update(
+                hide_early_access=hide_early_access,
+                hide_paid=hide_paid,
+            ),
             "versions": [
                 self._serialize_version(version, context.get(version.version_id))
                 for version in record.versions
@@ -2760,7 +3075,7 @@ class ModelUpdateHandler:
     @staticmethod
     def _serialize_version(
         version, context: Optional[Dict[str, Any]]
-    ) -> Dict:
+    ) -> Dict[str, Any]:
         context = context or {}
         preview_override = context.get("preview_override")
         preview_url = (
@@ -2769,8 +3084,11 @@ class ModelUpdateHandler:
 
         # Determine if version is currently in early access
         # Two-phase detection: use exact end time if available, otherwise fallback to basic flag
+        # Mirror _is_early_access_active: permanent paid versions (no end time) are NOT early access
         is_early_access = False
-        if version.early_access_ends_at:
+        if getattr(version, "is_paid", False) and not version.early_access_ends_at:
+            is_early_access = False
+        elif version.early_access_ends_at:
             try:
                 from datetime import datetime, timezone
 
@@ -2785,6 +3103,13 @@ class ModelUpdateHandler:
             # Fallback to basic EA flag from bulk API
             is_early_access = True
 
+        paid_access_payload = None
+        if getattr(version, "paid_access", None):
+            try:
+                paid_access_payload = json.loads(version.paid_access)
+            except (TypeError, ValueError):
+                paid_access_payload = None
+
         return {
             "versionId": version.version_id,
             "name": version.name,
@@ -2798,8 +3123,13 @@ class ModelUpdateHandler:
             "earlyAccessEndsAt": version.early_access_ends_at,
             "isEarlyAccess": is_early_access,
             "usageControl": version.usage_control,
+            "isPaid": bool(getattr(version, "is_paid", False)),
+            "paidAccess": paid_access_payload,
             "filePath": context.get("file_path"),
             "fileName": context.get("file_name"),
+            # Weight-file variant count (None when unknown); lets the UI hide
+            # the download affordance for single-file in-library versions.
+            "fileCount": getattr(version, "file_count", None),
         }
 
     async def _build_version_context(
@@ -2900,6 +3230,7 @@ class ModelHandlerSet:
             "bulk_delete_models": self.management.bulk_delete_models,
             "verify_duplicates": self.management.verify_duplicates,
             "get_top_tags": self.query.get_top_tags,
+            "search_tags": self.query.search_tags,
             "get_base_models": self.query.get_base_models,
             "get_model_types": self.query.get_model_types,
             "scan_models": self.query.scan_models,

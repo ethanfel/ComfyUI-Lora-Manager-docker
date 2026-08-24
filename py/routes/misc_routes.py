@@ -7,7 +7,7 @@ import os
 from typing import Awaitable, Callable, Mapping
 
 from aiohttp import web
-from server import PromptServer  # type: ignore
+from server import PromptServer  # pyright: ignore[reportMissingImports]
 
 from ..services.metadata_service import (
     get_metadata_archive_manager,
@@ -39,6 +39,8 @@ from .handlers.misc_handlers import (
     build_service_registry_adapter,
 )
 from .handlers.base_model_handlers import BaseModelHandlerSet
+from .handlers.hf_handlers import HfHandler
+from .handlers.agent_handlers import AgentHandler
 from .misc_route_registrar import MiscRouteRegistrar
 
 logger = logging.getLogger(__name__)
@@ -136,6 +138,8 @@ class MiscRoutes:
         doctor = DoctorHandler(settings_service=self._settings)
         example_workflows = ExampleWorkflowsHandler()
         base_model = BaseModelHandlerSet()
+        hf_handler = HfHandler()
+        agent_handler = AgentHandler()
 
         return self._handler_set_factory(
             health=health,
@@ -155,6 +159,8 @@ class MiscRoutes:
             doctor=doctor,
             example_workflows=example_workflows,
             base_model=base_model,
+            hf_handler=hf_handler,
+            agent_handler=agent_handler,
         )
 
 

@@ -106,6 +106,118 @@ afterEach(() => {
     });
 });
 
+describe('SettingsManager root selects', () => {
+    const rootCases = [
+        {
+            method: 'loadLoraRoots',
+            selectId: 'defaultLoraRoot',
+            endpoint: '/api/lm/loras/roots',
+            errorKey: 'toast.settings.loraRootsFailed',
+        },
+        {
+            method: 'loadCheckpointRoots',
+            selectId: 'defaultCheckpointRoot',
+            endpoint: '/api/lm/checkpoints/checkpoints_roots',
+            errorKey: 'toast.settings.checkpointRootsFailed',
+        },
+        {
+            method: 'loadUnetRoots',
+            selectId: 'defaultUnetRoot',
+            endpoint: '/api/lm/checkpoints/unet_roots',
+            errorKey: 'toast.settings.unetRootsFailed',
+        },
+        {
+            method: 'loadEmbeddingRoots',
+            selectId: 'defaultEmbeddingRoot',
+            endpoint: '/api/lm/embeddings/roots',
+            errorKey: 'toast.settings.embeddingRootsFailed',
+        },
+    ];
+
+    const appendRootSelect = (id) => {
+        const select = document.createElement('select');
+        select.id = id;
+        document.body.appendChild(select);
+        return select;
+    };
+
+    it.each(rootCases)(
+        'populates the $method select with roots and keeps it enabled',
+        async ({ method, selectId, endpoint }) => {
+            const manager = createManager();
+            const select = appendRootSelect(selectId);
+            select.disabled = true;
+
+            global.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    roots: ['/models/root-a', '/models/root-b'],
+                }),
+            });
+
+            await manager[method]();
+
+            expect(global.fetch).toHaveBeenCalledWith(endpoint);
+            expect(Array.from(select.options).map(option => option.value)).toEqual([
+                '/models/root-a',
+                '/models/root-b',
+            ]);
+            expect(select.disabled).toBe(false);
+            expect(showToast).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(rootCases)(
+        'shows a placeholder and no error toast when $method has empty roots',
+        async ({ method, selectId, endpoint }) => {
+            const manager = createManager();
+            const select = appendRootSelect(selectId);
+
+            global.fetch = vi.fn().mockResolvedValue({
+                ok: true,
+                json: async () => ({
+                    success: true,
+                    roots: [],
+                }),
+            });
+
+            await manager[method]();
+
+            expect(global.fetch).toHaveBeenCalledWith(endpoint);
+            expect(select.options).toHaveLength(1);
+            expect(select.options[0].value).toBe('');
+            expect(select.options[0].textContent).toBe('No Default');
+            expect(select.disabled).toBe(true);
+            expect(showToast).not.toHaveBeenCalled();
+        }
+    );
+
+    it.each(rootCases)(
+        'shows an error toast when the $method roots request fails',
+        async ({ method, selectId, errorKey }) => {
+            const manager = createManager();
+            const select = appendRootSelect(selectId);
+
+            global.fetch = vi.fn().mockResolvedValue({
+                ok: false,
+                status: 500,
+            });
+
+            await manager[method]();
+
+            expect(select.options).toHaveLength(1);
+            expect(select.options[0].value).toBe('');
+            expect(select.disabled).toBe(true);
+            expect(showToast).toHaveBeenCalledWith(
+                errorKey,
+                expect.objectContaining({ message: expect.any(String) }),
+                'error',
+            );
+        }
+    );
+});
+
 describe('SettingsManager library controls', () => {
     it('loads libraries and populates the select', async () => {
         const manager = createManager();
@@ -387,5 +499,80 @@ describe('SettingsManager library controls', () => {
         manager.updateExampleImagesOpenSettingsVisibility();
         expect(document.getElementById('exampleImagesLocalRootSetting').style.display).toBe('none');
         expect(document.getElementById('exampleImagesUriTemplateSetting').style.display).toBe('none');
+    });
+});
+
+describe('SettingsManager recipes layout switch', () => {
+    it('dispatches lm:recipes-layout-changed without recalculating the old scroller', async () => {
+        const manager = createManager();
+        const select = document.createElement('select');
+        select.id = 'recipesLayout';
+        const option = document.createElement('option');
+        option.value = 'masonry';
+        select.appendChild(option);
+        select.value = 'masonry';
+        document.body.appendChild(select);
+
+        const calculateLayout = vi.fn();
+        state.virtualScroller = { calculateLayout };
+
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+        await manager.saveSelectSetting('recipesLayout', 'recipes_layout');
+
+        const layoutEvent = dispatchSpy.mock.calls
+            .map(([event]) => event)
+            .find(event => event.type === 'lm:recipes-layout-changed');
+        expect(layoutEvent).toBeInstanceOf(CustomEvent);
+        expect(calculateLayout).not.toHaveBeenCalled();
+        expect(showToast).not.toHaveBeenCalled();
+
+        dispatchSpy.mockRestore();
+        delete state.virtualScroller;
+    });
+
+    it('saveRecipesLayout persists, dispatches the layout event, and syncs controls', async () => {
+        const manager = createManager();
+
+        const gridBtn = document.createElement('button');
+        gridBtn.dataset.recipesLayout = 'grid';
+        gridBtn.setAttribute('aria-pressed', 'false');
+        const masonryBtn = document.createElement('button');
+        masonryBtn.dataset.recipesLayout = 'masonry';
+        masonryBtn.setAttribute('aria-pressed', 'false');
+        masonryBtn.setAttribute('role', 'radio');
+        masonryBtn.setAttribute('aria-checked', 'false');
+        document.body.appendChild(gridBtn);
+        document.body.appendChild(masonryBtn);
+
+        const calculateLayout = vi.fn();
+        state.virtualScroller = { calculateLayout };
+
+        const dispatchSpy = vi.spyOn(window, 'dispatchEvent');
+
+        await manager.saveRecipesLayout('masonry');
+
+        expect(state.global.settings.recipes_layout).toBe('masonry');
+        expect(masonryBtn.classList.contains('active')).toBe(true);
+        expect(masonryBtn.getAttribute('aria-pressed')).toBe('true');
+        expect(masonryBtn.getAttribute('aria-checked')).toBe('true');
+        expect(gridBtn.classList.contains('active')).toBe(false);
+        expect(gridBtn.getAttribute('aria-pressed')).toBe('false');
+
+        const layoutEvent = dispatchSpy.mock.calls
+            .map(([event]) => event)
+            .find(event => event.type === 'lm:recipes-layout-changed');
+        expect(layoutEvent).toBeInstanceOf(CustomEvent);
+        expect(calculateLayout).not.toHaveBeenCalled();
+        expect(showToast).not.toHaveBeenCalled();
+
+        dispatchSpy.mockRestore();
+        delete state.virtualScroller;
+    });
+
+    it('ignores invalid recipes layout values', async () => {
+        const manager = createManager();
+        await manager.saveRecipesLayout('bogus');
+        expect(state.global.settings.recipes_layout).toBeUndefined();
     });
 });

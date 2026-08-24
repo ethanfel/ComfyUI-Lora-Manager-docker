@@ -200,52 +200,97 @@ def _setup_storage_paths(tmp_path, monkeypatch):
     return project_root, user_dir, user_settings_path
 
 
-def _populate_cache(root_dir, marker_name, db_text):
-    cache_dir = root_dir / "model_cache"
-    cache_dir.mkdir(exist_ok=True)
-    marker_file = cache_dir / marker_name
-    marker_file.write_text(marker_name, encoding="utf-8")
-    (root_dir / "model_cache.sqlite").write_text(db_text, encoding="utf-8")
+def _populate_settings_dir(root_dir):
+    """Create test data for all managed subdirectories under a settings directory."""
+    (root_dir / "cache" / "symlink").mkdir(parents=True, exist_ok=True)
+    (root_dir / "cache" / "symlink" / "symlink_map.json").write_text(
+        '{"migrated": true}', encoding="utf-8"
+    )
+    (root_dir / "backups").mkdir(parents=True, exist_ok=True)
+    (root_dir / "backups" / "backup_test.zip").write_text(
+        "backup", encoding="utf-8"
+    )
+    (root_dir / "logs").mkdir(parents=True, exist_ok=True)
+    (root_dir / "logs" / "session.log").write_text("log", encoding="utf-8")
+    (root_dir / "stats").mkdir(parents=True, exist_ok=True)
+    (root_dir / "stats" / "stats.json").write_text(
+        '{"stats": true}', encoding="utf-8"
+    )
+    (root_dir / "wildcards").mkdir(parents=True, exist_ok=True)
+    (root_dir / "wildcards" / "test.txt").write_text("wildcard", encoding="utf-8")
 
 
-def test_switch_to_portable_mode_copies_cache(tmp_path, monkeypatch):
+def test_switch_to_portable_mode_copies_subdirectories(tmp_path, monkeypatch):
     project_root, user_dir, user_settings = _setup_storage_paths(tmp_path, monkeypatch)
-    _populate_cache(user_dir, "user_marker.txt", "user_db")
+    _populate_settings_dir(user_dir)
 
     manager = SettingsManager()
 
     manager.set("use_portable_settings", True)
 
     assert manager.settings_file == str(project_root / "settings.json")
-    marker_copy = project_root / "model_cache" / "user_marker.txt"
-    assert marker_copy.read_text(encoding="utf-8") == "user_marker.txt"
-    assert (project_root / "model_cache.sqlite").read_text(
+    # Managed subdirectories should all be migrated
+    assert (
+        project_root / "cache" / "symlink" / "symlink_map.json"
+    ).read_text(encoding="utf-8") == '{"migrated": true}'
+    assert (
+        project_root / "backups" / "backup_test.zip"
+    ).read_text(encoding="utf-8") == "backup"
+    assert (project_root / "logs" / "session.log").read_text(
         encoding="utf-8"
-    ) == "user_db"
+    ) == "log"
+    assert (project_root / "stats" / "stats.json").read_text(
+        encoding="utf-8"
+    ) == '{"stats": true}'
+    assert (project_root / "wildcards" / "test.txt").read_text(
+        encoding="utf-8"
+    ) == "wildcard"
     assert user_settings.exists()
 
 
-def test_switching_back_to_user_config_moves_cache(tmp_path, monkeypatch):
+def test_switching_back_to_user_config_moves_subdirectories(tmp_path, monkeypatch):
     project_root, user_dir, user_settings = _setup_storage_paths(tmp_path, monkeypatch)
-    _populate_cache(user_dir, "user_marker.txt", "user_db")
+    _populate_settings_dir(user_dir)
 
     manager = SettingsManager()
     manager.set("use_portable_settings", True)
 
-    project_cache_dir = project_root / "model_cache"
-    project_cache_dir.mkdir(exist_ok=True)
-    (project_cache_dir / "project_marker.txt").write_text(
-        "project_marker", encoding="utf-8"
+    # Populate project-root managed subdirectories
+    (project_root / "cache" / "model").mkdir(parents=True, exist_ok=True)
+    (project_root / "cache" / "model" / "default.sqlite").write_text(
+        "project_db", encoding="utf-8"
     )
-    (project_root / "model_cache.sqlite").write_text("project_db", encoding="utf-8")
+    (project_root / "backups" / "project_backup.zip").write_text(
+        "project_backup", encoding="utf-8"
+    )
+    (project_root / "logs" / "project.log").write_text(
+        "project_log", encoding="utf-8"
+    )
+    (project_root / "stats" / "project_stats.json").write_text(
+        '{"project": true}', encoding="utf-8"
+    )
+    (project_root / "wildcards" / "project.txt").write_text(
+        "project_wildcard", encoding="utf-8"
+    )
 
     manager.set("use_portable_settings", False)
 
     assert manager.settings_file == str(user_settings)
-    assert (user_dir / "model_cache" / "project_marker.txt").read_text(
+    assert (user_dir / "cache" / "model" / "default.sqlite").read_text(
         encoding="utf-8"
-    ) == "project_marker"
-    assert (user_dir / "model_cache.sqlite").read_text(encoding="utf-8") == "project_db"
+    ) == "project_db"
+    assert (user_dir / "backups" / "project_backup.zip").read_text(
+        encoding="utf-8"
+    ) == "project_backup"
+    assert (user_dir / "logs" / "project.log").read_text(
+        encoding="utf-8"
+    ) == "project_log"
+    assert (user_dir / "stats" / "project_stats.json").read_text(
+        encoding="utf-8"
+    ) == '{"project": true}'
+    assert (user_dir / "wildcards" / "project.txt").read_text(
+        encoding="utf-8"
+    ) == "project_wildcard"
 
 
 def test_download_path_template_parses_json_string(manager):
@@ -437,7 +482,7 @@ def test_model_name_display_setting_notifies_scanners(tmp_path, monkeypatch):
     manager = _create_manager_with_settings(tmp_path, monkeypatch, initial)
 
     loop = asyncio.new_event_loop()
-    loop._thread_id = 1
+    setattr(loop, "_thread_id", 1)
 
     class DummyScanner:
         def __init__(self):
@@ -485,7 +530,7 @@ def test_model_name_display_setting_notifies_scanners(tmp_path, monkeypatch):
         assert dummy_scanner.calls == ["file_name"]
         assert dispatched_loops == [dummy_scanner.loop]
     finally:
-        loop._thread_id = None
+        setattr(loop, "_thread_id", None)
         loop.close()
 
 
@@ -809,6 +854,59 @@ def test_set_recipes_path_rewrites_symlinked_recipe_metadata(manager, tmp_path):
     migrated_json_path = new_recipes_dir / f"{recipe_id}.recipe.json"
 
     assert migrated_image_path.read_bytes() == b"symlink-bytes"
+    migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
+    assert migrated_payload["file_path"] == str(migrated_image_path)
+    assert not old_image_path.exists()
+    assert not old_json_path.exists()
+
+
+def test_set_recipes_path_allows_cross_drive_migration(manager, tmp_path, monkeypatch):
+    # Windows regression: os.path.commonpath raises ValueError for paths on
+    # different drives (ntpath semantics). Cross-drive moves must succeed.
+    lora_root = tmp_path / "loras"
+    old_recipes_dir = lora_root / "recipes" / "nested"
+    old_recipes_dir.mkdir(parents=True)
+    manager.set("folder_paths", {"loras": [str(lora_root)]})
+
+    recipe_id = "recipe-cross-drive"
+    old_image_path = old_recipes_dir / f"{recipe_id}.webp"
+    old_json_path = old_recipes_dir / f"{recipe_id}.recipe.json"
+    old_image_path.write_bytes(b"image-bytes")
+    old_json_path.write_text(
+        json.dumps(
+            {
+                "id": recipe_id,
+                "file_path": str(old_image_path),
+                "title": "Recipe Cross Drive",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    new_recipes_dir = tmp_path / "N_drive" / "AI" / "Library" / "Recipes"
+
+    # The effective current recipes dir (source of the migration) is
+    # lora_root/recipes — the nested subdirectory holds the recipe files.
+    source = str(lora_root / "recipes")
+    target = str(new_recipes_dir)
+    real_commonpath = os.path.commonpath
+
+    def fake_commonpath(paths):
+        # Simulate ntpath on Windows: a source/target pair on different
+        # drives shares no common root and raises ValueError.
+        if {source, target} <= set(paths):
+            raise ValueError("Paths don't have the same drive")
+        return real_commonpath(paths)
+
+    monkeypatch.setattr(os.path, "commonpath", fake_commonpath)
+
+    manager.set("recipes_path", str(new_recipes_dir))
+
+    migrated_image_path = new_recipes_dir / "nested" / f"{recipe_id}.webp"
+    migrated_json_path = new_recipes_dir / "nested" / f"{recipe_id}.recipe.json"
+
+    assert manager.get("recipes_path") == str(new_recipes_dir.resolve())
+    assert migrated_image_path.read_bytes() == b"image-bytes"
     migrated_payload = json.loads(migrated_json_path.read_text(encoding="utf-8"))
     assert migrated_payload["file_path"] == str(migrated_image_path)
     assert not old_image_path.exists()

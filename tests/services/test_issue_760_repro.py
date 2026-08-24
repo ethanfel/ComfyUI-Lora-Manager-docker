@@ -2,17 +2,18 @@ import asyncio
 import json
 import pytest
 from pathlib import Path
+from typing import Any
 from py.services.settings_manager import get_settings_manager
 from py.utils import example_images_download_manager as download_module
 
 class RecordingWebSocketManager:
     def __init__(self) -> None:
-        self.payloads: list[dict] = []
-    async def broadcast(self, payload: dict) -> None:
+        self.payloads: list[dict[str, Any]] = []
+    async def broadcast(self, payload: dict[str, Any]) -> None:
         self.payloads.append(payload)
 
 class StubScanner:
-    def __init__(self, models: list[dict]) -> None:
+    def __init__(self, models: list[dict[str, Any]]) -> None:
         self.raw_data = models
     async def get_cached_data(self):
         class Cache:
@@ -77,7 +78,7 @@ async def test_reprocessing_triggered_when_folder_missing(monkeypatch, tmp_path)
         model_dir = args[3]
         Path(model_dir).mkdir(parents=True, exist_ok=True)
         (Path(model_dir) / "image_0.png").write_text("fixed")
-        return True, False, []
+        return True, False, [], []
         
     monkeypatch.setattr(download_module.ExampleImagesProcessor, "download_model_images_with_tracking", fake_download_model_images)
     

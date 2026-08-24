@@ -12,6 +12,7 @@ NODE_TYPES = {
     "Lora Loader (LoraManager)": 1,
     "Lora Stacker (LoraManager)": 2,
     "WanVideo Lora Select (LoraManager)": 3,
+    "Create Hook LoRA (LoraManager)": 4,
 }
 
 # Default ComfyUI node color when bgcolor is null
@@ -47,6 +48,34 @@ SUPPORTED_MEDIA_EXTENSIONS = {
     "videos": [".mp4", ".webm"],
 }
 
+# Model weight file extensions recognised by scanners.
+# This is the union of all scanner extensions (lora, checkpoint, embedding).
+MODEL_FILE_EXTENSIONS = {
+    ".safetensors",
+    ".ckpt",
+    ".pt",
+    ".pt2",
+    ".bin",
+    ".pth",
+    ".pkl",
+    ".sft",
+    ".gguf",
+}
+
+# CivitAI ModelFile.type values eligible as the main download file.
+# Mirrors CivitAI's getPrimaryFile() (model-helpers.ts): weight types are
+# preferred, but any file CivitAI marks `primary` is accepted — newer types
+# like 'Enhancement LoRA' (Anima/AIR image-editing LoRAs) are valid primary
+# files despite not being in the traditional weights allowlist.
+MODEL_WEIGHT_FILE_TYPES = (
+    "Model",
+    "Pruned Model",
+    "Negative",
+    "UNet",
+    "Diffusion Model",
+    "Enhancement LoRA",
+)
+
 # Valid sub-types for each scanner type
 VALID_LORA_SUB_TYPES = ["lora", "locon", "dora"]
 VALID_CHECKPOINT_SUB_TYPES = ["checkpoint", "diffusion_model"]
@@ -64,6 +93,17 @@ CIVITAI_USER_MODEL_TYPES = [
 
 # Default chunk size in megabytes used for hashing large files.
 DEFAULT_HASH_CHUNK_SIZE_MB = 4
+
+# Upper bound for a safetensors header block (bytes). Real headers are at most
+# a few MB (tensor name/shape lists); the cap prevents a crafted file with an
+# absurd 64-bit header length from forcing a multi-GB allocation during scan.
+MAX_SAFETENSORS_HEADER_BYTES = 64 * 1024 * 1024
+
+# First 12 chars of the SHA256 of an empty byte string. Some (re-packaging)
+# training tools write this placeholder into safetensors metadata instead of a
+# real hash; it must never be treated as a valid AutoV3 — several broken
+# models sharing it would collide in the hash index and falsely match recipes.
+INVALID_AUTOV3_EMPTY_HASH = "e3b0c44298fc"
 
 # Auto-organize settings
 AUTO_ORGANIZE_BATCH_SIZE = (
@@ -212,8 +252,21 @@ SUPPORTED_DOWNLOAD_SKIP_BASE_MODELS = frozenset(
         "Wan Video 2.5 I2V",
         "Hunyuan Video",
         "Anima",
+        "ACE Audio",
+        "Boogu",
         "Ernie",
         "Ernie Turbo",
+        "Grok",
+        "HappyHorse",
+        "HiDream-O1",
+        "Ideogram 4.0",
+        "Krea 2",
+        "Lens",
+        "MAI",
         "Nucleus",
+        "Qwen 2",
+        "Upscaler",
+        "Wan Image 2.7",
+        "Wan Video 2.7",
     ]
 )

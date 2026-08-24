@@ -18,7 +18,7 @@ class DownloadCoordinator:
         self,
         *,
         ws_manager,
-        download_manager_factory: Callable[[], Awaitable],
+        download_manager_factory: Callable[[], Awaitable[Any]],
     ) -> None:
         self._ws_manager = ws_manager
         self._download_manager_factory = download_manager_factory
@@ -83,10 +83,13 @@ class DownloadCoordinator:
             save_dir=payload.get("model_root"),
             relative_path=payload.get("relative_path", ""),
             use_default_paths=payload.get("use_default_paths", False),
+            use_save_dir_as_root=payload.get("use_save_dir_as_root", False),
             progress_callback=progress_callback,
             download_id=download_id,
             source=payload.get("source"),
-            file_params=payload.get("file_params"),
+            # Normalize falsy file_params (e.g. {}) to None so download gates
+            # treat it as "no explicit file selection" (#1058).
+            file_params=payload.get("file_params") or None,
         )
 
         result["download_id"] = download_id

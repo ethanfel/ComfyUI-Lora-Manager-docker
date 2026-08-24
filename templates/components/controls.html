@@ -54,6 +54,14 @@
                             <option value="loras_count:asc">{{ t('recipes.controls.sort.lorasCountAsc') }}</option>
                         </optgroup>
                     {% endif %}
+                    {% if page_id == 'recipes' %}
+                        <optgroup label="{{ t('recipes.controls.sort.opened', default='Recently Opened') }}">
+                            <option value="opened:desc">{{ t('recipes.controls.sort.openedDesc', default='Recently opened') }}</option>
+                        </optgroup>
+                    {% endif %}
+                    <optgroup label="{{ t('loras.controls.sort.random', default='Random') }}">
+                        <option value="random">{{ t('loras.controls.sort.randomAction', default='Randomize (shuffle)') }}</option>
+                    </optgroup>
                 </select>
             </div>
             <div title="{% if page_id == 'recipes' %}{{ t('recipes.controls.refresh.title') }}{% else %}{{ t('loras.controls.refresh.title') }}{% endif %}" class="control-group dropdown-group">
@@ -102,11 +110,13 @@
                     <i class="fas fa-star"></i> <span>{{ t('loras.controls.favorites.action') }}</span>
                 </button>
             </div>
+            {% if page_id != 'recipes' %}
             <div class="control-group">
-                <button id="workflowFilterBtn" data-action="toggle-workflow" class="workflow-filter" title="Show only LoRAs with a ComfyUI workflow">
-                    <i class="fas fa-project-diagram"></i> <span>Has Workflow</span>
+                <button id="workflowFilterBtn" data-action="toggle-workflow" class="workflow-filter" title="{{ t('header.filter.hasWorkflow') }}">
+                    <i class="fas fa-project-diagram"></i> <span>{{ t('header.filter.hasWorkflow') }}</span>
                 </button>
             </div>
+            {% endif %}
             {% if page_id != 'recipes' %}
             <div class="control-group dropdown-group update-filter-group">
                 <button id="updateFilterBtn" data-action="toggle-updates" class="dropdown-main update-filter" title="{{ t('loras.controls.updates.title') }}">
@@ -131,6 +141,16 @@
         </div>
         
         <div class="controls-right">
+            {% if page_id == 'recipes' %}
+            <div class="control-group layout-toggle-group" role="group" aria-label="{{ t('recipes.controls.layout.title') }}" title="{{ t('recipes.controls.layout.title') }}">
+                <button type="button" class="layout-toggle-btn" data-recipes-layout="grid" aria-pressed="false" title="{{ t('recipes.controls.layout.grid') }}" aria-label="{{ t('recipes.controls.layout.grid') }}">
+                    <i class="fas fa-th-large" aria-hidden="true"></i>
+                </button>
+                <button type="button" class="layout-toggle-btn" data-recipes-layout="masonry" aria-pressed="false" title="{{ t('recipes.controls.layout.masonry') }}" aria-label="{{ t('recipes.controls.layout.masonry') }}">
+                    <i class="fas fa-columns" aria-hidden="true"></i>
+                </button>
+            </div>
+            {% endif %}
             <div class="control-group doctor-control-group">
                 <button id="doctorTriggerBtn" class="doctor-trigger" title="{{ t('doctor.buttonTitle', default='Run diagnostics and common fixes') }}">
                     <i class="fas fa-stethoscope"></i>

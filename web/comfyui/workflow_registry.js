@@ -1,12 +1,15 @@
 import { app } from "../../scripts/app.js";
 import { api } from "../../scripts/api.js";
-import { getAllGraphNodes, getNodeReference, getNodeFromGraph } from "./utils.js";
+import { getAllGraphNodes, getNodeReference, getNodeFromGraph, getChildGraphs, chainCallback, getLinkFromGraph } from "./utils.js";
 import { ensureLmStyles } from "./lm_styles_loader.js";
+
+const DEBOUNCE_DELAY = 500;
 
 const LORA_NODE_CLASSES = new Set([
     "Lora Loader (LoraManager)",
     "Lora Stacker (LoraManager)",
     "WanVideo Lora Select (LoraManager)",
+    "Create Hook LoRA (LoraManager)",
 ]);
 
 const TARGET_WIDGET_NAMES = new Set(["ckpt_name", "unet_name"]);
@@ -74,27 +77,251 @@ function fadeWidgetTextColor(widget, fromColor, toColor, duration) {
     return () => { if (rafId) cancelAnimationFrame(rafId); };
 }
 
+// ---------------------------------------------------------------------------
+// Primitive node helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Set of node type names that represent Primitive value nodes.
+ * Includes both the dynamic PrimitiveNode (created by double-clicking
+ * a widget input) and the static typed primitives from the node library.
+ */
+const PRIMITIVE_NODE_TYPES = new Set([
+    "PrimitiveNode",          // dynamic (double-click a widget input)
+    "PrimitiveInt",
+    "PrimitiveFloat",
+    "PrimitiveString",
+    "PrimitiveBoolean",
+    "PrimitiveStringMultiline",
+]);
+
+/**
+ * Return true when `node` is any flavour of Primitive node.
+ * @param {Object} node - LiteGraph node instance
+ * @returns {boolean}
+ */
+function isPrimitiveNodeType(node) {
+    return PRIMITIVE_NODE_TYPES.has(node?.type);
+}
+
+/**
+ * Find the 0-based input slot index whose widget name matches `widgetName`.
+ * Returns -1 when no matching input is found.
+ *
+ * Matching strategy (in order):
+ *  1. `input.widget?.name === widgetName` — direct widget ref (preferred)
+ *  2. `input.name === widgetName`        — fallback by slot name
+ *
+ * @param {Object} node       - LiteGraph node instance
+ * @param {string} widgetName
+ * @returns {number}
+ */
+function findInputSlotForWidget(node, widgetName) {
+    if (!node || !Array.isArray(node.inputs)) {
+        return -1;
+    }
+    return node.inputs.findIndex(
+        (inp) => inp?.widget?.name === widgetName || inp?.name === widgetName
+    );
+}
+
+/**
+ * If the input slot that backs `widgetName` on `node` is connected to a
+ * Primitive node, return that Primitive node. Otherwise return null.
+ *
+ * This is the key bridge for the "send gen params → Primitive" flow:
+ * when a KSampler widget (e.g. "steps") has an incoming wire from a
+ * Primitive node, we want to update the Primitive's value instead of the
+ * KSampler widget, because ComfyUI's execution engine reads from the
+ * connected input, not the widget.
+ *
+ * @param {Object} node       - the target node (e.g. KSampler)
+ * @param {string} widgetName - e.g. "steps", "cfg", "seed"
+ * @returns {Object|null}     - the connected Primitive node, or null
+ */
+function tryResolvePrimitiveConnection(node, widgetName) {
+    const slotIndex = findInputSlotForWidget(node, widgetName);
+    if (slotIndex === -1) return null;
+
+    const input = node.inputs[slotIndex];
+    if (input?.link == null) return null;
+
+    const link = getLinkFromGraph(node.graph, input.link);
+    if (!link) return null;
+
+    const originNode = node.graph?.getNodeById?.(link.origin_id);
+    if (!originNode) return null;
+
+    return isPrimitiveNodeType(originNode) ? originNode : null;
+}
+
+/**
+ * Resolve the widget that "send prompt" targets on `node`: the first
+ * string-typed widget, falling back to the first non-hidden widget.
+ * Shared by `isPromptWidgetConnected` and `applyWidgetUpdate` so the
+ * candidate-set logic and the write path cannot drift apart.
+ *
+ * @param {Object} node - LiteGraph node instance
+ * @returns {Object|null} - the target widget, or null when none is suitable
+ */
+function resolveTextWidget(node) {
+    if (!node || !Array.isArray(node.widgets)) {
+        return null;
+    }
+
+    const TEXT_TYPES = new Set(["string", "customtext"]);
+    return (
+        node.widgets.find((w) => {
+            const t = typeof w?.type === "string" ? w.type.toLowerCase() : "";
+            return TEXT_TYPES.has(t) || t.includes("string");
+        }) ??
+        node.widgets.find((w) => w?.name && !w.name.startsWith("_")) ??
+        null
+    );
+}
+
+/**
+ * True when the widget that "send prompt" would update on `node` is backed by
+ * a connected input — ComfyUI execution reads the linked input, so updating
+ * the widget would be a silent no-op. Such nodes must not be offered as
+ * prompt/embedding send targets.
+ *
+ * @param {Object} node - LiteGraph node instance
+ * @returns {boolean}
+ */
+function isPromptWidgetConnected(node) {
+    if (!node || !Array.isArray(node.inputs)) {
+        return false;
+    }
+
+    const targetWidget = resolveTextWidget(node);
+    if (!targetWidget?.name) {
+        return false;
+    }
+
+    const slotIndex = findInputSlotForWidget(node, targetWidget.name);
+    return slotIndex >= 0 && node.inputs[slotIndex]?.link != null;
+}
+
 app.registerExtension({
     name: "LoraManager.WorkflowRegistry",
 
     setup() {
         ensureLmStyles();
+        this._log("extension initialized, clientId=%s", api.clientId ?? api.initialClientId ?? "(pending)");
 
         api.addEventListener("lora_registry_refresh", () => {
-            this.refreshRegistry();
+            this.refreshRegistry(true);
         });
 
         api.addEventListener("lm_widget_update", (event) => {
             this.applyWidgetUpdate(event?.detail ?? {});
         });
 
-        // React to marker changes from the Node Marker extension
+        api.addEventListener("lm_load_workflow", (event) => {
+            this.loadWorkflowFromMessage(event?.detail ?? {});
+        });
+
         window.addEventListener("lm_marker_changed", () => {
             this.refreshRegistry();
         });
+
+        this._hookGraphChanges();
     },
 
-    async refreshRegistry() {
+    async afterConfigureGraph(_missingNodeTypes, _app) {
+        this._log("afterConfigureGraph: workflow loaded (%s missing types)", _missingNodeTypes?.length ?? 0);
+        await this.refreshRegistry();
+    },
+
+    _hookGraphChanges() {
+        const graph = app.graph;
+        if (!graph) {
+            this._log("app.graph not available, skipping proactive hooks");
+            return;
+        }
+
+        let hooksInstalled = 0;
+
+        const scheduleRefresh = (source) => {
+            if (this._debounceTimer != null) {
+                clearTimeout(this._debounceTimer);
+            }
+            this._debounceTimer = setTimeout(() => {
+                this._debounceTimer = null;
+                this.refreshRegistry();
+            }, DEBOUNCE_DELAY);
+        };
+
+        try {
+            chainCallback(graph, "onNodeAdded", () => scheduleRefresh("onNodeAdded"));
+            chainCallback(graph, "onNodeRemoved", () => scheduleRefresh("onNodeRemoved"));
+            hooksInstalled += 2;
+        } catch (e) {
+            this._log("failed to chain LiteGraph hooks: %s", e.message);
+        }
+
+        // Link connect/disconnect changes whether a widget is externally driven
+        // (e.g. CLIP Text Encode "text" wired to another node), which affects
+        // the text-send candidate set — re-register on connection changes.
+        const hookLinkChanges = (targetGraph) => {
+            if (!targetGraph) {
+                return false;
+            }
+            if (typeof targetGraph.events?.addEventListener === "function") {
+                targetGraph.events.addEventListener("node:slot-links:changed", () =>
+                    scheduleRefresh("link")
+                );
+                return true;
+            }
+            // Classic litegraph: structural edits (incl. link connect/disconnect)
+            // flow through beforeChange/afterChange.
+            chainCallback(targetGraph, "onAfterChange", () => scheduleRefresh("afterChange"));
+            return true;
+        };
+
+        try {
+            if (hookLinkChanges(graph)) {
+                hooksInstalled += 1;
+                // Links wired inside a subgraph dispatch on that subgraph's own
+                // graph events, not the root's — hook existing and future subgraphs.
+                for (const subgraph of getChildGraphs(graph)) {
+                    if (hookLinkChanges(subgraph)) {
+                        hooksInstalled += 1;
+                    }
+                }
+                graph.events?.addEventListener?.("subgraph-created", (event) => {
+                    if (hookLinkChanges(event?.subgraph)) {
+                        hooksInstalled += 1;
+                    }
+                });
+            }
+        } catch (e) {
+            this._log("failed to hook graph link changes: %s", e.message);
+        }
+
+        if (typeof api.addEventListener === "function") {
+            try {
+                api.addEventListener("graphChanged", () => scheduleRefresh("graphChanged"));
+                hooksInstalled += 1;
+            } catch (_e) {
+                // graphChanged may not be available on older ComfyUI versions
+            }
+        }
+
+        this._log("%s proactive hooks installed on graph", hooksInstalled);
+    },
+
+    _log(format, ...args) {
+        const ts = new Date().toISOString().slice(11, 23);
+        let msg = format;
+        for (const arg of args) {
+            msg = msg.replace(/%s/, String(arg));
+        }
+        console.debug(`[LM:Registry ${ts}] ${msg}`);
+    },
+
+    async refreshRegistry(force = false) {
         try {
             const workflowNodes = [];
             const nodeEntries = getAllGraphNodes(app.graph);
@@ -115,7 +342,14 @@ app.registerExtension({
                 const hasTextWidget = TEXT_CAPABLE_CLASSES.has(node.comfyClass);
                 const markerRole = node.properties?.lm_marker_role ?? null;
 
-                // Skip nodes with no relevant capability UNLESS they are marked
+                // A prompt-capable node whose text widget is wired to another
+                // node cannot have its text changed via the widget — execution
+                // reads the linked input. Drop it from text-send candidates.
+                const textWidgetConnected =
+                    hasTextWidget || markerRole === "send_prompt_target"
+                        ? isPromptWidgetConnected(node)
+                        : false;
+
                 if (!supportsLora && !hasTargetWidget && !hasTextWidget && !markerRole) {
                     continue;
                 }
@@ -140,11 +374,27 @@ app.registerExtension({
                     marker_role: markerRole,
                     capabilities: {
                         supports_lora: supportsLora,
-                        has_text_widget: hasTextWidget,
+                        has_text_widget: hasTextWidget && !textWidgetConnected,
+                        text_widget_connected: textWidgetConnected,
                         widget_names: widgetNames,
                     },
                 });
             }
+
+            const clientId = api.clientId ?? api.initialClientId ?? "";
+
+            // Content-based dedup: skip POST if identical to last sent payload,
+            // unless forced (e.g. responding to a lora_registry_refresh WS message
+            // where the backend explicitly requests a re-registration).
+            // text_widget_connected is part of the fingerprint so that link
+            // connect/disconnect changes re-register the affected nodes.
+            const fingerprint = JSON.stringify(
+                workflowNodes.map(n => `${n.graph_id}:${n.node_id}|${n.marker_role ?? ""}|${n.mode ?? 0}|${n.capabilities.text_widget_connected}`).sort()
+            );
+            if (!force && fingerprint === this._lastFingerprint) {
+                return;
+            }
+            this._lastFingerprint = fingerprint;
 
             const response = await fetch("/api/lm/register-nodes", {
                 method: "POST",
@@ -153,7 +403,7 @@ app.registerExtension({
                 },
                 body: JSON.stringify({
                     nodes: workflowNodes,
-                    client_id: api.clientId ?? api.initialClientId ?? "",
+                    client_id: clientId,
                 }),
             });
 
@@ -166,6 +416,54 @@ app.registerExtension({
             }
         } catch (error) {
             console.error("LoRA Manager: error refreshing workflow registry", error);
+        }
+    },
+
+    /**
+     * Load a workflow received from the backend onto the ComfyUI canvas.
+     *
+     * The payload (`detail`) is expected to be:
+     *   { workflow: <workflow JSON>, name: <string>, recipe_id: <string> }
+     *
+     * Two formats are supported, detected by the presence of `class_type`
+     * entries (API/prompt format: { node_id: { class_type, inputs } }) versus
+     * the UI format ({ nodes: [...], links: [...] }).
+     *
+     * @param {Object} detail - message payload from the backend
+     */
+    async loadWorkflowFromMessage(detail) {
+        let workflow = detail?.workflow;
+        if (!workflow) {
+            console.warn("LoRA Manager: lm_load_workflow received without a workflow payload", detail);
+            return;
+        }
+
+        if (typeof workflow === "string") {
+            try {
+                workflow = JSON.parse(workflow);
+            } catch (error) {
+                console.warn("LoRA Manager: lm_load_workflow carried a non-JSON workflow string", error);
+                return;
+            }
+        }
+
+        // Mirror ComfyUI_frontend's isApiJson detection: API format maps every
+        // node id to an object with a string class_type; UI format has arrays
+        // of nodes/links instead.
+        const values = Object.values(workflow);
+        const isApiFormat = values.length > 0 && values.every((v) => v && typeof v.class_type === "string");
+
+        const workflowName = detail.name || "Recipe Workflow";
+
+        try {
+            if (isApiFormat) {
+                await app.loadApiJson(workflow, workflowName);
+            } else {
+                await app.loadGraphData(workflow, true, true, workflowName, { openSource: "file_button" });
+            }
+            this._log("workflow loaded from backend message (%s): %s", isApiFormat ? "api" : "graph", workflowName);
+        } catch (error) {
+            console.error("LoRA Manager: failed to load workflow from backend message", error);
         }
     },
 
@@ -201,28 +499,30 @@ app.registerExtension({
         let targetWidget = null;
 
         if (action === "inject_text") {
-            // Find the first text-capable widget by type.
-            // Normalise to lowercase for case-insensitive matching.
-            const TEXT_TYPES = new Set(["string", "customtext"]);
-            targetWidget = node.widgets.find((w) => {
-                const t = typeof w?.type === "string" ? w.type.toLowerCase() : "";
-                if (TEXT_TYPES.has(t)) return true;
-                // Broad fallback for unknown composite types.
-                if (t.includes("string")) {
-                    return true;
-                }
-                return false;
-            });
+            targetWidget = resolveTextWidget(node);
             if (!targetWidget) {
-                // Last resort: pick the first widget that is not a hidden/internal type
-                targetWidget = node.widgets.find((w) => w?.name && !w.name.startsWith("_"));
-                if (!targetWidget) {
-                    console.warn(
-                        "LoRA Manager: no suitable widget for inject_text on node",
-                        node.id
-                    );
-                    return;
-                }
+                console.warn(
+                    "LoRA Manager: no suitable widget for inject_text on node",
+                    node.id
+                );
+                return;
+            }
+
+            // The widget is backed by a connected input: ComfyUI execution
+            // reads the linked value, so updating the widget is a no-op.
+            // Guard against stale registry entries (e.g. a link was just
+            // connected before the registry refresh debounce elapsed).
+            const slotIndex = findInputSlotForWidget(node, targetWidget.name);
+            if (slotIndex >= 0 && node.inputs[slotIndex]?.link != null) {
+                console.warn(
+                    "LoRA Manager: widget '%s' on node %d is connected to an input; widget value cannot be changed",
+                    targetWidget.name,
+                    node.id
+                );
+                // Self-heal the registry so the node drops out of the
+                // send-target list instead of being offered again.
+                this.refreshRegistry(true);
+                return;
             }
         } else if (widgetName) {
             // Legacy: find widget by name
@@ -238,6 +538,60 @@ app.registerExtension({
         } else {
             console.warn("LoRA Manager: no action or widget_name in payload", message);
             return;
+        }
+
+        // ---- Redirect to connected Primitive node when present ----
+        // When a widget input (e.g. "steps", "cfg", "seed" on KSampler)
+        // is wired to a Primitive node, the Primitive's value overrides
+        // the widget value during execution.  Update the Primitive
+        // directly so the change actually takes effect.
+        if (widgetName) {
+            const primitiveNode = tryResolvePrimitiveConnection(node, widgetName);
+            if (primitiveNode) {
+                const primWidget = primitiveNode.widgets?.[0];
+                if (primWidget) {
+                    let primNewValue = value;
+                    if (mode === "append") {
+                        const sep =
+                            primWidget.value && primWidget.value.length > 0
+                                ? " "
+                                : "";
+                        primNewValue = primWidget.value + sep + value;
+                    }
+                    primWidget.value = primNewValue;
+                    if (
+                        Array.isArray(primitiveNode.widgets_values) &&
+                        primitiveNode.widgets_values.length > 0
+                    ) {
+                        primitiveNode.widgets_values[0] = primNewValue;
+                    }
+                    if (typeof primWidget.callback === "function") {
+                        try {
+                            primWidget.callback(primNewValue);
+                        } catch (callbackError) {
+                            console.error(
+                                "LoRA Manager: primitive widget callback failed",
+                                callbackError
+                            );
+                        }
+                    }
+                    if (typeof primitiveNode.setDirtyCanvas === "function") {
+                        primitiveNode.setDirtyCanvas(true);
+                    }
+                    if (typeof app.graph?.setDirtyCanvas === "function") {
+                        app.graph.setDirtyCanvas(true, true);
+                    }
+                    this.flashWidget(primitiveNode, primWidget);
+                    console.debug(
+                        "LoRA Manager: redirected widget update to Primitive node %s (id=%d) ← %s = %o",
+                        primitiveNode.type,
+                        primitiveNode.id,
+                        widgetName,
+                        primNewValue
+                    );
+                    return;
+                }
+            }
         }
 
         // ---- Update widget value ----

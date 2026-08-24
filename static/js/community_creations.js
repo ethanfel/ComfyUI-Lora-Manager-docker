@@ -2,6 +2,7 @@
  * Community Creations page — card grid of community images grouped by LoRA,
  * filtered by base model tabs and paginated.
  */
+import { appCore } from './core.js';
 
 // -- State ----------------------------------------------------------------
 let _sortKey = "reactions:desc";
@@ -52,6 +53,7 @@ function observeLazy(el) {
 
 // -- Init -----------------------------------------------------------------
 async function init() {
+    await appCore.initialize();
     initLazyObserver();
     setupFetchButton();
     setupSearch();

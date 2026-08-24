@@ -1,9 +1,8 @@
 import importlib
 import logging
-import re
 
-import comfy.sd  # type: ignore
-import comfy.utils  # type: ignore
+import comfy.sd  # pyright: ignore[reportMissingImports]
+import comfy.utils  # pyright: ignore[reportMissingImports]
 
 from ..utils.utils import get_lora_info_absolute
 from .utils import (
@@ -14,6 +13,8 @@ from .utils import (
     extract_lora_name,
     get_loras_list,
     nunchaku_load_lora,
+    parse_lora_syntax,
+    validate_lora_entries,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,9 +49,9 @@ def _collect_stack_entries(lora_stack):
     return entries
 
 
-def _collect_widget_entries(kwargs):
+def _collect_widget_entries(loras):
     entries = []
-    for lora in get_loras_list(kwargs):
+    for lora in get_loras_list({"loras": loras}):
         if not lora.get("active", False):
             continue
         lora_name = apply_lora_syntax_format(lora["name"])
@@ -138,20 +139,26 @@ class LoraLoaderLM:
                     "placeholder": "Search LoRAs to add...",
                     "tooltip": "Format: <lora:lora_name:strength> separated by spaces or punctuation",
                 }),
+                "loras": ("LORAS", {}),
             },
             "optional": FlexibleOptionalInputType(any_type),
         }
+
+    @classmethod
+    def VALIDATE_INPUTS(cls, loras=None):
+        """Queue-time validation: reject missing local LoRAs before execution."""
+        return validate_lora_entries({"loras": loras}) or True
 
     RETURN_TYPES = ("MODEL", "CLIP", "STRING", "STRING")
     RETURN_NAMES = ("MODEL", "CLIP", "trigger_words", "loaded_loras")
     FUNCTION = "load_loras"
 
-    def load_loras(self, model, text, **kwargs):
-        """Loads multiple LoRAs based on the kwargs input and lora_stack."""
+    def load_loras(self, model, text, loras, **kwargs):
+        """Loads multiple LoRAs based on the widget input and lora_stack."""
         del text
         clip = kwargs.get("clip", None)
         lora_entries = _collect_stack_entries(kwargs.get("lora_stack", None))
-        lora_entries.extend(_collect_widget_entries(kwargs))
+        lora_entries.extend(_collect_widget_entries(loras))
 
         nunchaku_model_kind = detect_nunchaku_model_kind(model)
         if nunchaku_model_kind == "flux":
@@ -189,25 +196,10 @@ class LoraTextLoaderLM:
     RETURN_NAMES = ("MODEL", "CLIP", "trigger_words", "loaded_loras")
     FUNCTION = "load_loras_from_text"
 
-    def parse_lora_syntax(self, text):
-        """Parse LoRA syntax from text input."""
-        pattern = r"<lora:([^:>]+):([^:>]+)(?::([^:>]+))?>"
-        matches = re.findall(pattern, text, re.IGNORECASE)
-
-        loras = []
-        for match in matches:
-            model_strength = float(match[1])
-            loras.append({
-                "name": match[0],
-                "model_strength": model_strength,
-                "clip_strength": float(match[2]) if match[2] else model_strength,
-            })
-        return loras
-
     def load_loras_from_text(self, model, lora_syntax, clip=None, lora_stack=None):
         """Load LoRAs based on text syntax input."""
         lora_entries = _collect_stack_entries(lora_stack)
-        for lora in self.parse_lora_syntax(lora_syntax):
+        for lora in parse_lora_syntax(lora_syntax):
             lora_path, trigger_words = get_lora_info_absolute(lora["name"])
             lora_entries.append({
                 "name": lora["name"],

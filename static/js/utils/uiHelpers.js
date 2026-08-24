@@ -133,12 +133,28 @@ export async function copyToClipboard(text, successMessage = null) {
   }
 }
 
-export function showToast(key, params = {}, type = 'info', fallback = null) {
-  const message = translate(key, params, fallback);
+/**
+ * Build a toast element (internal — not exported).
+ * @param {string} message - Already-resolved message text
+ * @param {string} type - Toast type (info/success/warning/error)
+ * @returns {HTMLElement} The toast element (not yet attached to the DOM)
+ */
+function createToastElement(message, type) {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
+  return toast;
+}
 
+/**
+ * Attach a toast to the shared container, position it, and schedule its
+ * dismissal (internal — not exported).
+ * @param {HTMLElement} toast - The toast element to display
+ * @param {number} durationMs - How long the toast stays visible
+ * @param {Function} [onDismiss] - Optional callback fired once when dismissal begins
+ * @returns {Function} Manual dismiss function (idempotent)
+ */
+function appendToast(toast, durationMs, onDismiss = null) {
   // Get or create toast container
   let toastContainer = document.querySelector('.toast-container');
   if (!toastContainer) {
@@ -158,35 +174,141 @@ export function showToast(key, params = {}, type = 'info', fallback = null) {
   // Set position based on existing toasts
   toast.style.top = `${topOffset + (toastIndex * (toast.offsetHeight || 60 + spacing))}px`;
 
-  requestAnimationFrame(() => {
-    toast.classList.add('show');
+  let dismissed = false;
+  const dismiss = () => {
+    if (dismissed) return;
+    dismissed = true;
 
-    // Set timeout based on type
-    let timeout = 2000; // Default (info)
-    if (type === 'warning' || type === 'error') {
-      timeout = 5000;
+    if (typeof onDismiss === 'function') {
+      onDismiss();
     }
 
-    setTimeout(() => {
-      toast.classList.remove('show');
-      toast.addEventListener('transitionend', () => {
-        toast.remove();
+    toast.classList.remove('show');
+    toast.addEventListener('transitionend', () => {
+      toast.remove();
 
-        // Reposition remaining toasts
-        if (toastContainer) {
-          const remainingToasts = Array.from(toastContainer.querySelectorAll('.toast'));
-          remainingToasts.forEach((t, index) => {
-            t.style.top = `${topOffset + (index * (t.offsetHeight || 60 + spacing))}px`;
-          });
+      // Reposition remaining toasts
+      if (toastContainer) {
+        const remainingToasts = Array.from(toastContainer.querySelectorAll('.toast'));
+        remainingToasts.forEach((t, index) => {
+          t.style.top = `${topOffset + (index * (t.offsetHeight || 60 + spacing))}px`;
+        });
 
-          // Remove container if empty
-          if (remainingToasts.length === 0) {
-            toastContainer.remove();
-          }
+        // Remove container if empty
+        if (remainingToasts.length === 0) {
+          toastContainer.remove();
         }
-      });
-    }, timeout);
+      }
+    });
+  };
+
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+    setTimeout(dismiss, durationMs);
   });
+
+  return dismiss;
+}
+
+export function showToast(key, params = {}, type = 'info', fallback = null) {
+  // Plain messages (contain spaces) are not i18n dot-notation keys — use verbatim
+  // to avoid spurious "Translation key not found" warnings from i18next
+  const isPlainMessage = typeof key === 'string' && /\s/.test(key);
+  const message = isPlainMessage ? key : translate(key, params, fallback);
+  const toast = createToastElement(message, type);
+
+  // Set timeout based on type
+  let duration = 2000; // Default (info)
+  if (type === 'warning' || type === 'error') {
+    duration = 5000;
+  }
+
+  appendToast(toast, duration);
+}
+
+/**
+ * Show a toast with an action button (e.g. Undo) and an optional countdown.
+ * The message accepts the same key/plain-string contract as showToast, so
+ * callers may pass either an i18n key or an already-translated string.
+ * @param {string} key - i18n key or plain message
+ * @param {Object} [params] - i18n interpolation params
+ * @param {string} [type] - Toast type (info/success/warning/error)
+ * @param {Object} [options]
+ * @param {string} [options.actionText] - Label for the action button (button omitted when empty)
+ * @param {Function} [options.onAction] - Callback invoked at most once on button click
+ * @param {number} [options.durationMs=20000] - How long the toast stays visible
+ * @param {boolean} [options.countdown=true] - Show a ticking `(N)s` countdown
+ */
+export function showActionToast(key, params = {}, type = 'info', options = {}) {
+  const { actionText, onAction, durationMs = 20000, countdown = true } = options;
+
+  const isPlainMessage = typeof key === 'string' && /\s/.test(key);
+  const message = isPlainMessage ? key : translate(key, params);
+  const toast = createToastElement(message, type);
+
+  let countdownInterval = null;
+  const clearCountdown = () => {
+    if (countdownInterval !== null) {
+      clearInterval(countdownInterval);
+      countdownInterval = null;
+    }
+  };
+
+  // The interval must be cleared on EVERY dismiss path (timeout, countdown end,
+  // manual button click) — the onDismiss hook covers the appendToast timeout path.
+  const dismiss = appendToast(toast, durationMs, clearCountdown);
+
+  let actionFired = false;
+  if (actionText) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'toast-action-btn';
+    button.textContent = actionText;
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      // Guard against double-click firing the action twice
+      if (actionFired) return;
+      actionFired = true;
+
+      clearCountdown();
+      if (typeof onAction === 'function') {
+        onAction();
+      }
+      dismiss();
+    });
+    toast.append(button);
+  }
+
+  if (countdown) {
+    const countdownEl = document.createElement('span');
+    countdownEl.className = 'toast-countdown';
+    let remainingSeconds = Math.max(0, Math.ceil(durationMs / 1000));
+    countdownEl.textContent = `(${remainingSeconds}s)`;
+    toast.append(countdownEl);
+
+    countdownInterval = setInterval(() => {
+      remainingSeconds -= 1;
+      countdownEl.textContent = `(${Math.max(remainingSeconds, 0)}s)`;
+      if (remainingSeconds <= 0) {
+        clearCountdown();
+        dismiss();
+      }
+    }, 1000);
+  }
+
+  // Manual close button: hides the toast early without firing onAction. The
+  // backend undo window keeps running and the batch is purged when it expires.
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'toast-close-btn';
+  closeBtn.textContent = '×';
+  closeBtn.setAttribute('aria-label', translate('common.actions.close'));
+  closeBtn.addEventListener('click', (event) => {
+    event.preventDefault();
+    clearCountdown();
+    dismiss();
+  });
+  toast.append(closeBtn);
 }
 
 export function restoreFolderFilter() {
@@ -320,6 +442,15 @@ export function openCivitai(filePath) {
 }
 
 /**
+ * Open a Hugging Face model page in a new tab
+ * @param {string} hfUrl - The Hugging Face URL
+ */
+export function openHuggingFace(hfUrl) {
+  if (!hfUrl) return;
+  window.open(hfUrl, '_blank', 'noopener,noreferrer');
+}
+
+/**
  * Dynamically positions the search options panel and filter panel
  * based on the current layout and folder tags container height
  */
@@ -344,6 +475,8 @@ export function updatePanelPositions() {
 
   if (filterPanel) {
     filterPanel.style.top = `${topPosition}px`;
+    // Clamp panel height to the viewport below the header
+    filterPanel.style.maxHeight = `calc(100vh - ${topPosition + 10}px)`;
   }
 
   // Adjust panel horizontal position based on the search container
@@ -543,6 +676,8 @@ async function fetchWorkflowRegistry() {
     if (!registryData.success) {
       if (registryData.error === 'Standalone Mode Active') {
         showToast('toast.general.cannotInteractStandalone', {}, 'warning');
+      } else if (registryData.error === 'Empty Registry') {
+        showToast('uiHelpers.workflow.noSupportedNodes', {}, 'warning');
       } else {
         showToast('toast.general.failedWorkflowInfo', {}, 'error');
       }
@@ -594,7 +729,7 @@ function isNodeEnabled(node) {
   if (!node) {
     return false;
   }
-  // ComfyUI node mode: 0 = Normal/Enabled, others = Always/Never/OnEvent
+  // ComfyUI node mode (LGraphEventMode): 0 = Always, 2 = Never, 4 = Bypass
   return node.mode === undefined || node.mode === 0;
 }
 
@@ -645,7 +780,7 @@ async function ensureRelativeModelPath(modelPath, collectionType) {
  * @param {string} syntaxType - The type of syntax ('lora' or 'recipe')
  * @returns {Promise<boolean>} - Whether the operation was successful
  */
-export async function sendLoraToWorkflow(loraSyntax, replaceMode = false, syntaxType = 'lora') {
+export async function sendLoraToWorkflow(loraSyntax, replaceMode = false, syntaxType = 'lora', onComplete = null) {
   const registry = await fetchWorkflowRegistry();
   if (!registry) {
     return false;
@@ -670,7 +805,9 @@ export async function sendLoraToWorkflow(loraSyntax, replaceMode = false, syntax
   }
 
   if (nodeKeys.length === 1) {
-    return await sendLoraToNodes([nodeKeys[0]], loraNodes, loraSyntax, replaceMode, syntaxType);
+    const result = await sendLoraToNodes([nodeKeys[0]], loraNodes, loraSyntax, replaceMode, syntaxType);
+    if (result && typeof onComplete === 'function') onComplete();
+    return result;
   }
 
   const actionType =
@@ -684,8 +821,11 @@ export async function sendLoraToWorkflow(loraSyntax, replaceMode = false, syntax
   showNodeSelector(loraNodes, {
     actionType,
     actionMode,
-    onSend: (selectedNodeIds) =>
-      sendLoraToNodes(selectedNodeIds, loraNodes, loraSyntax, replaceMode, syntaxType),
+    onSend: async (selectedNodeIds) => {
+      const result = await sendLoraToNodes(selectedNodeIds, loraNodes, loraSyntax, replaceMode, syntaxType);
+      if (result && typeof onComplete === 'function') onComplete();
+      return result;
+    },
   });
   return true;
 }
@@ -956,7 +1096,7 @@ async function sendTextToNodes(nodeIds, nodesMap, text, mode, messages = {}) {
   }
 }
 
-export async function sendEmbeddingToWorkflow(embeddingCode) {
+export async function sendEmbeddingToWorkflow(embeddingCode, onComplete = null) {
   const registry = await fetchWorkflowRegistry();
   if (!registry) {
     return false;
@@ -964,6 +1104,9 @@ export async function sendEmbeddingToWorkflow(embeddingCode) {
 
   const textNodes = filterRegistryNodes(registry.nodes, (node) => {
     if (!isNodeEnabled(node)) {
+      return false;
+    }
+    if (node.capabilities?.text_widget_connected === true) {
       return false;
     }
     return (
@@ -974,7 +1117,15 @@ export async function sendEmbeddingToWorkflow(embeddingCode) {
 
   const nodeKeys = Object.keys(textNodes);
   if (nodeKeys.length === 0) {
-    showToast('uiHelpers.workflow.noMatchingNodes', {}, 'warning');
+    showToast(
+      translate(
+        'uiHelpers.workflow.noPromptTargets',
+        {},
+        'No compatible prompt targets in the workflow.\nRight-click a node in ComfyUI → Mark as → Send Prompt Target'
+      ),
+      {},
+      'warning'
+    );
     return false;
   }
 
@@ -984,8 +1135,11 @@ export async function sendEmbeddingToWorkflow(embeddingCode) {
     missingTargetMessage: translate('uiHelpers.workflow.noTargetNodeSelected', {}, 'No target node selected'),
   };
 
-  const handleSend = (selectedNodeIds) =>
-    sendTextToNodes(selectedNodeIds, textNodes, embeddingCode, 'append', messages);
+  const handleSend = async (selectedNodeIds) => {
+    const result = await sendTextToNodes(selectedNodeIds, textNodes, embeddingCode, 'append', messages);
+    if (result && typeof onComplete === 'function') onComplete();
+    return result;
+  };
 
   if (nodeKeys.length === 1) {
     return await handleSend([nodeKeys[0]]);
@@ -1023,6 +1177,11 @@ export async function sendPromptToWorkflow(promptText, options = {}) {
     if (!isNodeEnabled(node)) {
       return false;
     }
+    // A node whose text widget is backed by a connected input cannot have its
+    // text changed via the widget — execution reads the linked input.
+    if (node.capabilities?.text_widget_connected === true) {
+      return false;
+    }
     return (
       node.capabilities?.has_text_widget === true ||
       node.marker_role === "send_prompt_target"
@@ -1031,7 +1190,12 @@ export async function sendPromptToWorkflow(promptText, options = {}) {
 
   const nodeKeys = Object.keys(textNodes);
   if (nodeKeys.length === 0) {
-    showToast(options.missingNodesMessage || 'uiHelpers.workflow.noMatchingNodes', {}, 'warning');
+    const defaultHint = translate(
+      'uiHelpers.workflow.noPromptTargets',
+      {},
+      'No compatible prompt targets in the workflow.\nRight-click a node in ComfyUI → Mark as → Send Prompt Target'
+    );
+    showToast(options.missingNodesMessage || defaultHint, {}, 'warning');
     return false;
   }
 
@@ -1125,8 +1289,8 @@ export async function sendGenParamsToWorkflow(genParams) {
       const node = targetNodes[nodeKey];
       if (!node) continue;
 
-      const widgetNames = node.widget_names || [];
-      const updates = findMatchingWidgets(widgetNames, raw);
+      const widgetNames = getWidgetNames(node);
+      const updates = findMatchingWidgets(widgetNames, raw, node.type_name);
 
       if (updates.length === 0) {
         showToast(`Node "${node.title || node.type}" has no matching widgets for these parameters`, {}, 'warning');
@@ -1472,4 +1636,41 @@ export async function openExampleImagesFolder(modelHash) {
     showToast('uiHelpers.exampleImages.failedToOpen', {}, 'error');
     return false;
   }
+}
+
+/**
+ * Set up a paste handler on a textarea that automatically appends a newline
+ * after pasted content that looks like a URL (http/https). This lets users
+ * paste multiple URLs one after another without manually pressing Enter.
+ * @param {string} textareaId - The id of the textarea element
+ */
+export function setupAutoNewlineOnPaste(textareaId) {
+  const el = document.getElementById(textareaId);
+  if (!el || el.tagName !== 'TEXTAREA') return;
+
+  el.addEventListener('paste', (e) => {
+    const pastedText = (e.clipboardData || window.clipboardData).getData('text');
+    // Only apply to text that starts with http:// or https://
+    if (/^https?:\/\//.test(pastedText) && !pastedText.endsWith('\n')) {
+      e.preventDefault();
+
+      const start = el.selectionStart;
+      const end = el.selectionEnd;
+      const text = el.value;
+      const before = text.substring(0, start);
+      const after = text.substring(end);
+
+      // Append newline after the pasted URL
+      const modifiedText = pastedText + '\n';
+      el.value = before + modifiedText + after;
+
+      // Move cursor to just after the inserted text
+      const newCursorPos = start + modifiedText.length;
+      el.selectionStart = el.selectionEnd = newCursorPos;
+
+      // Trigger input event so any listeners stay in sync
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+    // Non-URL text or text already ending with \n — let default paste happen
+  });
 }

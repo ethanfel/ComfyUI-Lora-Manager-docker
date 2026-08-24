@@ -196,6 +196,7 @@ class CivitaiBaseModelService:
             "ernie": "ERNI",
             "ernie turbo": "ETRB",
             "nucleus": "NUCL",
+            "krea 2": "KR2",
             "svd": "SVD",
             "ltxv": "LTXV",
             "ltxv2": "LTV2",
@@ -212,6 +213,18 @@ class CivitaiBaseModelService:
             "wan video 2.2 i2v-a14b": "WAN",
             "wan video 2.5 t2v": "WAN",
             "wan video 2.5 i2v": "WAN",
+            "wan video 2.7": "WAN",
+            "wan image 2.7": "WI27",
+            "ace audio": "ACE",
+            "boogu": "BOOG",
+            "grok": "GROK",
+            "happyhorse": "HAPP",
+            "hidream-o1": "HIO1",
+            "lens": "LENS",
+            "mai": "MAI",
+            "upscaler": "UPSC",
+            "ideogram 4.0": "ID40",
+            "qwen 2": "QWN2",
         }
 
         if lower_name in special_cases:
@@ -270,7 +283,7 @@ class CivitaiBaseModelService:
                 return None
 
             if isinstance(result, str):
-                data = json.loads(result)
+                data: Any = json.loads(result)
             else:
                 data = result
 
@@ -391,6 +404,7 @@ class CivitaiBaseModelService:
                 "LTXV2",
                 "LTXV 2.3",
                 "CogVideoX",
+                "HappyHorse",
                 "Mochi",
                 "Hunyuan Video",
                 "Wan Video",
@@ -403,15 +417,25 @@ class CivitaiBaseModelService:
                 "Wan Video 2.2 I2V-A14B",
                 "Wan Video 2.5 T2V",
                 "Wan Video 2.5 I2V",
+                "Wan Image 2.7",
+                "Wan Video 2.7",
             ],
             "Other Models": [
+                "ACE Audio",
                 "Illustrious",
                 "Pony",
                 "Pony V7",
+                "Boogu",
                 "HiDream",
+                "HiDream-O1",
+                "Ideogram 4.0",
                 "Qwen",
+                "Qwen 2",
                 "AuraFlow",
                 "Chroma",
+                "Grok",
+                "Lens",
+                "MAI",
                 "ZImageTurbo",
                 "ZImageBase",
                 "PixArt a",
@@ -424,6 +448,8 @@ class CivitaiBaseModelService:
                 "Ernie",
                 "Ernie Turbo",
                 "Nucleus",
+                "Krea 2",
+                "Upscaler",
             ],
         }
 

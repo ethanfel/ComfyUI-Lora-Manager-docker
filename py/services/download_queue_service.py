@@ -12,6 +12,15 @@ from ..utils.cache_paths import get_cache_base_dir
 
 logger = logging.getLogger(__name__)
 
+# SQL fragment extracting the CivitAI file id from the JSON ``file_params``
+# column (#1058). ``json_valid`` guards against NULL and legacy/unparseable
+# values, yielding NULL for rows without a file identity; NULL keys group
+# together so such rows keep the old version-level dedup behavior.
+_FILE_ID_SQL = (
+    "CASE WHEN json_valid(file_params) "
+    "THEN json_extract(file_params, '$.id') END"
+)
+
 
 def _resolve_database_path() -> str:
     base_dir = get_cache_base_dir(create=True)
@@ -31,7 +40,7 @@ class DownloadQueueService:
     _instance: Optional[DownloadQueueService] = None
     _class_lock: asyncio.Lock = asyncio.Lock()
 
-    _SCHEMA = """
+    _SCHEMA_TABLES = """
         CREATE TABLE IF NOT EXISTS download_queue (
             download_id TEXT PRIMARY KEY,
             model_id INTEGER,
@@ -64,6 +73,7 @@ class DownloadQueueService:
             model_name TEXT NOT NULL DEFAULT '',
             version_name TEXT DEFAULT '',
             thumbnail_url TEXT DEFAULT '',
+            file_params TEXT,
             status TEXT NOT NULL,
             error TEXT,
             file_path TEXT,
@@ -74,6 +84,11 @@ class DownloadQueueService:
         );
         CREATE INDEX IF NOT EXISTS idx_dh_completed ON download_history(completed_at DESC);
         CREATE INDEX IF NOT EXISTS idx_dh_status ON download_history(status);
+    """
+
+    _CREATE_UNIQUE_INDEX = """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_dh_download_id
+            ON download_history(download_id) WHERE download_id IS NOT NULL;
     """
 
     @classmethod
@@ -113,9 +128,50 @@ class DownloadQueueService:
         if self._schema_initialized:
             return
         with self._connect() as conn:
-            conn.executescript(self._SCHEMA)
+            conn.executescript(self._SCHEMA_TABLES)
+
+            # Databases created by older versions lack
+            # download_history.file_params; add it so retry-from-history can
+            # restore the originally selected file (#1058).
+            history_columns = {
+                row["name"]
+                for row in conn.execute("PRAGMA table_info(download_history)")
+            }
+            if "file_params" not in history_columns:
+                conn.execute(
+                    "ALTER TABLE download_history ADD COLUMN file_params TEXT"
+                )
+
+            # Creating the unique index on download_history.download_id can
+            # fail if pre-existing rows have duplicate values (e.g. from a
+            # previous version that lacked the index).  Deduplicate first so
+            # that the migration does not crash on startup.
+            if not self._index_exists(conn, "idx_dh_download_id"):
+                self._remove_duplicate_download_ids(conn)
+                conn.executescript(self._CREATE_UNIQUE_INDEX)
+
             conn.commit()
         self._schema_initialized = True
+
+    @staticmethod
+    def _index_exists(conn: sqlite3.Connection, name: str) -> bool:
+        return conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",
+            (name,),
+        ).fetchone() is not None
+
+    @staticmethod
+    def _remove_duplicate_download_ids(conn: sqlite3.Connection) -> None:
+        conn.execute("""
+            DELETE FROM download_history
+            WHERE id NOT IN (
+                SELECT MIN(id)
+                FROM download_history
+                WHERE download_id IS NOT NULL
+                GROUP BY download_id
+            )
+            AND download_id IS NOT NULL
+        """)
 
     def get_database_path(self) -> str:
         """Return the resolved database file path."""
@@ -154,13 +210,23 @@ class DownloadQueueService:
         """Insert a new download into the queue.
 
         Returns the inserted row as a dict (or an empty dict if the
-        download_id already exists).
+        download_id already exists in the queue or has a terminal
+        record in history).
         """
         now = time.time()
         file_params_json = json.dumps(file_params) if file_params is not None else None
 
         async with self._lock:
             conn = self._get_conn()
+
+            # Reject download_ids that already have a terminal record in history.
+            history_row = conn.execute(
+                "SELECT 1 FROM download_history WHERE download_id = ? LIMIT 1",
+                (download_id,),
+            ).fetchone()
+            if history_row is not None:
+                return {}
+
             conn.execute(
                 """
                 INSERT OR IGNORE INTO download_queue (
@@ -374,17 +440,23 @@ class DownloadQueueService:
                 return None
 
             now = completed_at if completed_at is not None else time.time()
+            # Guard against legacy databases whose download_queue table
+            # predates the file_params column.
+            queue_columns = set(row.keys())
+            file_params_json = (
+                row["file_params"] if "file_params" in queue_columns else None
+            )
             conn.execute(
                 "DELETE FROM download_queue WHERE download_id = ?",
                 (download_id,),
             )
             conn.execute(
                 """
-                INSERT INTO download_history (
+                INSERT OR IGNORE INTO download_history (
                     download_id, model_id, model_version_id, model_name,
-                    version_name, thumbnail_url, status, error, file_path,
-                    bytes_downloaded, total_bytes, completed_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    version_name, thumbnail_url, file_params, status, error,
+                    file_path, bytes_downloaded, total_bytes, completed_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["download_id"],
@@ -393,6 +465,7 @@ class DownloadQueueService:
                     row["model_name"],
                     row["version_name"],
                     row["thumbnail_url"],
+                    file_params_json,
                     status,
                     error,
                     file_path,
@@ -459,6 +532,7 @@ class DownloadQueueService:
         bytes_downloaded: int = 0,
         total_bytes: Optional[int] = None,
         is_already_exists: int = 0,
+        file_params: Optional[dict[str, Any]] = None,
     ) -> int:
         """Insert a record into the download history.
 
@@ -466,6 +540,7 @@ class DownloadQueueService:
         inserted row.
         """
         now = time.time()
+        file_params_json = json.dumps(file_params) if file_params is not None else None
 
         async with self._lock:
             conn = self._get_conn()
@@ -473,9 +548,10 @@ class DownloadQueueService:
                 """
                 INSERT INTO download_history (
                     download_id, model_id, model_version_id, model_name,
-                    version_name, thumbnail_url, status, error, file_path,
-                    bytes_downloaded, total_bytes, completed_at, is_already_exists
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    version_name, thumbnail_url, file_params, status, error,
+                    file_path, bytes_downloaded, total_bytes, completed_at,
+                    is_already_exists
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     download_id,
@@ -484,6 +560,7 @@ class DownloadQueueService:
                     model_name,
                     version_name,
                     thumbnail_url,
+                    file_params_json,
                     status,
                     error,
                     file_path,
@@ -537,17 +614,27 @@ class DownloadQueueService:
             "offset": offset,
         }
 
-    async def delete_history_item(self, id: int) -> bool:
-        """Delete a single history entry by its *id*.
+    async def delete_history_item(
+        self, id: Optional[int] = None, download_id: Optional[str] = None
+    ) -> bool:
+        """Delete a single history entry by *download_id* (preferred) or *id*.
 
         Returns ``True`` if a row was deleted.
         """
         async with self._lock:
             conn = self._get_conn()
-            cursor = conn.execute(
-                "DELETE FROM download_history WHERE id = ?",
-                (id,),
-            )
+            if download_id:
+                cursor = conn.execute(
+                    "DELETE FROM download_history WHERE download_id = ?",
+                    (download_id,),
+                )
+            elif id is not None:
+                cursor = conn.execute(
+                    "DELETE FROM download_history WHERE id = ?",
+                    (id,),
+                )
+            else:
+                return False
             conn.commit()
         return cursor.rowcount > 0
 
@@ -604,21 +691,34 @@ class DownloadQueueService:
     # Retry
     # ------------------------------------------------------------------
 
-    async def retry_from_history(self, item_id: int) -> Optional[dict[str, Any]]:
+    async def retry_from_history(
+        self,
+        item_id: Optional[int] = None,
+        download_id: Optional[str] = None,
+    ) -> Optional[dict[str, Any]]:
         """Re-queue a failed or canceled download from history.
 
-        Looks up the history record by its primary key.  If the status is
-        ``failed`` or ``canceled`` a new queue entry is created with the
-        same model metadata and a fresh download id, and the original
-        history entry is **deleted** to prevent exponential growth when
-        the retried item is later canceled or fails again and re-retried.
+        Looks up the history record by *download_id* (preferred) or
+        *item_id*.  If the status is ``failed`` or ``canceled`` a new
+        queue entry is created with the same model metadata and a fresh
+        download id, and the original history entry is **deleted** to
+        prevent exponential growth when the retried item is later
+        canceled or fails again and re-retried.
         """
         async with self._lock:
             conn = self._get_conn()
-            row = conn.execute(
-                "SELECT * FROM download_history WHERE id = ?",
-                (item_id,),
-            ).fetchone()
+            if download_id:
+                row = conn.execute(
+                    "SELECT * FROM download_history WHERE download_id = ?",
+                    (download_id,),
+                ).fetchone()
+            elif item_id is not None:
+                row = conn.execute(
+                    "SELECT * FROM download_history WHERE id = ?",
+                    (item_id,),
+                ).fetchone()
+            else:
+                return None
             if row is None:
                 return None
             status = str(row["status"])
@@ -635,7 +735,7 @@ class DownloadQueueService:
                     download_id, model_id, model_version_id, model_name,
                     version_name, thumbnail_url, source, file_params,
                     status, priority, added_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'queued', 0, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)
                 """,
                 (
                     new_id,
@@ -645,12 +745,13 @@ class DownloadQueueService:
                     row["version_name"],
                     row["thumbnail_url"],
                     "retry",
+                    row["file_params"],
                     now,
                 ),
             )
             conn.execute(
                 "DELETE FROM download_history WHERE id = ?",
-                (item_id,),
+                (row["id"],),
             )
             conn.commit()
             queued = conn.execute(
@@ -688,7 +789,7 @@ class DownloadQueueService:
                         download_id, model_id, model_version_id, model_name,
                         version_name, thumbnail_url, source, file_params,
                         status, priority, added_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 'queued', 0, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'queued', 0, ?)
                     """,
                     (
                         new_id,
@@ -698,6 +799,7 @@ class DownloadQueueService:
                         row["version_name"],
                         row["thumbnail_url"],
                         "retry",
+                        row["file_params"],
                         now,
                     ),
                 )
@@ -773,33 +875,44 @@ class DownloadQueueService:
         async with self._lock:
             conn = self._get_conn()
 
-            # 1. History: for each (model_id, model_version_id, status) triplet
-            #    keep only the row with the highest id (most recently inserted).
-            conn.execute("""
+            # 1. History: for each (model_id, model_version_id, file_id,
+            #    status) group keep only the row with the highest id (most
+            #    recently inserted). file_id comes from file_params (#1058)
+            #    so distinct files of the same version never collapse.
+            conn.execute(f"""
                 DELETE FROM download_history
                 WHERE id NOT IN (
                     SELECT MAX(id)
                     FROM download_history
-                    GROUP BY model_id, model_version_id, status
+                    GROUP BY model_id, model_version_id, status,
+                             {_FILE_ID_SQL}
                 )
             """)
             result["removed_history"] = conn.execute(
                 "SELECT changes()"
             ).fetchone()[0]
 
-            # 2. Cross-status dedup: for each (model_id, model_version_id),
-            #    keep only the entry with the highest-priority terminal status.
+            # 2. Cross-status dedup: for each (model_id, model_version_id,
+            #    file_id), keep only the entry with the highest-priority
+            #    terminal status.
             #    Priority: completed (3) > failed (2) > canceled (1).
-            #    This prevents the same model version from having both a
-            #    'failed' and a 'canceled' entry (or a 'completed' alongside
-            #    either) after the bug-created duplicates are removed.
-            conn.execute("""
+            #    This prevents the same file of a model version from having
+            #    both a 'failed' and a 'canceled' entry (or a 'completed'
+            #    alongside either) after the bug-created duplicates are
+            #    removed. ``IS`` matches NULL file ids against each other so
+            #    rows without file identity keep the old behavior.
+            conn.execute(f"""
                 DELETE FROM download_history
                 WHERE id NOT IN (
                     SELECT dh.id
-                    FROM download_history dh
+                    FROM (
+                        SELECT id, model_id, model_version_id, status,
+                               {_FILE_ID_SQL} AS file_id
+                        FROM download_history
+                    ) dh
                     INNER JOIN (
                         SELECT model_id, model_version_id,
+                               {_FILE_ID_SQL} AS file_id,
                                MAX(CASE status
                                    WHEN 'completed' THEN 3
                                    WHEN 'failed' THEN 2
@@ -807,17 +920,18 @@ class DownloadQueueService:
                                    ELSE 0
                                END) AS best_prio
                         FROM download_history
-                        GROUP BY model_id, model_version_id
+                        GROUP BY model_id, model_version_id, {_FILE_ID_SQL}
                     ) best
                     ON dh.model_id = best.model_id
                    AND dh.model_version_id = best.model_version_id
+                   AND dh.file_id IS best.file_id
                    AND CASE dh.status
                            WHEN 'completed' THEN 3
                            WHEN 'failed' THEN 2
                            WHEN 'canceled' THEN 1
                            ELSE 0
                        END = best.best_prio
-                    GROUP BY dh.model_id, dh.model_version_id
+                    GROUP BY dh.model_id, dh.model_version_id, dh.file_id
                     HAVING dh.id = MAX(dh.id)
                 )
             """)
@@ -825,15 +939,17 @@ class DownloadQueueService:
                 "SELECT changes()"
             ).fetchone()[0]
 
-            # 3. Queue: for each (model_id, model_version_id) keep only the
-            #    row with the latest added_at (most recently enqueued).
-            conn.execute("""
+            # 3. Queue: for each (model_id, model_version_id, file_id) keep
+            #    only the row with the latest added_at (most recently
+            #    enqueued). file_id comes from file_params (#1058) so
+            #    distinct files of the same version never collapse.
+            conn.execute(f"""
                 DELETE FROM download_queue
                 WHERE rowid NOT IN (
                     SELECT MAX(rowid)
                     FROM download_queue
                     WHERE status IN ('queued', 'downloading', 'paused', 'waiting')
-                    GROUP BY model_id, model_version_id
+                    GROUP BY model_id, model_version_id, {_FILE_ID_SQL}
                 )
                 AND status IN ('queued', 'downloading', 'paused', 'waiting')
             """)

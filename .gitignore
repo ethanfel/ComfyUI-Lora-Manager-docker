@@ -8,6 +8,10 @@ py/run_test.py
 cache/
 civitai/
 civitai_stats.db
+stats/
+wildcards/
+backups/
+logs/
 node_modules/
 coverage/
 .coverage
@@ -22,6 +26,7 @@ model_cache/
 reasonix.toml
 .reasonix/
 .codegraph/
+.playwright-mcp/
 
 # Browser extension (private)
 extension/
@@ -40,3 +45,7 @@ vue-widgets/dist/
 
 # Working/research notes (not committed)
 .docs/
+
+# HF enrichment validation baseline snapshots (contain potentially
+# NSFW README content fetched from community model repos)
+tests/enrich_hf_validation/baselines/

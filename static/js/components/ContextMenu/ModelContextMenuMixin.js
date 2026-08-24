@@ -187,6 +187,74 @@ export const ModelContextMenuMixin = {
         setTimeout(() => urlInput.focus(), 50);
     },
 
+    // HuggingFace linking methods
+    showLinkHfModal() {
+        const filePath = this.currentCard.dataset.filepath;
+        if (!filePath) return;
+
+        const confirmBtn = document.getElementById('confirmLinkHfBtn');
+        const urlInput = document.getElementById('hfModelUrl');
+        const errorDiv = document.getElementById('hfModelUrlError');
+
+        if (this._boundLinkHfHandler) {
+            confirmBtn.removeEventListener('click', this._boundLinkHfHandler);
+        }
+
+        this._boundLinkHfHandler = async () => {
+            const hfUrl = urlInput.value.trim();
+            if (!hfUrl) {
+                errorDiv.textContent = 'Please enter a HuggingFace repository URL.';
+                return;
+            }
+
+            const hfPattern = /^https?:\/\/huggingface\.co\/([^/]+\/[^/]+)\/?$/;
+            if (!hfPattern.test(hfUrl)) {
+                errorDiv.textContent = 'Invalid URL format. Expected: https://huggingface.co/user/repo';
+                return;
+            }
+
+            errorDiv.textContent = '';
+            modalManager.closeModal('linkHfModal');
+
+            try {
+                state.loadingManager.showSimpleLoading('Linking to HuggingFace...');
+
+                const response = await fetch('/api/lm/set-hf-url', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ file_path: filePath, hf_url: hfUrl }),
+                });
+
+                if (!response.ok) {
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || `Request failed: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                if (data.success) {
+                    showToast('toast.contextMenu.linkHfSuccess', {}, 'success');
+                    await this.resetAndReload();
+                } else {
+                    throw new Error(data.error || 'Failed to link model');
+                }
+            } catch (error) {
+                console.error('Error linking model to HuggingFace:', error);
+                showToast('toast.contextMenu.linkHfFailed', { message: error.message }, 'error');
+            } finally {
+                state.loadingManager.hide();
+            }
+        };
+
+        confirmBtn.addEventListener('click', this._boundLinkHfHandler);
+
+        urlInput.value = '';
+        errorDiv.textContent = '';
+
+        modalManager.showModal('linkHfModal');
+
+        setTimeout(() => urlInput.focus(), 50);
+    },
+
     extractModelVersionId(url) {
         return extractCivitaiModelUrlParts(url);
     },
@@ -279,7 +347,10 @@ export const ModelContextMenuMixin = {
                 openExampleImagesFolder(this.currentCard.dataset.sha256);
                 return true;
             case 'download-examples':
-                this.downloadExampleImages();
+                this.downloadExampleImages(false);
+                return true;
+            case 'download-examples-force':
+                this.downloadExampleImages(true);
                 return true;
             case 'civitai':
                 if (this.currentCard.dataset.from_civitai === 'true') {
@@ -295,6 +366,9 @@ export const ModelContextMenuMixin = {
             case 'relink-civitai':
                 this.showRelinkCivitaiModal();
                 return true;
+            case 'link-hf':
+                this.showLinkHfModal();
+                return true;
             case 'set-nsfw':
                 this.showNSFWLevelSelector(null, null, this.currentCard);
                 return true;
@@ -307,7 +381,7 @@ export const ModelContextMenuMixin = {
     },
 
     // Download example images method
-    async downloadExampleImages() {
+    async downloadExampleImages(force = false) {
         const modelHash = this.currentCard.dataset.sha256;
         if (!modelHash) {
             showToast('toast.contextMenu.missingHash', {}, 'error');
@@ -316,7 +390,7 @@ export const ModelContextMenuMixin = {
 
         try { 
             const apiClient = getModelApiClient();
-            await apiClient.downloadExampleImages([modelHash]);
+            await apiClient.downloadExampleImages([modelHash], null, { force });
         } catch (error) {
             console.error('Error downloading example images:', error);
         }

@@ -4,7 +4,7 @@ import { getStorageItem, setStorageItem, removeStorageItem, getSessionItem, setS
 import { showToast, openCivitaiByMetadata } from '../../utils/uiHelpers.js';
 import { performModelUpdateCheck } from '../../utils/updateCheckHelpers.js';
 import { sidebarManager } from '../SidebarManager.js';
-import { initSortDropdown } from './SortDropdown.js';
+import { initSortDropdown, applySortToSelect, randomizeSortValue } from './SortDropdown.js';
 
 /**
  * PageControls class - Unified control management for model pages
@@ -108,10 +108,20 @@ export class PageControls {
         const sortSelect = document.getElementById('sortSelect');
         if (sortSelect) {
             initSortDropdown(sortSelect);
-            sortSelect.value = this.pageState.sortBy;
+            applySortToSelect(this.pageState.sortBy);
             sortSelect.addEventListener('change', async (e) => {
-                this.pageState.sortBy = e.target.value;
-                this.saveSortPreference(e.target.value);
+                let value = e.target.value;
+                if (value.startsWith('random')) {
+                    // Every pick of Random reshuffles the list: generate a
+                    // fresh seed so the backend keeps a stable order across
+                    // paginated requests.
+                    value = randomizeSortValue();
+                }
+                this.pageState.sortBy = value;
+                this.saveSortPreference(value);
+                // Reset the seeded Random option when switching away from
+                // Random, or re-apply the fresh seed when picking it again.
+                applySortToSelect(value);
                 await this.resetAndReload();
             });
         }
@@ -331,10 +341,7 @@ export class PageControls {
             // Handle legacy format conversion
             const convertedSort = this.convertLegacySortFormat(savedSort);
             this.pageState.sortBy = convertedSort;
-            const sortSelect = document.getElementById('sortSelect');
-            if (sortSelect) {
-                sortSelect.value = convertedSort;
-            }
+            applySortToSelect(convertedSort);
         }
     }
     
@@ -528,9 +535,9 @@ export class PageControls {
         this.pageState.sortBy = restoredSort;
         this.saveSortPreference(restoredSort);
         this._removeVlmSortOption();
+        applySortToSelect(restoredSort);
         const sortSelect = document.getElementById('sortSelect');
         if (sortSelect) {
-            sortSelect.value = restoredSort;
             sortSelect.disabled = false;
         }
     }
@@ -580,10 +587,7 @@ export class PageControls {
             const savedGroupedSort = getStorageItem(groupedKey);
             if (savedGroupedSort) {
                 this.pageState.sortBy = savedGroupedSort;
-                const sortSelect = document.getElementById('sortSelect');
-                if (sortSelect) {
-                    sortSelect.value = savedGroupedSort;
-                }
+                applySortToSelect(savedGroupedSort);
             }
         } else {
             // Leaving group mode: persist current sort for next time, restore non-group sort
@@ -591,10 +595,7 @@ export class PageControls {
             const savedNormalSort = getStorageItem(`${this.pageType}_sort`);
             if (savedNormalSort) {
                 this.pageState.sortBy = savedNormalSort;
-                const sortSelect = document.getElementById('sortSelect');
-                if (sortSelect) {
-                    sortSelect.value = savedNormalSort;
-                }
+                applySortToSelect(savedNormalSort);
             }
         }
     }
@@ -879,7 +880,7 @@ export class PageControls {
         }
 
         if (sortSelect) {
-            sortSelect.value = this.pageState.sortBy;
+            applySortToSelect(this.pageState.sortBy);
         }
         if (searchInput) {
             searchInput.value = this.pageState.filters?.search || '';

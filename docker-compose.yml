@@ -4,17 +4,29 @@ services:
     ports:
       - "8188:8188"
     volumes:
-      # Persist settings and SQLite caches between restarts
+      # Persist settings, caches, usage data, undo staging, backups, logs, and wildcards
       - ./settings.json:/app/settings.json
       - lora-manager-cache:/app/cache
+      - lora-manager-stats:/app/stats
+      - lora-manager-pending-delete:/app/.lm-pending-delete
+      - lora-manager-backups:/app/backups
+      - lora-manager-logs:/app/logs
+      - lora-manager-wildcards:/app/wildcards
 
       # Mount your model directories (adjust paths to match your setup)
       - /path/to/your/loras:/models/loras
       # - /path/to/your/checkpoints:/models/checkpoints
       # - /path/to/your/embeddings:/models/embeddings
+      # - /path/to/your/diffusion_models:/models/unet
     environment:
       - LORA_MANAGER_STANDALONE=1
+      - LORA_MANAGER_PORTABLE=1
     restart: unless-stopped
 
 volumes:
   lora-manager-cache:
+  lora-manager-stats:
+  lora-manager-pending-delete:
+  lora-manager-backups:
+  lora-manager-logs:
+  lora-manager-wildcards:

@@ -200,8 +200,9 @@ class MoveManager {
     async initializeFolderTree() {
         try {
             const apiClient = this._getApiClient();
-            // Fetch unified folder tree
-            const treeData = await apiClient.fetchUnifiedFolderTree();
+            // Fetch unified folder tree, including empty directories so they
+            // can be selected as move targets
+            const treeData = await apiClient.fetchUnifiedFolderTree({ includeEmpty: true });
 
             if (treeData.success) {
                 // Load tree data into folder tree manager
@@ -330,8 +331,9 @@ class MoveManager {
                     .filter(r => r.success)
                     .map(r => ({ original_file_path: r.original_file_path, new_file_path: r.new_file_path }));
 
-                // Deselect moving items
+                // Deselect moving items and exit bulk mode
                 this.bulkFilePaths.forEach(path => bulkManager.deselectItem(path));
+                if (state.bulkMode) bulkManager.toggleBulkMode();
             } else {
                 // Single move mode
                 const result = await apiClient.moveSingleModel(this.currentFilePath, targetPath, this.useDefaultPath);

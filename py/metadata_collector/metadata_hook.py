@@ -16,7 +16,7 @@ class MetadataHook:
             execution = None
             try:
                 # Try direct import first
-                import execution # type: ignore
+                import execution # pyright: ignore[reportMissingImports]
             except ImportError:
                 # Try to locate from system modules
                 for module_name in sys.modules:
@@ -83,7 +83,8 @@ class MetadataHook:
                         
                         # Record inputs before execution
                         if node_id is not None:
-                            registry.record_node_execution(node_id, class_type, input_data_all, None)
+                            return_types = getattr(obj, 'RETURN_TYPES', None)
+                            registry.record_node_execution(node_id, class_type, input_data_all, None, return_types=return_types)
                 except Exception as e:
                     logger.error(f"Error collecting metadata (pre-execution): {str(e)}")
             
@@ -114,7 +115,8 @@ class MetadataHook:
                         
                         # Record outputs after execution
                         if node_id is not None:
-                            registry.update_node_execution(node_id, class_type, results)
+                            return_types = getattr(obj, 'RETURN_TYPES', None)
+                            registry.update_node_execution(node_id, class_type, results, return_types=return_types)
                 except Exception as e:
                     logger.error(f"Error collecting metadata (post-execution): {str(e)}")
             
@@ -135,10 +137,13 @@ class MetadataHook:
                 # Store the dynprompt reference for node lookups
                 if hasattr(prompt, 'original_prompt'):
                     registry.set_current_prompt(prompt)
-            
+
+                # Store extra_data for accessing full workflow node properties
+                registry.set_extra_data(extra_data)
+
             # Execute the original function
             return original_execute(*args, **kwargs)
-            
+
         # Replace the functions
         execution._map_node_over_list = map_node_over_list_with_metadata
         execution.execute = execute_with_prompt_tracking
@@ -163,7 +168,8 @@ class MetadataHook:
                         class_type = obj.__class__.__name__
                         node_id = unique_id
                         if node_id is not None:
-                            registry.record_node_execution(node_id, class_type, input_data_all, None)
+                            return_types = getattr(obj, 'RETURN_TYPES', None)
+                            registry.record_node_execution(node_id, class_type, input_data_all, None, return_types=return_types)
                 except Exception as e:
                     logger.error(f"Error collecting metadata (pre-execution): {str(e)}")
 
@@ -180,7 +186,8 @@ class MetadataHook:
                         class_type = obj.__class__.__name__
                         node_id = unique_id
                         if node_id is not None:
-                            registry.update_node_execution(node_id, class_type, results)
+                            return_types = getattr(obj, 'RETURN_TYPES', None)
+                            registry.update_node_execution(node_id, class_type, results, return_types=return_types)
                 except Exception as e:
                     logger.error(f"Error collecting metadata (post-execution): {str(e)}")
 
@@ -201,6 +208,9 @@ class MetadataHook:
                 # Store the dynprompt reference for node lookups
                 if hasattr(prompt, 'original_prompt'):
                     registry.set_current_prompt(prompt)
+
+                # Store extra_data for accessing full workflow node properties
+                registry.set_extra_data(extra_data)
 
             # Execute the original function
             return await original_execute(*args, **kwargs)

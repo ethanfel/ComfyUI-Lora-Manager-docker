@@ -789,6 +789,27 @@ export class SettingsManager {
         }
     }
 
+    async _fetchProviderModelsAsync() {
+        try {
+            const resp = await fetch('/api/lm/llm/provider-models');
+            if (!resp.ok) return;
+            const data = await resp.json();
+            if (data.success && data.models) {
+                this._providerModels = data.models;
+                // Refresh model combobox if the settings modal is still open.
+                // Skip when provider is Ollama — it fetches its own live list
+                // from the local Ollama API and we must not overwrite it.
+                const llmProviderSelect = document.getElementById('llmProvider');
+                const provider = llmProviderSelect ? llmProviderSelect.value : 'openai';
+                if (this._llmModelCombobox && provider !== 'ollama') {
+                    this._llmModelCombobox.updatePresets(this._providerModels[provider] || []);
+                }
+            }
+        } catch (_) {
+            // Silently ignore — models stay empty until next modal open
+        }
+    }
+
     async loadSettingsToUI() {
         // Set frontend settings from state
         const blurMatureContentCheckbox = document.getElementById('blurMatureContent');
@@ -827,6 +848,118 @@ export class SettingsManager {
 
         // Update API key status display (do NOT pre-fill the input)
         this.updateApiKeyStatus();
+        this.updateLlmApiKeyStatus();
+
+        // ── AI Provider settings ──────────────────────────────────────
+        // Load provider presets from the JSON script tag embedded in the template
+        this._providerPresets = {};
+        this._providerModels = {};
+        const presetsScript = document.getElementById('llmProviderPresets');
+        if (presetsScript) {
+            try {
+                this._providerPresets = JSON.parse(presetsScript.textContent);
+            } catch (_) {
+                this._providerPresets = {};
+            }
+        }
+        const modelsScript = document.getElementById('llmProviderModels');
+        if (modelsScript) {
+            try {
+                this._providerModels = JSON.parse(modelsScript.textContent);
+            } catch (_) {
+                this._providerModels = {};
+            }
+        }
+
+        // If the embedded provider models is empty (server did not block on
+        // the remote catalog during page render), fetch asynchronously.
+        if (!this._providerModels || Object.keys(this._providerModels).length === 0) {
+            this._fetchProviderModelsAsync();
+        }
+
+        const llmProviderSelect = document.getElementById('llmProvider');
+        if (llmProviderSelect) {
+            llmProviderSelect.value = state.global.settings.llm_provider || 'openai';
+        }
+
+        // Destroy previous combobox instances before creating new ones,
+        // since loadSettingsToUI() runs on every modal open.
+        if (this._llmApiBaseCombobox) { this._llmApiBaseCombobox.destroy(); }
+        if (this._llmModelCombobox) { this._llmModelCombobox.destroy(); }
+
+        const llmApiBaseInput = document.getElementById('llmApiBase');
+        if (llmApiBaseInput) {
+            llmApiBaseInput.value = state.global.settings.llm_api_base || '';
+            const presetUrls = Object.values(this._providerPresets)
+                .map(p => p.api_base)
+                .filter(Boolean);
+            if (typeof Combobox !== 'undefined') {
+                this._llmApiBaseCombobox = new Combobox(llmApiBaseInput, {
+                    presets: presetUrls,
+                    placeholder: 'https://api.openai.com/v1',
+                });
+            }
+        }
+
+        // Helper to update model Combobox presets from catalog / Ollama API
+        const llmModelInput = document.getElementById('llmModel');
+        this._llmModelCombobox = null;
+        if (llmModelInput) {
+            llmModelInput.value = state.global.settings.llm_model || '';
+        }
+        if (llmModelInput && typeof Combobox !== 'undefined') {
+            const currentProvider = llmProviderSelect ? llmProviderSelect.value : 'openai';
+            const fallbackModels = currentProvider === 'ollama' ? [] : (this._providerModels[currentProvider] || []);
+            this._llmModelCombobox = new Combobox(llmModelInput, {
+                presets: fallbackModels,
+                placeholder: translate('settings.aiProvider.modelPlaceholder', {}, 'Select a model...'),
+                onSelect: (value) => {
+                    state.global.settings.llm_model = value;
+                    this.saveSetting('llm_model', value)
+                        .then(() => showToast('toast.settings.settingsUpdated', { setting: 'model' }, 'success'))
+                        .catch(() => {});
+                },
+            });
+        }
+
+        const _loadModelPresets = async (provider) => {
+            if (!this._llmModelCombobox) return;
+            if (provider === 'ollama') {
+                try {
+                    const apiBase = document.getElementById('llmApiBase')?.value?.trim() || 'http://localhost:11434/v1';
+                    const resp = await fetch(`/api/lm/llm/models?provider=ollama&api_base=${encodeURIComponent(apiBase)}`);
+                    if (resp.ok) {
+                        const data = await resp.json();
+                        if (data.success && Array.isArray(data.models)) {
+                            this._llmModelCombobox.updatePresets(data.models);
+                            return;
+                        }
+                    }
+                } catch (_) {}
+                this._llmModelCombobox.updatePresets([]);
+            } else {
+                this._llmModelCombobox.updatePresets(this._providerModels[provider] || []);
+            }
+        };
+        _loadModelPresets(llmProviderSelect ? llmProviderSelect.value : 'openai');
+
+        // Provider change → auto-fill API Base URL + update model presets
+        if (llmProviderSelect) {
+            llmProviderSelect.addEventListener('change', () => {
+                const provider = llmProviderSelect.value;
+                const preset = this._providerPresets[provider];
+                if (preset) {
+                    if (llmApiBaseInput && preset.api_base) {
+                        llmApiBaseInput.value = preset.api_base;
+                        if (this._llmApiBaseCombobox) {
+                            this._llmApiBaseCombobox.setValue(preset.api_base);
+                        }
+                        llmApiBaseInput.dispatchEvent(new Event('blur'));
+                    }
+                }
+                _loadModelPresets(provider);
+            });
+        }
 
         const civitaiHostSelect = document.getElementById('civitaiHost');
         if (civitaiHostSelect) {
@@ -887,6 +1020,9 @@ export class SettingsManager {
             displayDensitySelect.value = state.global.settings.display_density || 'default';
         }
 
+        // Set recipes layout setting (segmented control active state)
+        this.updateRecipesLayoutControls(state.global.settings.recipes_layout || 'grid');
+
         // Set card info display setting
         const cardInfoDisplaySelect = document.getElementById('cardInfoDisplay');
         if (cardInfoDisplaySelect) {
@@ -926,6 +1062,12 @@ export class SettingsManager {
         const hideEarlyAccessUpdatesCheckbox = document.getElementById('hideEarlyAccessUpdates');
         if (hideEarlyAccessUpdatesCheckbox) {
             hideEarlyAccessUpdatesCheckbox.checked = state.global.settings.hide_early_access_updates || false;
+        }
+
+        // Set hide paid updates setting
+        const hidePaidUpdatesCheckbox = document.getElementById('hidePaidUpdates');
+        if (hidePaidUpdatesCheckbox) {
+            hidePaidUpdatesCheckbox.checked = state.global.settings.hide_paid_updates || false;
         }
 
         const skipPreviouslyDownloadedModelVersionsCheckbox = document.getElementById('skipPreviouslyDownloadedModelVersions');
@@ -1387,11 +1529,20 @@ export class SettingsManager {
         return data;
     }
 
-    async loadLoraRoots() {
-        try {
-            const defaultLoraRootSelect = document.getElementById('defaultLoraRoot');
-            if (!defaultLoraRootSelect) return;
+    showNoRootsPlaceholder(select) {
+        select.innerHTML = '';
+        const option = document.createElement('option');
+        option.value = '';
+        option.textContent = translate('settings.folderSettings.noDefault', {}, 'No Default');
+        select.appendChild(option);
+        select.disabled = true;
+    }
 
+    async loadLoraRoots() {
+        const defaultLoraRootSelect = document.getElementById('defaultLoraRoot');
+        if (!defaultLoraRootSelect) return;
+
+        try {
             // Fetch lora roots
             const response = await fetch('/api/lm/loras/roots');
             if (!response.ok) {
@@ -1400,10 +1551,12 @@ export class SettingsManager {
 
             const data = await response.json();
             if (!data.roots || data.roots.length === 0) {
-                throw new Error('No LoRA roots found');
+                this.showNoRootsPlaceholder(defaultLoraRootSelect);
+                return;
             }
 
             defaultLoraRootSelect.innerHTML = '';
+            defaultLoraRootSelect.disabled = false;
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1418,15 +1571,16 @@ export class SettingsManager {
 
         } catch (error) {
             console.error('Error loading LoRA roots:', error);
+            this.showNoRootsPlaceholder(defaultLoraRootSelect);
             showToast('toast.settings.loraRootsFailed', { message: error.message }, 'error');
         }
     }
 
     async loadCheckpointRoots() {
-        try {
-            const defaultCheckpointRootSelect = document.getElementById('defaultCheckpointRoot');
-            if (!defaultCheckpointRootSelect) return;
+        const defaultCheckpointRootSelect = document.getElementById('defaultCheckpointRoot');
+        if (!defaultCheckpointRootSelect) return;
 
+        try {
             // Fetch checkpoint roots (checkpoint paths only, not unet)
             const response = await fetch('/api/lm/checkpoints/checkpoints_roots');
             if (!response.ok) {
@@ -1435,10 +1589,12 @@ export class SettingsManager {
 
             const data = await response.json();
             if (!data.roots || data.roots.length === 0) {
-                throw new Error('No checkpoint roots found');
+                this.showNoRootsPlaceholder(defaultCheckpointRootSelect);
+                return;
             }
 
             defaultCheckpointRootSelect.innerHTML = '';
+            defaultCheckpointRootSelect.disabled = false;
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1453,15 +1609,16 @@ export class SettingsManager {
 
         } catch (error) {
             console.error('Error loading checkpoint roots:', error);
+            this.showNoRootsPlaceholder(defaultCheckpointRootSelect);
             showToast('toast.settings.checkpointRootsFailed', { message: error.message }, 'error');
         }
     }
 
     async loadUnetRoots() {
-        try {
-            const defaultUnetRootSelect = document.getElementById('defaultUnetRoot');
-            if (!defaultUnetRootSelect) return;
+        const defaultUnetRootSelect = document.getElementById('defaultUnetRoot');
+        if (!defaultUnetRootSelect) return;
 
+        try {
             // Fetch unet roots (diffusion model paths only)
             const response = await fetch('/api/lm/checkpoints/unet_roots');
             if (!response.ok) {
@@ -1470,10 +1627,12 @@ export class SettingsManager {
 
             const data = await response.json();
             if (!data.roots || data.roots.length === 0) {
-                throw new Error('No diffusion model roots found');
+                this.showNoRootsPlaceholder(defaultUnetRootSelect);
+                return;
             }
 
             defaultUnetRootSelect.innerHTML = '';
+            defaultUnetRootSelect.disabled = false;
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1488,15 +1647,16 @@ export class SettingsManager {
 
         } catch (error) {
             console.error('Error loading diffusion model roots:', error);
+            this.showNoRootsPlaceholder(defaultUnetRootSelect);
             showToast('toast.settings.unetRootsFailed', { message: error.message }, 'error');
         }
     }
 
     async loadEmbeddingRoots() {
-        try {
-            const defaultEmbeddingRootSelect = document.getElementById('defaultEmbeddingRoot');
-            if (!defaultEmbeddingRootSelect) return;
+        const defaultEmbeddingRootSelect = document.getElementById('defaultEmbeddingRoot');
+        if (!defaultEmbeddingRootSelect) return;
 
+        try {
             // Fetch embedding roots
             const response = await fetch('/api/lm/embeddings/roots');
             if (!response.ok) {
@@ -1505,10 +1665,12 @@ export class SettingsManager {
 
             const data = await response.json();
             if (!data.roots || data.roots.length === 0) {
-                throw new Error('No embedding roots found');
+                this.showNoRootsPlaceholder(defaultEmbeddingRootSelect);
+                return;
             }
 
             defaultEmbeddingRootSelect.innerHTML = '';
+            defaultEmbeddingRootSelect.disabled = false;
 
             // Add options for each root
             data.roots.forEach(root => {
@@ -1523,6 +1685,7 @@ export class SettingsManager {
 
         } catch (error) {
             console.error('Error loading embedding roots:', error);
+            this.showNoRootsPlaceholder(defaultEmbeddingRootSelect);
             showToast('toast.settings.embeddingRootsFailed', { message: error.message }, 'error');
         }
     }
@@ -1563,13 +1726,15 @@ export class SettingsManager {
                 <input type="text" class="extra-folder-path-input"
                        placeholder="${translate('settings.extraFolderPaths.pathPlaceholder', {}, '/path/to/models')}" value="${path}"
                        onblur="settingsManager.updateExtraFolderPaths('${modelType}')"
+                       onfocus="settingsManager.clearExtraFolderPathError(this)"
                        onkeydown="if(event.key === 'Enter') { this.blur(); }" />
                 <button type="button" class="remove-path-btn"
-                        onclick="this.parentElement.parentElement.remove(); settingsManager.updateExtraFolderPaths('${modelType}')"
+                        onclick="settingsManager.removeExtraFolderPathRow(this, '${modelType}')"
                         title="${translate('common.actions.delete', {}, 'Delete')}">
                     <i class="fas fa-times"></i>
                 </button>
             </div>
+            <div class="extra-folder-path-error"></div>
         `;
 
         container.appendChild(row);
@@ -1583,7 +1748,63 @@ export class SettingsManager {
         }
     }
 
+    clearExtraFolderPathError(input) {
+        input.classList.remove('has-error');
+        const row = input.closest('.extra-folder-path-row');
+        if (row) {
+            const errEl = row.querySelector('.extra-folder-path-error');
+            if (errEl) {
+                errEl.classList.remove('visible');
+                errEl.textContent = '';
+            }
+        }
+    }
+
+    _clearAllExtraFolderPathErrors() {
+        document.querySelectorAll('.extra-folder-path-input.has-error').forEach((input) => {
+            input.classList.remove('has-error');
+        });
+        document.querySelectorAll('.extra-folder-path-error.visible').forEach((el) => {
+            el.classList.remove('visible');
+            el.textContent = '';
+        });
+    }
+
+    _markExtraFolderPathsError(modelType, overlappingPaths, showMessage = false) {
+        const container = document.getElementById(`extraFolderPaths-${modelType}`);
+        if (!container) return;
+
+        const inputs = container.querySelectorAll('.extra-folder-path-input');
+        inputs.forEach((input) => {
+            const val = input.value.trim();
+            if (val && overlappingPaths.includes(val)) {
+                input.classList.add('has-error');
+                if (showMessage) {
+                    const row = input.closest('.extra-folder-path-row');
+                    if (row) {
+                        const errEl = row.querySelector('.extra-folder-path-error');
+                        if (errEl) {
+                            errEl.textContent = translate('settings.extraFolderPaths.validation.checkpointUnetOverlapInline', {}, 'This path is also used for a different model type. Use separate folders for checkpoints and diffusion models.');
+                            errEl.classList.add('visible');
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    removeExtraFolderPathRow(btn, modelType) {
+        const row = btn.closest('.extra-folder-path-row');
+        if (row) {
+            row.remove();
+            this.updateExtraFolderPaths(modelType);
+        }
+    }
+
     async updateExtraFolderPaths(changedModelType) {
+        // Clear previous errors
+        this._clearAllExtraFolderPathErrors();
+
         const extraFolderPaths = {};
 
         // Collect paths for all model types
@@ -1603,6 +1824,32 @@ export class SettingsManager {
 
             extraFolderPaths[modelType] = paths;
         });
+
+        // Client-side pre-check: checkpoints and unet must not share the same path.
+        // Normalise paths to reduce false negatives vs the backend's realpath + normcase.
+        const normalise = (p) => p.replace(/[/\\]+$/, '').toLowerCase();
+        const ckptSet = new Set((extraFolderPaths.checkpoints || []).map(normalise));
+        const unetSet = new Set((extraFolderPaths.unet || []).map(normalise));
+        const ckptOverlap = (extraFolderPaths.checkpoints || []).filter(p => p && unetSet.has(normalise(p)));
+        const unetOverlap = (extraFolderPaths.unet || []).filter(p => p && ckptSet.has(normalise(p)));
+        const hasOverlap = ckptOverlap.length > 0 || unetOverlap.length > 0;
+
+        if (hasOverlap) {
+            // Error message only on the side the user just edited.
+            // The other side gets red border only (passive conflict indicator).
+            if (changedModelType === 'checkpoints') {
+                this._markExtraFolderPathsError('checkpoints', ckptOverlap, true);
+                this._markExtraFolderPathsError('unet', unetOverlap, false);
+            } else if (changedModelType === 'unet') {
+                this._markExtraFolderPathsError('unet', unetOverlap, true);
+                this._markExtraFolderPathsError('checkpoints', ckptOverlap, false);
+            } else {
+                // Pre-existing conflict from direct config edit — mark both without messages
+                this._markExtraFolderPathsError('checkpoints', ckptOverlap, false);
+                this._markExtraFolderPathsError('unet', unetOverlap, false);
+            }
+            return;
+        }
 
         // Check if paths have actually changed
         const currentPaths = state.global.settings.extra_folder_paths || {};
@@ -2047,6 +2294,12 @@ export class SettingsManager {
             : element.value;
 
         try {
+            // Recipes layout has its own shared entry point used by both the
+            // settings modal segmented control and the recipes page toolbar toggle
+            if (settingKey === 'recipes_layout') {
+                return this.saveRecipesLayout(element.value);
+            }
+
             // Update frontend state with mapped keys
             await this.saveSetting(settingKey, value);
 
@@ -2078,6 +2331,47 @@ export class SettingsManager {
         } catch (error) {
             showToast('toast.settings.settingSaveFailed', { message: error.message }, 'error');
         }
+    }
+
+    /**
+     * Save the recipes page layout (grid | masonry) and rebuild the scroller.
+     * Shared entry point for the settings modal segmented control and the
+     * recipes page toolbar toggle; both stay in sync via
+     * updateRecipesLayoutControls().
+     */
+    async saveRecipesLayout(value) {
+        if (value !== 'grid' && value !== 'masonry') {
+            return;
+        }
+
+        // Update frontend state with mapped keys
+        await this.saveSetting('recipes_layout', value);
+
+        // Apply frontend settings immediately
+        this.applyFrontendSettings();
+
+        // Dispatch layout change event; the scroller instance is about to be rebuilt,
+        // so calculateLayout() must NOT run on the old instance here
+        window.dispatchEvent(new CustomEvent('lm:recipes-layout-changed'));
+
+        this.updateRecipesLayoutControls(value);
+    }
+
+    /**
+     * Sync the active state of every recipes layout control
+     * (settings modal segmented control and recipes page toolbar toggle).
+     */
+    updateRecipesLayoutControls(value) {
+        document.querySelectorAll('[data-recipes-layout]').forEach((control) => {
+            const active = control.dataset.recipesLayout === value;
+            control.classList.toggle('active', active);
+            if (control.hasAttribute('aria-pressed')) {
+                control.setAttribute('aria-pressed', String(active));
+            }
+            if (control.hasAttribute('aria-checked')) {
+                control.setAttribute('aria-checked', String(active));
+            }
+        });
     }
 
     async saveRangeSetting(elementId, displayId, settingKey) {
@@ -2130,6 +2424,16 @@ export class SettingsManager {
             const enableMetadataArchiveCheckbox = document.getElementById('enableMetadataArchive');
             if (enableMetadataArchiveCheckbox) {
                 enableMetadataArchiveCheckbox.checked = state.global.settings.enable_metadata_archive_db || false;
+            }
+
+            const enableCivarchiveApiCheckbox = document.getElementById('enableCivarchiveApi');
+            if (enableCivarchiveApiCheckbox) {
+                enableCivarchiveApiCheckbox.checked = state.global.settings.enable_civarchive_api ?? true;
+            }
+
+            const metadataProviderOrderSelect = document.getElementById('metadataProviderOrder');
+            if (metadataProviderOrderSelect) {
+                metadataProviderOrderSelect.value = state.global.settings.metadata_provider_order || 'civitai_archive_sqlite';
             }
 
             // Load status
@@ -2931,42 +3235,70 @@ export class SettingsManager {
         }
     }
 
-    editApiKey() {
-        const statusEl = document.getElementById('civitaiApiKeyStatus');
+    updateLlmApiKeyStatus() {
+        const hasKey = !!(state.global.settings.llm_api_key_set || state.global.settings.llm_api_key);
+        const statusText = document.getElementById('llmApiKeyStatusText');
+        const actionBtn = document.getElementById('llmApiKeyActionBtn');
+        if (!statusText || !actionBtn) return;
+
+        if (hasKey) {
+            statusText.classList.remove('api-key-status--unconfigured');
+            statusText.classList.add('api-key-status--configured');
+            statusText.innerHTML = '<i class="fas fa-check-circle text-success"></i> '
+                + translate('settings.aiProvider.apiKeyConfigured', {}, 'Configured');
+            actionBtn.textContent = translate('common.actions.change', {}, 'Change');
+        } else {
+            statusText.classList.remove('api-key-status--configured');
+            statusText.classList.add('api-key-status--unconfigured');
+            statusText.innerHTML = '<i class="fas fa-times-circle text-error"></i> '
+                + translate('settings.aiProvider.apiKeyNotSet', {}, 'Not set');
+            actionBtn.textContent = translate('settings.aiProvider.apiKeySet', {}, 'Set up');
+        }
+    }
+
+    editApiKey(settingsKey = 'civitai_api_key', inputId = 'civitaiApiKey') {
+        const statusId = inputId + 'Status';
+        const editId = inputId + 'Edit';
+        const statusEl = document.getElementById(statusId);
         if (statusEl) statusEl.classList.add('is-hidden');
-        const editContainer = document.getElementById('civitaiApiKeyEdit');
+        const editContainer = document.getElementById(editId);
         if (editContainer) editContainer.classList.remove('is-hidden');
         // Focus the input
-        const input = document.getElementById('civitaiApiKey');
+        const input = document.getElementById(inputId);
         if (input) {
             input.value = '';  // Never pre-fill the secret
             setTimeout(() => input.focus(), 50);
         }
     }
 
-    cancelEditApiKey(silent) {
-        const editContainer = document.getElementById('civitaiApiKeyEdit');
+    cancelEditApiKey(silent, inputId = 'civitaiApiKey') {
+        const editId = inputId + 'Edit';
+        const statusId = inputId + 'Status';
+        const editContainer = document.getElementById(editId);
         if (editContainer) editContainer.classList.add('is-hidden');
-        const statusContainer = document.getElementById('civitaiApiKeyStatus');
+        const statusContainer = document.getElementById(statusId);
         if (statusContainer) statusContainer.classList.remove('is-hidden');
         // Clear any typed value
-        const input = document.getElementById('civitaiApiKey');
+        const input = document.getElementById(inputId);
         if (input) input.value = '';
         if (!silent) {
-            this.updateApiKeyStatus();
+            if (inputId === 'civitaiApiKey') {
+                this.updateApiKeyStatus();
+            }
         }
     }
 
-    async saveApiKey() {
-        const input = document.getElementById('civitaiApiKey');
+    async saveApiKey(settingsKey = 'civitai_api_key', inputId = 'civitaiApiKey') {
+        const input = document.getElementById(inputId);
         if (!input) return;
 
         const value = input.value.trim();
 
         try {
-            await this.saveSetting('civitai_api_key', value);
+            await this.saveSetting(settingsKey, value);
+            const labelName = settingsKey === 'civitai_api_key' ? 'CivitAI API Key' : 'LLM API Key';
             showToast('toast.settings.settingsUpdated',
-                { setting: 'CivitAI API Key' }, 'success');
+                { setting: labelName }, 'success');
         } catch (error) {
             showToast('toast.settings.settingSaveFailed',
                 { message: error.message }, 'error');
@@ -2974,9 +3306,13 @@ export class SettingsManager {
         }
 
         // Update the in-memory flag so the UI reflects the change
-        state.global.settings.civitai_api_key_set = !!value;
-        this.cancelEditApiKey(true);
-        this.updateApiKeyStatus();
+        if (settingsKey === 'civitai_api_key') {
+            state.global.settings.civitai_api_key_set = !!value;
+        }
+        this.cancelEditApiKey(true, inputId);
+        if (inputId === 'civitaiApiKey') {
+            this.updateApiKeyStatus();
+        }
     }
 
     toggleInputVisibility(button) {

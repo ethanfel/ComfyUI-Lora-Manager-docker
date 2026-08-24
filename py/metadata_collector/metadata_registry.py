@@ -1,13 +1,23 @@
 import time
-from nodes import NODE_CLASS_MAPPINGS  # type: ignore
+from typing import Any
+from nodes import NODE_CLASS_MAPPINGS  # pyright: ignore[reportMissingImports, reportAttributeAccessIssue]
 from .node_extractors import NODE_EXTRACTORS, GenericNodeExtractor
-from .constants import METADATA_CATEGORIES, IMAGES
+from .constants import METADATA_CATEGORIES, IMAGES, OVERWRITE
 
 
 class MetadataRegistry:
     """A singleton registry to store and retrieve workflow metadata"""
 
     _instance = None
+
+    current_prompt_id: Any = None
+    current_prompt: Any = None
+    metadata: dict[str, Any] = {}
+    prompt_metadata: dict[str, Any] = {}
+    executed_nodes: set[str] = set()
+    node_cache: dict[str, Any] = {}
+    max_prompt_history: int = 3
+    metadata_categories: list[str] = METADATA_CATEGORIES
 
     def __new__(cls):
         if cls._instance is None:
@@ -61,6 +71,7 @@ class MetadataRegistry:
             {
                 "execution_order": [],
                 "current_prompt": None,  # Will store the prompt object
+                "extra_data": None,  # Will store the API extra_data for workflow metadata
                 "timestamp": time.time(),
             }
         )
@@ -74,6 +85,11 @@ class MetadataRegistry:
         if self.current_prompt_id and self.current_prompt_id in self.prompt_metadata:
             # Store the prompt in the metadata for later relationship tracing
             self.prompt_metadata[self.current_prompt_id]["current_prompt"] = prompt
+
+    def set_extra_data(self, extra_data):
+        """Store the API extra_data (contains extra_pnginfo.workflow with node properties)"""
+        if self.current_prompt_id and self.current_prompt_id in self.prompt_metadata:
+            self.prompt_metadata[self.current_prompt_id]["extra_data"] = extra_data
 
     def get_metadata(self, prompt_id=None):
         """Get collected metadata for a prompt"""
@@ -122,20 +138,28 @@ class MetadataRegistry:
             cache_key = f"{node_id}:{class_type}"
 
             # Check if this node type is relevant for metadata collection
-            if class_type in NODE_EXTRACTORS:
+            if class_type in NODE_EXTRACTORS or cache_key in self.node_cache:
                 # Check if we have cached metadata for this node
                 if cache_key in self.node_cache:
                     cached_data = self.node_cache[cache_key]
 
+                    # Detect bypass (mode=4) / mute (mode=2) — these nodes
+                    # were intentionally disabled and should not contribute
+                    # overwrite values from a previous execution's cache.
+                    node_mode = node_data.get("mode", 0)
+                    node_is_disabled = node_mode in (2, 4)
+
                     # Apply cached metadata to the current metadata
                     for category in self.metadata_categories:
+                        if category == OVERWRITE and node_is_disabled:
+                            continue
                         if category in cached_data and node_id in cached_data[category]:
                             if node_id not in metadata[category]:
                                 metadata[category][node_id] = cached_data[category][
                                     node_id
                                 ]
 
-    def record_node_execution(self, node_id, class_type, inputs, outputs):
+    def record_node_execution(self, node_id, class_type, inputs, outputs, return_types=None):
         """Record information about a node's execution"""
         if not self.current_prompt_id:
             return
@@ -158,17 +182,18 @@ class MetadataRegistry:
 
         # Extract node-specific metadata
         extractor = NODE_EXTRACTORS.get(class_type, GenericNodeExtractor)
-        extractor.extract(
-            node_id,
-            processed_inputs,
-            outputs,
-            self.prompt_metadata[self.current_prompt_id],
-        )
+        if extractor is GenericNodeExtractor:
+            extractor.extract(node_id, processed_inputs, outputs,
+                              self.prompt_metadata[self.current_prompt_id],
+                              return_types=return_types)
+        else:
+            extractor.extract(node_id, processed_inputs, outputs,
+                              self.prompt_metadata[self.current_prompt_id])
 
         # Cache this node's metadata
         self._cache_node_metadata(node_id, class_type)
 
-    def update_node_execution(self, node_id, class_type, outputs):
+    def update_node_execution(self, node_id, class_type, outputs, return_types=None):
         """Update node metadata with output information"""
         if not self.current_prompt_id:
             return
@@ -179,9 +204,17 @@ class MetadataRegistry:
         # Use the same extractor to update with outputs
         extractor = NODE_EXTRACTORS.get(class_type, GenericNodeExtractor)
         if hasattr(extractor, "update"):
-            extractor.update(
-                node_id, processed_outputs, self.prompt_metadata[self.current_prompt_id]
-            )
+            if extractor is GenericNodeExtractor:
+                extractor.update(
+                    node_id, processed_outputs,
+                    self.prompt_metadata[self.current_prompt_id],
+                    return_types=return_types,
+                )
+            else:
+                extractor.update(
+                    node_id, processed_outputs,
+                    self.prompt_metadata[self.current_prompt_id],
+                )
 
         # Update the cached metadata for this node
         self._cache_node_metadata(node_id, class_type)

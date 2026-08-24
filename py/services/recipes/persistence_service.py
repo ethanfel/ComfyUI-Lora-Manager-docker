@@ -9,11 +9,12 @@ import shutil
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Awaitable, Dict, Iterable, Optional, cast
 
 from ...config import config
 from ...recipes.constants import GEN_PARAM_KEYS
 from ...utils.utils import calculate_recipe_fingerprint
+from ..pending_delete_service import get_pending_delete_service
 from .errors import RecipeNotFoundError, RecipeValidationError
 
 
@@ -72,6 +73,8 @@ class RecipePersistenceService:
                 f"Missing required fields: {', '.join(missing_fields)}"
             )
 
+        assert metadata is not None
+
         resolved_image_bytes = self._resolve_image_bytes(image_bytes, image_base64)
         recipes_dir = target_dir or recipe_scanner.recipes_dir
         os.makedirs(recipes_dir, exist_ok=True)
@@ -114,6 +117,7 @@ class RecipePersistenceService:
             "loras": loras_data,
             "gen_params": gen_params,
             "fingerprint": fingerprint,
+            "has_workflow": self._detect_has_workflow(normalized_image_path),
         }
         if checkpoint_entry:
             recipe_data["checkpoint"] = checkpoint_entry
@@ -199,12 +203,31 @@ class RecipePersistenceService:
             recipe_data = json.load(file_obj)
 
         image_path = recipe_data.get("file_path")
+
+        # Stage the delete so the recipe can be undone within the undo window.
+        # The staging service COPIES the JSON (and existing image) into the
+        # global staging dir and stores recipe_data as the manifest snapshot;
+        # the originals are removed below as before. When staging is skipped
+        # (undo disabled / staging failure) the existing hard delete runs.
+        pending_delete_service = await get_pending_delete_service()
+        batch_id = await pending_delete_service.stage_recipe_delete(
+            recipe_json_path=recipe_json_path,
+            image_path=image_path,
+            recipe_data=recipe_data,
+        )
+
         os.remove(recipe_json_path)
         if image_path and os.path.exists(image_path):
             os.remove(image_path)
 
         await recipe_scanner.remove_recipe(recipe_id)
-        return PersistenceResult({"success": True, "message": "Recipe deleted successfully"})
+        return PersistenceResult(
+            {
+                "success": True,
+                "message": "Recipe deleted successfully",
+                "batch_id": batch_id,
+            }
+        )
 
     async def update_recipe(self, *, recipe_scanner, recipe_id: str, updates: dict[str, Any]) -> PersistenceResult:
         """Update persisted metadata for a recipe."""
@@ -216,11 +239,12 @@ class RecipePersistenceService:
             "preview_nsfw_level",
             "favorite",
             "gen_params",
+            "base_model",
         )
 
         if not any(key in updates for key in allowed_fields):
             raise RecipeValidationError(
-                "At least one field to update must be provided (title or tags or source_path or preview_nsfw_level or favorite or gen_params)"
+                "At least one field to update must be provided (title or tags or source_path or preview_nsfw_level or favorite or gen_params or base_model)"
             )
 
         if "gen_params" in updates and not isinstance(updates["gen_params"], dict):
@@ -403,8 +427,21 @@ class RecipePersistenceService:
         if not recipe_path or not os.path.exists(recipe_path):
             raise RecipeNotFoundError("Recipe not found")
 
-        target_lora = await recipe_scanner.get_local_lora(target_name)
+        with open(recipe_path, "r", encoding="utf-8") as file_obj:
+            recipe_base_model = json.load(file_obj).get("base_model", "")
+
+        target_lora = await recipe_scanner.get_local_lora(target_name, recipe_base_model)
         if not target_lora:
+            matches = await recipe_scanner.find_local_loras_by_name(target_name)
+            if len(matches) > 1:
+                raise RecipeValidationError(
+                    f"Multiple local LoRAs match '{target_name}'; "
+                    "include the folder path to disambiguate"
+                )
+            if len(matches) == 1:
+                raise RecipeValidationError(
+                    f"Local LoRA '{target_name}' has a different base model than the recipe"
+                )
             raise RecipeNotFoundError(f"Local LoRA not found with name: {target_name}")
 
         recipe_data, updated_lora = await recipe_scanner.update_lora_entry(
@@ -447,6 +484,9 @@ class RecipePersistenceService:
 
         deleted_recipes: list[str] = []
         failed_recipes: list[dict[str, Any]] = []
+        batch_ids: list[str] = []
+
+        pending_delete_service = await get_pending_delete_service()
 
         for recipe_id in recipe_ids:
             recipe_json_path = await recipe_scanner.get_recipe_json_path(recipe_id)
@@ -458,6 +498,17 @@ class RecipePersistenceService:
                 with open(recipe_json_path, "r", encoding="utf-8") as file_obj:
                     recipe_data = json.load(file_obj)
                 image_path = recipe_data.get("file_path")
+
+                # Stage each recipe into its own batch; collect the ids so the
+                # whole bulk action can be merged into ONE undoable batch.
+                batch_id = await pending_delete_service.stage_recipe_delete(
+                    recipe_json_path=recipe_json_path,
+                    image_path=image_path,
+                    recipe_data=recipe_data,
+                )
+                if batch_id:
+                    batch_ids.append(batch_id)
+
                 os.remove(recipe_json_path)
                 if image_path and os.path.exists(image_path):
                     os.remove(image_path)
@@ -468,15 +519,27 @@ class RecipePersistenceService:
         if deleted_recipes:
             await recipe_scanner.bulk_remove(deleted_recipes)
 
-        return PersistenceResult(
-            {
-                "success": True,
-                "deleted": deleted_recipes,
-                "failed": failed_recipes,
-                "total_deleted": len(deleted_recipes),
-                "total_failed": len(failed_recipes),
-            }
-        )
+        payload: dict[str, Any] = {
+            "success": True,
+            "deleted": deleted_recipes,
+            "failed": failed_recipes,
+            "total_deleted": len(deleted_recipes),
+            "total_failed": len(failed_recipes),
+        }
+
+        if batch_ids:
+            merged_batch_id = await pending_delete_service.merge_batches(batch_ids)
+            if merged_batch_id:
+                # Merge succeeded: one undo action covers the whole bulk.
+                payload["batch_id"] = merged_batch_id
+            else:
+                # Merge failure (e.g. cross-volume move): expose the constituent
+                # batches so the caller can undo them one at a time.
+                payload["batch_ids"] = batch_ids
+        else:
+            payload["batch_id"] = None
+
+        return PersistenceResult(payload)
 
     async def save_recipe_from_widget(
         self,
@@ -553,6 +616,9 @@ class RecipePersistenceService:
                 if key not in ["checkpoint", "loras"]
             },
             "loras_stack": lora_stack,
+            # Widget saves re-encode an in-memory tensor to PNG/WebP with no
+            # embedded metadata chunks, so a workflow can never be present.
+            "has_workflow": False,
         }
         if checkpoint_entry:
             recipe_data["checkpoint"] = checkpoint_entry
@@ -576,6 +642,20 @@ class RecipePersistenceService:
         )
 
     # Helper methods ---------------------------------------------------
+
+    def _detect_has_workflow(self, image_path: str) -> bool:
+        """Detect whether the saved recipe image embeds a ComfyUI workflow.
+
+        Extraction failures (missing file, corrupt image, unsupported format)
+        map to ``False`` and never propagate, mirroring the scanner's behavior.
+        """
+        if not image_path or not os.path.exists(image_path):
+            return False
+        try:
+            metadata = self._exif_utils._load_structured_metadata(image_path)
+            return bool(metadata.get("workflow"))
+        except Exception:
+            return False
 
     async def _build_widget_checkpoint_entry(
         self,
@@ -649,7 +729,9 @@ class RecipePersistenceService:
 
         for candidate in candidates:
             try:
-                checkpoint_info = await lookup(candidate)
+                checkpoint_info = await cast(
+                    Awaitable[Any], lookup(candidate)
+                )
             except Exception as exc:
                 self._logger.debug(
                     "Failed to lookup checkpoint %s while saving widget recipe: %s",

@@ -1,45 +1,62 @@
+import { app } from "../../scripts/app.js";
 import { createToggle, createArrowButton, createDragHandle, updateEntrySelection, createExpandButton, updateExpandButtonState, createLockButton, updateLockButtonState } from "./loras_widget_components.js";
 import { 
   parseLoraValue, 
   formatLoraValue, 
-  updateWidgetHeight, 
   shouldShowClipEntry, 
   syncClipStrengthIfCollapsed,
-  LORA_ENTRY_HEIGHT, 
-  HEADER_HEIGHT, 
-  CONTAINER_PADDING, 
-  EMPTY_CONTAINER_HEIGHT 
+  getAvailableLoras,
+  getAvailableLorasSync,
+  isLoraNameAvailable,
+  onLibraryChanged
 } from "./loras_widget_utils.js";
 import { initDrag, createContextMenu, initHeaderDrag, initReorderDrag, handleKeyboardNavigation } from "./loras_widget_events.js";
-import { forwardMiddleMouseToCanvas, forwardWheelToCanvas, enableListWheelScroll } from "./utils.js";
+import { forwardMiddleMouseToCanvas, forwardWheelToCanvas, enableListWheelScroll, updateDownstreamLoaders } from "./utils.js";
+import { applySelectionHighlight } from "./trigger_word_highlight.js";
+import { updateConnectedLoraInfoNodes } from "./lora_info.js";
 import { PreviewTooltip } from "./preview_tooltip.js";
 import { ensureLmStyles } from "./lm_styles_loader.js";
-import { getStrengthStepPreference, getLoraWidgetMaxVisibleLoras } from "./settings.js";
+import { getStrengthStepPreference } from "./settings.js";
 
 export function addLorasWidget(node, name, opts, callback) {
   ensureLmStyles();
 
-  // Create container for loras
-  const container = document.createElement("div");
-  container.className = "lm-loras-container";
+  // Create container for loras — search for an empty container already
+  // in the DOM first. During undo/redo in ComfyUI Vue render mode,
+  // WidgetDOM.vue reuses its component without re-calling
+  // mountWidgetElement(), so we must reuse the existing DOM element
+  // instead of creating an orphaned replacement.
+  let container = null;
+  let reuseExisting = false;
+  const existingContainers = document.querySelectorAll('.lm-loras-container');
+  for (const el of existingContainers) {
+    if (el.children.length === 0) {
+      container = el;
+      reuseExisting = true;
+      break;
+    }
+  }
 
-  forwardMiddleMouseToCanvas(container);
-  forwardWheelToCanvas(container);
+  if (!container) {
+    container = document.createElement("div");
+    container.className = "lm-loras-container";
+  }
+
+  if (!reuseExisting) {
+    forwardMiddleMouseToCanvas(container);
+    forwardWheelToCanvas(container);
+  }
 
   // Set initial height using CSS variables approach
   const defaultHeight = 200;
 
-  // In Vue/node-2.0 mode, cap the widget height so it shows at most N entries.
-  // This prevents content from driving the node size beyond the cap.
-  // canvas/legacy mode is unaffected.
-  if (typeof LiteGraph !== 'undefined' && LiteGraph.vueNodesMode) {
-    const maxLoras = getLoraWidgetMaxVisibleLoras();
-    const gap = 5; // flex gap from .lm-loras-container CSS
-    const maxH = CONTAINER_PADDING + HEADER_HEIGHT + maxLoras * LORA_ENTRY_HEIGHT + maxLoras * gap;
-    container.style.maxHeight = `${maxH}px`;
-    container.style.setProperty('--comfy-widget-max-height', `${maxH}px`);
-    // Window capture-phase hook: scroll the widget instead of zooming the canvas
-    // when the wheel is over a scrollable loras list.
+  // Set a fixed minimum height so the node has a reasonable starting size.
+  // Adding or removing LoRAs does NOT change the node size — the container
+  // scrolls when content exceeds the allocated space.
+  container.style.setProperty('--comfy-widget-min-height', `${defaultHeight}px`);
+
+  if (!reuseExisting && typeof LiteGraph !== 'undefined' && LiteGraph.vueNodesMode) {
+    container.classList.add('lm-vue-node');
     enableListWheelScroll(container);
   }
 
@@ -130,6 +147,48 @@ export function addLorasWidget(node, name, opts, callback) {
       emitSelectionChange(buildSelectionPayload(loraName));
     }
   };
+
+  // Mirror ComfyUI's setNodeHasErrors: has_errors is not an auto-tracked
+  // litegraph property, so the node:property:changed event must be fired
+  // manually for the Vue renderer to pick up the error state.
+  //
+  // The flag is applied asynchronously (setTimeout 0): applying it during
+  // LGraphNode.configure makes ComfyUI's errorNodeWidgets.onConfigure create
+  // a fallback UNKNOWN widget for every widgets_values entry, because it
+  // treats has_errors as "node definition missing".
+  let pendingErrorFlag = null;
+  let errorFlagTimer = null;
+
+  const flushErrorFlag = () => {
+    errorFlagTimer = null;
+    const hasMissing = pendingErrorFlag;
+    pendingErrorFlag = null;
+    if (typeof hasMissing !== 'boolean') {
+      return;
+    }
+    const oldValue = node.has_errors === true;
+    if (oldValue === hasMissing) {
+      return;
+    }
+    node.has_errors = hasMissing;
+    if (node.graph) {
+      node.graph.trigger('node:property:changed', {
+        type: 'node:property:changed',
+        nodeId: node.id,
+        property: 'has_errors',
+        oldValue,
+        newValue: hasMissing
+      });
+      node.graph.setDirtyCanvas(true, true);
+    }
+  };
+
+  const updateNodeErrorFlag = (hasMissing) => {
+    pendingErrorFlag = hasMissing;
+    if (errorFlagTimer === null) {
+      errorFlagTimer = setTimeout(flushErrorFlag, 0);
+    }
+  };
   
   // Add keyboard event listener to container
   container.addEventListener('keydown', (e) => {
@@ -210,9 +269,7 @@ export function addLorasWidget(node, name, opts, callback) {
       emptyMessage.textContent = "No LoRAs added";
       emptyMessage.className = "lm-lora-empty-state";
       container.appendChild(emptyMessage);
-      
-      // Set fixed height for empty state
-      updateWidgetHeight(container, EMPTY_CONTAINER_HEIGHT, defaultHeight, node);
+      updateNodeErrorFlag(false);
       return;
     }
 
@@ -259,12 +316,22 @@ export function addLorasWidget(node, name, opts, callback) {
     // Initialize the header drag functionality
     initHeaderDrag(header, widget, renderLoras);
 
-    // Track the total visible entries for height calculation
-    let totalVisibleEntries = lorasData.length;
-
     // Render each lora entry
+    const availableSet = getAvailableLorasSync();
+    if (!availableSet) {
+      // Availability data missing (workflow switch without node recreation,
+      // cache expiry): fetch it and re-render once it lands so missing cues
+      // and the node flag always resolve. Only re-render on success to avoid
+      // retry loops on failure.
+      getAvailableLoras().then((set) => {
+        if (set && !widget.__dragActive && container.isConnected) {
+          renderLoras(widget.value, widget);
+        }
+      });
+    }
     lorasData.forEach((loraData) => {
       const { name, strength, clipStrength, active } = loraData;
+      const missing = !isLoraNameAvailable(name, availableSet);
       
       // Determine expansion state using our helper function
       const isExpanded = shouldShowClipEntry(loraData);
@@ -278,6 +345,10 @@ export function addLorasWidget(node, name, opts, callback) {
       loraEl.dataset.loraName = name;
       loraEl.dataset.active = active ? "true" : "false";
       loraEl.dataset.locked = (loraData.locked || false) ? "true" : "false";
+
+      if (missing) {
+        loraEl.setAttribute("data-missing", "true");
+      }
 
       // Add click handler for selection
       loraEl.addEventListener('click', (e) => {
@@ -293,8 +364,8 @@ export function addLorasWidget(node, name, opts, callback) {
 
         e.preventDefault();
         e.stopPropagation();
-        selectLora(name);
-        container.focus(); // Focus container for keyboard events
+        selectLora(name === selectedLora ? null : name);
+        container.focus();
       });
 
       // Conditionally create drag handle OR lock button
@@ -370,6 +441,9 @@ export function addLorasWidget(node, name, opts, callback) {
       const nameEl = document.createElement("div");
       nameEl.textContent = name;
       nameEl.className = "lm-lora-name";
+      if (missing) {
+        nameEl.title = "LoRA not found in local library";
+      }
 
       // Move preview tooltip events to nameEl instead of loraEl
       let previewTimer = null; // Timer for delayed preview
@@ -383,7 +457,8 @@ export function addLorasWidget(node, name, opts, callback) {
 
       nameEl.addEventListener('mouseenter', (e) => {
         e.stopPropagation();
-        if (shouldSuppressPreview()) {
+        // Missing LoRAs have no preview data — skip the placeholder tooltip.
+        if (missing || shouldSuppressPreview()) {
           return;
         }
         previewTimer = setTimeout(async () => {
@@ -533,7 +608,6 @@ export function addLorasWidget(node, name, opts, callback) {
 
       // If expanded, show the clip entry
       if (isExpanded) {
-        totalVisibleEntries++;
         const clipEl = document.createElement("div");
         clipEl.className = "lm-lora-clip-entry";
 
@@ -541,10 +615,17 @@ export function addLorasWidget(node, name, opts, callback) {
         clipEl.dataset.loraName = name;
         clipEl.dataset.active = active ? "true" : "false";
 
+        if (missing) {
+          clipEl.setAttribute("data-missing", "true");
+        }
+
         // Create clip name display
         const clipNameEl = document.createElement("div");
         clipNameEl.textContent = "[clip] " + name;
         clipNameEl.className = "lm-lora-name";
+        if (missing) {
+          clipNameEl.title = "LoRA not found in local library";
+        }
 
         // Create clip strength control
         const clipStrengthControl = document.createElement("div");
@@ -657,16 +738,22 @@ export function addLorasWidget(node, name, opts, callback) {
       }
     });
     
-    // Calculate height based on number of loras and fixed sizes
-    const calculatedHeight = CONTAINER_PADDING + HEADER_HEIGHT + (Math.min(totalVisibleEntries, 12) * LORA_ENTRY_HEIGHT);
-    updateWidgetHeight(container, calculatedHeight, defaultHeight, node);
-
     // After all LoRA elements are created, apply selection state as the last step
     // This ensures the selection state is not overwritten
     container.querySelectorAll('.lm-lora-entry').forEach(entry => {
       const entryLoraName = entry.dataset.loraName;
       updateEntrySelection(entry, entryLoraName === selectedLora);
     });
+
+    // Flag the node when any active entry references a LoRA missing locally.
+    // Skipped while the availability set is not loaded (null) to avoid
+    // clearing or setting the flag based on incomplete information.
+    const hasMissingActive = availableSet
+      ? lorasData.some(
+          (lora) => lora.active && !isLoraNameAvailable(lora.name, availableSet)
+        )
+      : null;
+    updateNodeErrorFlag(hasMissingActive);
 
     const selectionExists = selectedLora
       ? currentLorasData.some((lora) => lora.name === selectedLora)
@@ -712,11 +799,17 @@ export function addLorasWidget(node, name, opts, callback) {
   // Create widget with new DOM Widget API
   const widget = node.addDOMWidget(name, "custom", container, {
     getValue: function() {
-      return widgetValue;
+      return widgetValue.map(lora => {
+        const entry = { ...lora };
+        entry.selected = lora.name === selectedLora;
+        return entry;
+      });
     },
     setValue: function(v) {
+      // Ensure v is an array; handle falsy, string, or object values safely
+      v = Array.isArray(v) ? v : [];
       // Remove duplicates by keeping the last occurrence of each lora name
-      const uniqueValue = (v || []).reduce((acc, lora) => {
+      const uniqueValue = v.reduce((acc, lora) => {
         // Remove any existing lora with the same name
         const filtered = acc.filter(l => l.name !== lora.name);
         // Add the current lora
@@ -739,7 +832,20 @@ export function addLorasWidget(node, name, opts, callback) {
       });
 
       widgetValue = updatedValue;
-      renderLoras(widgetValue, widget);
+
+      // Restore selection state when loading a saved workflow
+      if (!selectedLora) {
+        const selectedEntry = updatedValue.find(lora => lora.selected);
+        if (selectedEntry) {
+          selectedLora = selectedEntry.name;
+        }
+      }
+
+      // Skip DOM re-render during drag to preserve pointer capture and event listeners.
+      // The strength inputs are updated directly via the pointermove handler instead.
+      if (!widget.__dragActive) {
+        renderLoras(widgetValue, widget);
+      }
     },
     hideOnZoom: true,
     selectOn: ['click', 'focus']
@@ -749,12 +855,83 @@ export function addLorasWidget(node, name, opts, callback) {
   
   widget.callback = callback;
 
+  // Invalidate the availability cache and re-render when the local library
+  // changes (e.g. a LoRA is deleted from the Lora Manager UI) so missing
+  // cues and the node error flag update without waiting for the TTL.
+  const unsubscribeLibraryChange = onLibraryChanged(() => {
+    if (!widget.__dragActive && container.isConnected) {
+      renderLoras(widget.value, widget);
+    }
+  });
+
+  // Fetch the local library and re-render once available so missing entries
+  // get their visual cue and the node error flag as soon as the data lands.
+  getAvailableLoras().then(() => {
+    if (!widget.__dragActive && container.isConnected) {
+      renderLoras(widget.value, widget);
+    }
+  });
+
   widget.onRemove = () => {
-    container.remove(); 
+    unsubscribeLibraryChange();
+    if (errorFlagTimer !== null) {
+      clearTimeout(errorFlagTimer);
+      errorFlagTimer = null;
+      pendingErrorFlag = null;
+    }
+    while (container.firstChild) {
+      container.removeChild(container.firstChild);
+    }
     previewTooltip.cleanup();
-    // Remove keyboard event listener
     container.removeEventListener('keydown', handleKeyboardNavigation);
   };
 
   return { minWidth: 400, minHeight: defaultHeight, widget };
 }
+
+// Node classes whose declared "loras" input (LORAS widget type) also applies
+// trigger-word selection highlighting on lora selection.
+const LORAS_WIDGET_HIGHLIGHT_NODE_CLASSES = new Set([
+  "Lora Loader (LoraManager)",
+  "Lora Stacker (LoraManager)",
+  "Create Hook LoRA (LoraManager)",
+]);
+
+app.registerExtension({
+  name: "LoraManager.LorasWidget",
+
+  getCustomWidgets() {
+    return {
+      // Synchronous factory for the declared "loras" input (LORAS type) used by
+      // Lora Loader / Lora Stacker / Create Hook LoRA / WanVideo Lora Select /
+      // Lora Randomizer nodes. ComfyUI calls widget constructors synchronously,
+      // so this must NOT be async.
+      LORAS(node) {
+        const comfyClass = node?.comfyClass;
+        const isRandomizerNode = comfyClass === "Lora Randomizer (LoraManager)";
+
+        const opts = { isRandomizerNode };
+
+        if (isRandomizerNode || comfyClass === "WanVideo Lora Select (LoraManager)") {
+          opts.onSelectionChange = (selection) => {
+            updateConnectedLoraInfoNodes(node, selection);
+          };
+        } else if (LORAS_WIDGET_HIGHLIGHT_NODE_CLASSES.has(comfyClass)) {
+          opts.onSelectionChange = (selection) => {
+            applySelectionHighlight(node, selection);
+            updateConnectedLoraInfoNodes(node, selection);
+          };
+        }
+
+        // The randomizer has no per-node JS extension; update downstream
+        // loaders directly from the widget callback. The other nodes assign
+        // their own widget.callback in their onNodeCreated handlers.
+        const callback = isRandomizerNode
+          ? () => updateDownstreamLoaders(node)
+          : null;
+
+        return addLorasWidget(node, "loras", opts, callback);
+      },
+    };
+  },
+});

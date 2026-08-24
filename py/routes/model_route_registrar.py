@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from aiohttp import web
 
@@ -46,6 +46,7 @@ COMMON_ROUTE_DEFINITIONS: tuple[RouteDefinition, ...] = (
         "GET", "/api/lm/{prefix}/auto-organize-progress", "get_auto_organize_progress"
     ),
     RouteDefinition("GET", "/api/lm/{prefix}/top-tags", "get_top_tags"),
+    RouteDefinition("GET", "/api/lm/{prefix}/search-tags", "search_tags"),
     RouteDefinition("GET", "/api/lm/{prefix}/base-models", "get_base_models"),
     RouteDefinition("GET", "/api/lm/{prefix}/model-types", "get_model_types"),
     RouteDefinition("GET", "/api/lm/{prefix}/scan", "scan_models"),
@@ -173,15 +174,15 @@ class ModelRouteRegistrar:
                 handler_lookup[definition.handler_name],
             )
 
-    def add_route(self, method: str, path: str, handler: Callable) -> None:
+    def add_route(self, method: str, path: str, handler: Callable[..., Any]) -> None:
         self._bind_route(method, path, handler)
 
     def add_prefixed_route(
-        self, method: str, path_template: str, prefix: str, handler: Callable
+        self, method: str, path_template: str, prefix: str, handler: Callable[..., Any]
     ) -> None:
         self._bind_route(method, path_template.replace("{prefix}", prefix), handler)
 
-    def _bind_route(self, method: str, path: str, handler: Callable) -> None:
+    def _bind_route(self, method: str, path: str, handler: Callable[..., Any]) -> None:
         add_method_name = self._METHOD_MAP[method.upper()]
         add_method = getattr(self._app.router, add_method_name)
         add_method(path, handler)

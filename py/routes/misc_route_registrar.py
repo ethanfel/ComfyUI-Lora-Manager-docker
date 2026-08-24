@@ -5,7 +5,7 @@ miscellaneous endpoints share a consistent registration flow.
 """
 
 from dataclasses import dataclass
-from typing import Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from aiohttp import web
 
@@ -22,6 +22,8 @@ class RouteDefinition:
 MISC_ROUTE_DEFINITIONS: tuple[RouteDefinition, ...] = (
     RouteDefinition("GET", "/api/lm/settings", "get_settings"),
     RouteDefinition("POST", "/api/lm/settings", "update_settings"),
+    RouteDefinition("GET", "/api/lm/llm/models", "get_llm_models"),
+    RouteDefinition("GET", "/api/lm/llm/provider-models", "get_provider_models"),
     RouteDefinition("GET", "/api/lm/doctor/diagnostics", "get_doctor_diagnostics"),
     RouteDefinition("POST", "/api/lm/doctor/repair-cache", "repair_doctor_cache"),
     RouteDefinition("POST", "/api/lm/doctor/resolve-filename-conflicts", "resolve_doctor_filename_conflicts"),
@@ -30,6 +32,7 @@ MISC_ROUTE_DEFINITIONS: tuple[RouteDefinition, ...] = (
     RouteDefinition("GET", "/api/lm/settings/libraries", "get_settings_libraries"),
     RouteDefinition("POST", "/api/lm/settings/libraries/activate", "activate_library"),
     RouteDefinition("GET", "/api/lm/health-check", "health_check"),
+    RouteDefinition("GET", "/api/lm/init-status", "get_init_status"),
     RouteDefinition("GET", "/api/lm/supporters", "get_supporters"),
     RouteDefinition("GET", "/api/lm/wildcards/search", "search_wildcards"),
     RouteDefinition("POST", "/api/lm/wildcards/open-location", "open_wildcards_location"),
@@ -37,10 +40,12 @@ MISC_ROUTE_DEFINITIONS: tuple[RouteDefinition, ...] = (
     RouteDefinition("POST", "/api/lm/update-usage-stats", "update_usage_stats"),
     RouteDefinition("GET", "/api/lm/get-usage-stats", "get_usage_stats"),
     RouteDefinition("POST", "/api/lm/update-lora-code", "update_lora_code"),
+    RouteDefinition("GET", "/api/lm/update-lora-code", "get_update_lora_code"),
     RouteDefinition("GET", "/api/lm/trained-words", "get_trained_words"),
     RouteDefinition("GET", "/api/lm/model-example-files", "get_model_example_files"),
     RouteDefinition("POST", "/api/lm/register-nodes", "register_nodes"),
     RouteDefinition("POST", "/api/lm/update-node-widget", "update_node_widget"),
+    RouteDefinition("GET", "/api/lm/update-node-widget", "get_update_node_widget"),
     RouteDefinition("GET", "/api/lm/get-registry", "get_registry"),
     RouteDefinition("GET", "/api/lm/check-model-exists", "check_model_exists"),
     RouteDefinition("GET", "/api/lm/check-models-exist", "check_models_exist"),
@@ -94,6 +99,26 @@ MISC_ROUTE_DEFINITIONS: tuple[RouteDefinition, ...] = (
     RouteDefinition(
         "GET", "/api/lm/delete-model-version", "delete_model_version"
     ),
+    # Hugging Face model endpoints
+    RouteDefinition(
+        "GET", "/api/lm/hf-repo-files", "get_hf_repo_files"
+    ),
+    RouteDefinition(
+        "POST", "/api/lm/download-hf-model", "download_hf_model"
+    ),
+    RouteDefinition(
+        "POST", "/api/lm/set-hf-url", "set_hf_url"
+    ),
+    # Agent skill endpoints
+    RouteDefinition(
+        "GET", "/api/lm/agent/skills", "get_agent_skills"
+    ),
+    RouteDefinition(
+        "POST", "/api/lm/agent/execute/{skill_name}", "execute_agent_skill"
+    ),
+    RouteDefinition(
+        "POST", "/api/lm/agent/cancel", "cancel_agent_skill"
+    ),
 )
 
 
@@ -123,7 +148,7 @@ class MiscRouteRegistrar:
                 handler_lookup[definition.handler_name],
             )
 
-    def _bind(self, method: str, path: str, handler: Callable) -> None:
+    def _bind(self, method: str, path: str, handler: Callable[..., Any]) -> None:
         add_method_name = self._METHOD_MAP[method.upper()]
         add_method = getattr(self._app.router, add_method_name)
         add_method(path, handler)

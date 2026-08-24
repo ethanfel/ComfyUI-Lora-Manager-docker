@@ -1,12 +1,14 @@
 // Recipe Modal Component
 import { showToast, copyToClipboard, sendLoraToWorkflow, sendModelPathToWorkflow, openCivitaiByMetadata, stripLoraTags, sendPromptToWorkflow, sendGenParamsToWorkflow } from '../utils/uiHelpers.js';
+import { isModelWeightFile } from '../utils/modelFileTypes.js';
 import { translate } from '../utils/i18nHelpers.js';
 import { state } from '../state/index.js';
 import { setSessionItem, removeSessionItem, getStorageItem, setStorageItem } from '../utils/storageHelpers.js';
-import { fetchRecipeDetails, updateRecipeMetadata } from '../api/recipeApi.js';
+import { fetchRecipeDetails, updateRecipeMetadata, sendRecipeWorkflow } from '../api/recipeApi.js';
 import { downloadManager } from '../managers/DownloadManager.js';
 import { MODEL_TYPES } from '../api/apiConfig.js';
 import { openMediaViewer } from './shared/MediaViewer.js';
+import { showRecipeDeleteConfirmation } from './RecipeCard.js';
 import { renderCompactTags, setupTagTooltip } from './shared/utils.js';
 import { setupTagEditMode } from './shared/ModelTags.js';
 
@@ -54,6 +56,8 @@ class RecipeModal {
     constructor() {
         this.promptEditorState = {};
         this.recipeHydrationRequestId = 0;
+        this.navigationKeyHandler = null;
+        this.navigationInProgress = false;
         this.resetLocalEditState();
         this.init();
     }
@@ -119,6 +123,8 @@ class RecipeModal {
         this.setupCopyButtons();
         this.setupStripLoraToggle();
         this.setupPromptEditors();
+        this.setupNavigationControls();
+        this.setupDeleteControl();
         // Set up tooltip positioning handlers after DOM is ready
         document.addEventListener('DOMContentLoaded', () => {
             this.setupTooltipPositioning();
@@ -161,6 +167,119 @@ class RecipeModal {
                 }
             });
         });
+    }
+
+    setupNavigationControls() {
+        const prevBtn = document.getElementById('recipeNavPrevBtn');
+        const nextBtn = document.getElementById('recipeNavNextBtn');
+
+        if (prevBtn) {
+            prevBtn.addEventListener('click', () => this.handleDirectionalNavigation('prev'));
+        }
+        if (nextBtn) {
+            nextBtn.addEventListener('click', () => this.handleDirectionalNavigation('next'));
+        }
+        this.updateNavigationControls();
+    }
+
+    setupDeleteControl() {
+        const deleteBtn = document.getElementById('deleteRecipeBtn');
+        if (deleteBtn) {
+            deleteBtn.addEventListener('click', () => this.handleDeleteRecipe());
+        }
+    }
+
+    handleDeleteRecipe() {
+        if (!this.currentRecipe) return;
+        showRecipeDeleteConfirmation(this.currentRecipe);
+    }
+
+    shouldIgnoreNavigationKey(event) {
+        const target = event.target;
+        if (!target) return false;
+        const tagName = target.tagName ? target.tagName.toLowerCase() : '';
+        return target.isContentEditable || ['input', 'textarea', 'select', 'button'].includes(tagName);
+    }
+
+    updateNavigationControls() {
+        const modalElement = document.getElementById('recipeModal');
+        if (!modalElement) return;
+
+        const prevBtn = modalElement.querySelector('#recipeNavPrevBtn');
+        const nextBtn = modalElement.querySelector('#recipeNavNextBtn');
+        if (!prevBtn || !nextBtn) return;
+
+        const scroller = state.virtualScroller;
+        if (!scroller || typeof scroller.getNavigationState !== 'function') {
+            prevBtn.disabled = true;
+            nextBtn.disabled = true;
+            return;
+        }
+
+        const { hasPrev, hasNext } = scroller.getNavigationState(this.listFilePath || this.filePath || '');
+        prevBtn.disabled = this.navigationInProgress || !hasPrev;
+        nextBtn.disabled = this.navigationInProgress || !hasNext;
+    }
+
+    cleanupNavigationShortcuts() {
+        if (this.navigationKeyHandler) {
+            document.removeEventListener('keydown', this.navigationKeyHandler);
+            this.navigationKeyHandler = null;
+        }
+        this.navigationInProgress = false;
+    }
+
+    setupNavigationShortcuts() {
+        const modalElement = document.getElementById('recipeModal');
+        if (!modalElement) return;
+
+        this.cleanupNavigationShortcuts();
+
+        this.navigationKeyHandler = (event) => {
+            if (this.shouldIgnoreNavigationKey(event)) return;
+
+            if (event.key === 'ArrowLeft') {
+                event.preventDefault();
+                this.handleDirectionalNavigation('prev');
+            } else if (event.key === 'ArrowRight') {
+                event.preventDefault();
+                this.handleDirectionalNavigation('next');
+            } else if (event.key === 'Delete') {
+                event.preventDefault();
+                this.handleDeleteRecipe();
+            }
+        };
+
+        document.addEventListener('keydown', this.navigationKeyHandler);
+    }
+
+    async handleDirectionalNavigation(direction) {
+        if (this.navigationInProgress) return;
+
+        const scroller = state.virtualScroller;
+        const filePath = this.listFilePath || this.filePath || '';
+
+        if (!filePath || !scroller || typeof scroller.getAdjacentItemByFilePath !== 'function') {
+            return;
+        }
+
+        this.navigationInProgress = true;
+        this.updateNavigationControls();
+
+        try {
+            const adjacent = await scroller.getAdjacentItemByFilePath(filePath, direction);
+            if (!adjacent || !adjacent.item) {
+                const toastKey = direction === 'prev' ? 'toast.recipes.noPreviousRecipe' : 'toast.recipes.noNextRecipe';
+                const toastFallback = direction === 'prev' ? 'No previous recipe available' : 'No next recipe available';
+                showToast(toastKey, {}, 'info', toastFallback);
+                return;
+            }
+
+            this.showRecipeDetails(adjacent.item);
+        } finally {
+            this.navigationInProgress = false;
+            this.updateNavigationControls();
+        }
     }
 
     // Add tooltip positioning handler to ensure correct positioning of fixed tooltips
@@ -299,12 +418,22 @@ class RecipeModal {
 
         this.syncGenerationParams(hydratedRecipe.gen_params);
         this.syncResourcesSection(hydratedRecipe);
-        this.syncSourceUrlAction();
+        this.syncHeaderActions();
 
         // Show the modal
-        modalManager.showModal('recipeModal');
+        modalManager.showModal('recipeModal', null, null, () => this.cleanupNavigationShortcuts());
+        this.updateNavigationControls();
+        this.setupNavigationShortcuts();
 
         if (this.recipeId) {
+            // Fire-and-forget: record this open for the "Recently Opened"
+            // sort. Tracking must never disturb the modal, so failures are
+            // swallowed.
+            fetch(`/api/lm/recipe/${encodeURIComponent(this.recipeId)}/opened`, {
+                method: 'POST',
+                keepalive: true,
+            }).catch(() => {});
+
             const hydrationRequestId = ++this.recipeHydrationRequestId;
             const requestEditVersions = this.captureLocalEditVersions();
             this.hydrateRecipeDetails(
@@ -376,6 +505,10 @@ class RecipeModal {
                 nextRecipe.gen_params = preservedGenParams;
             }
 
+            if (fullRecipe.has_workflow !== undefined) {
+                nextRecipe.has_workflow = fullRecipe.has_workflow;
+            }
+
             if (fullRecipe.checkpoint !== undefined) {
                 nextRecipe.checkpoint = fullRecipe.checkpoint;
             } else {
@@ -432,7 +565,7 @@ class RecipeModal {
         } else {
             this.updateSourceUrlDisplay(this.currentRecipe.source_path || '');
         }
-        this.syncSourceUrlAction();
+        this.syncHeaderActions();
     }
 
     getPreviewMediaUrl(recipe = {}) {
@@ -500,28 +633,68 @@ class RecipeModal {
         }
     }
 
-    syncSourceUrlAction() {
+    syncHeaderActions() {
         const actionsContainer = document.getElementById('recipeHeaderActions');
         if (!actionsContainer) {
             return;
         }
 
-        actionsContainer.innerHTML = '';
+        actionsContainer.querySelectorAll('.recipe-source-url-btn').forEach(btn => btn.remove());
+
+        // Keep the delete button as the last (rightmost) header action;
+        // insertBefore with null falls back to appendChild if it is missing.
+        const deleteBtn = document.getElementById('deleteRecipeBtn');
+
+        if (this.currentRecipe?.has_workflow === true) {
+            const workflowBtn = document.createElement('button');
+            workflowBtn.className = 'recipe-source-url-btn';
+            workflowBtn.id = 'sendWorkflowBtn';
+            workflowBtn.title = 'Send Workflow to ComfyUI';
+            workflowBtn.innerHTML = '<i class="fas fa-project-diagram"></i> Send Workflow to ComfyUI';
+            workflowBtn.addEventListener('click', () => {
+                this.sendWorkflowToComfyUI();
+            });
+            actionsContainer.insertBefore(workflowBtn, deleteBtn);
+        }
 
         const sourcePath = this.currentRecipe?.source_path || '';
         const isValidUrl = sourcePath.startsWith('http://') || sourcePath.startsWith('https://');
-        if (!isValidUrl) {
+        if (isValidUrl) {
+            const btn = document.createElement('button');
+            btn.className = 'recipe-source-url-btn';
+            btn.title = sourcePath;
+            btn.innerHTML = '<i class="fas fa-globe"></i> Open Source URL';
+            btn.addEventListener('click', () => {
+                window.open(sourcePath, '_blank');
+            });
+            actionsContainer.insertBefore(btn, deleteBtn);
+        }
+    }
+
+    async sendWorkflowToComfyUI() {
+        if (!this.recipeId) {
             return;
         }
 
-        const btn = document.createElement('button');
-        btn.className = 'recipe-source-url-btn';
-        btn.title = sourcePath;
-        btn.innerHTML = '<i class="fas fa-globe"></i> Open Source URL';
-        btn.addEventListener('click', () => {
-            window.open(sourcePath, '_blank');
-        });
-        actionsContainer.appendChild(btn);
+        try {
+            const result = await sendRecipeWorkflow(this.recipeId);
+            if (result?.success) {
+                showToast('toast.recipes.workflowSent', {}, 'success', 'Workflow sent to ComfyUI');
+                return;
+            }
+
+            const error = result?.error || '';
+            if (error === 'Standalone Mode Active') {
+                showToast('toast.general.cannotInteractStandalone', {}, 'warning', 'Cannot interact with ComfyUI in standalone mode');
+            } else if (error === 'no_workflow') {
+                showToast('toast.recipes.workflowNoWorkflow', {}, 'warning', 'No embedded workflow found in this recipe');
+            } else {
+                showToast('toast.recipes.workflowSendFailed', { error }, 'error', `Failed to send workflow to ComfyUI: ${error}`);
+            }
+        } catch (error) {
+            console.error('Failed to send workflow to ComfyUI:', error);
+            showToast('toast.recipes.workflowSendFailed', { error: error.message }, 'error', `Failed to send workflow to ComfyUI: ${error.message}`);
+        }
     }
 
     syncTagsDisplay(tags) {
@@ -710,7 +883,7 @@ class RecipeModal {
                 }
             }
 
-            lorasCountElement.innerHTML = `<i class="fas fa-layer-group"></i> ${totalCount} LoRAs ${statusHTML}`;
+            lorasCountElement.innerHTML = `<i class="fas fa-layer-group"></i> ${totalCount} ${totalCount === 1 ? 'LoRA' : 'LoRAs'} ${statusHTML}`;
 
             setTimeout(() => {
                 const viewRecipeLorasBtn = document.getElementById('viewRecipeLorasBtn');
@@ -757,7 +930,7 @@ class RecipeModal {
                     `<video class="thumbnail-video" autoplay loop muted playsinline>
                         <source src="${lora.preview_url}" type="video/mp4">
                      </video>` :
-                    `<img src="${lora.preview_url || '/loras_static/images/no-preview.png'}" alt="LoRA preview">`;
+                    `<img src="${lora.preview_url || '/loras_static/images/no-preview.png'}" alt="LoRA preview" onerror="this.onerror=null; this.src='/loras_static/images/no-preview.png'">`;
 
                 let loraItemClass = 'recipe-lora-item';
                 if (existsLocally) {
@@ -1144,7 +1317,7 @@ class RecipeModal {
                         // Update source URL in the UI
                         this.commitField('source_path');
                         this.updateSourceUrlDisplay(newSourceUrl, { forceInputSync: true });
-                        this.syncSourceUrlAction();
+                        this.syncHeaderActions();
 
                         // Update the current recipe object
                         this.currentRecipe.source_path = newSourceUrl;
@@ -1171,11 +1344,10 @@ class RecipeModal {
         });
     }
 
-    // Setup copy buttons for prompts and recipe syntax
+    // Setup copy buttons for prompts and send recipe button
     setupCopyButtons() {
         const copyPromptBtn = document.getElementById('copyPromptBtn');
         const copyNegativePromptBtn = document.getElementById('copyNegativePromptBtn');
-        const copyRecipeSyntaxBtn = document.getElementById('copyRecipeSyntaxBtn');
         const sendRecipeBtn = document.getElementById('sendRecipeBtn');
 
         if (copyPromptBtn) {
@@ -1195,13 +1367,6 @@ class RecipeModal {
                     negativePromptText = RecipeModal.stripLoraTags(negativePromptText);
                 }
                 this.copyToClipboard(negativePromptText, 'Negative prompt copied to clipboard');
-            });
-        }
-
-        if (copyRecipeSyntaxBtn) {
-            copyRecipeSyntaxBtn.addEventListener('click', () => {
-                // Use backend API to get recipe syntax
-                this.fetchAndCopyRecipeSyntax();
             });
         }
 
@@ -1288,35 +1453,6 @@ class RecipeModal {
             setStorageItem('strip_lora_on_copy', checked);
             state.global.settings.strip_lora_on_copy = checked;
         });
-    }
-
-    // Fetch recipe syntax from backend and copy to clipboard
-    async fetchAndCopyRecipeSyntax() {
-        if (!this.recipeId) {
-            showToast('toast.recipes.noRecipeId', {}, 'error');
-            return;
-        }
-
-        try {
-            // Fetch recipe syntax from backend
-            const response = await fetch(`/api/lm/recipe/${this.recipeId}/syntax`);
-
-            if (!response.ok) {
-                throw new Error(`Failed to get recipe syntax: ${response.statusText}`);
-            }
-
-            const data = await response.json();
-
-            if (data.success && data.syntax) {
-                // Use the centralized copyToClipboard utility function
-                await copyToClipboard(data.syntax, 'Recipe syntax copied to clipboard');
-            } else {
-                throw new Error(data.error || 'No syntax returned from server');
-            }
-        } catch (error) {
-            console.error('Error fetching recipe syntax:', error);
-            showToast('toast.recipes.copyFailed', { message: error.message }, 'error');
-        }
     }
 
     // Helper method to copy text to clipboard
@@ -1412,7 +1548,7 @@ class RecipeModal {
                 loras: validLoras.map(lora => {
                     const civitaiInfo = lora.civitaiInfo;
                     const modelFile = civitaiInfo.files ?
-                        civitaiInfo.files.find(file => file.type === 'Model') : null;
+                        civitaiInfo.files.find(file => isModelWeightFile(file.type)) : null;
 
                     return {
                         // Basic lora info
@@ -1421,6 +1557,7 @@ class RecipeModal {
                         strength: lora.strength || 1.0,
 
                         // Model identifiers
+                        modelId: lora.modelId || lora.model_id || civitaiInfo.modelId,
                         hash: modelFile?.hashes?.SHA256?.toLowerCase() || lora.hash,
                         id: civitaiInfo.id || lora.modelVersionId,
 
@@ -1606,7 +1743,7 @@ class RecipeModal {
             <video class="thumbnail-video" autoplay loop muted playsinline>
                 <source src="${previewUrl}" type="video/mp4">
             </video>
-        ` : `<img src="${previewUrl}" alt="Checkpoint preview">`;
+        ` : `<img src="${previewUrl}" alt="Checkpoint preview" onerror="this.onerror=null; this.src='/loras_static/images/no-preview.png'">`;
 
         const badge = existsLocally ? `
             <div class="local-badge">

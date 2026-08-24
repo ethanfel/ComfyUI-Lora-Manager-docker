@@ -1,8 +1,13 @@
+from __future__ import annotations
+
 import asyncio
+import json
 import os
 import sqlite3
+import time
+from collections.abc import Iterator
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Optional
 from types import MethodType
 
 import pytest
@@ -11,6 +16,11 @@ from py.services import model_scanner
 from py.services.model_cache import ModelCache
 from py.services.model_hash_index import ModelHashIndex
 from py.services.model_scanner import CacheBuildResult, ModelScanner
+from py.services.pending_delete_service import (
+    PENDING_DELETE_DIR_NAME,
+    PENDING_DELETE_TTL_SECONDS,
+    _reset_pending_delete_service,
+)
 from py.services.persistent_model_cache import PersistentModelCache, DEFAULT_LICENSE_FLAGS
 from py.utils.civitai_utils import build_license_flags
 from py.utils.models import BaseModelMetadata
@@ -18,9 +28,9 @@ from py.utils.models import BaseModelMetadata
 
 class RecordingWebSocketManager:
     def __init__(self) -> None:
-        self.payloads: List[dict] = []
+        self.payloads: List[Dict[str, Any]] = []
 
-    async def broadcast_init_progress(self, payload: dict) -> None:
+    async def broadcast_init_progress(self, payload: Dict[str, Any]) -> None:
         self.payloads.append(payload)
 
 
@@ -48,7 +58,7 @@ class DummyScanner(ModelScanner):
         *,
         hash_index: ModelHashIndex | None = None,
         excluded_models: List[str] | None = None,
-    ) -> dict:
+    ) -> Optional[Dict[str, Any]]:
         hash_index = hash_index or self._hash_index
         excluded_models = excluded_models if excluded_models is not None else self._excluded_models
 
@@ -102,6 +112,27 @@ def stub_register_service(monkeypatch):
         return None
 
     monkeypatch.setattr(model_scanner.ServiceRegistry, "register_service", noop)
+
+
+@pytest.fixture(autouse=True)
+def _reset_pending_delete_singleton() -> Iterator[None]:
+    """Reset the pending-delete singleton before and after each test."""
+    _reset_pending_delete_service()
+    yield
+    _reset_pending_delete_service()
+
+
+@pytest.fixture(autouse=True)
+def _stub_service_registry_getters(monkeypatch) -> None:
+    """Prevent pending-delete purge enumeration from building real scanners."""
+    from py.services.service_registry import ServiceRegistry
+
+    async def _none(*_args, **_kwargs) -> None:
+        return None
+
+    monkeypatch.setattr(ServiceRegistry, "get_lora_scanner", _none)
+    monkeypatch.setattr(ServiceRegistry, "get_checkpoint_scanner", _none)
+    monkeypatch.setattr(ServiceRegistry, "get_embedding_scanner", _none)
 
 
 def _create_files(root: Path) -> tuple[Path, Path, Path]:
@@ -483,7 +514,7 @@ async def test_version_index_tracks_version_ids(tmp_path: Path):
     assert cache.version_index[202]['file_path'] == second_path
 
     assert await scanner.check_model_version_exists(101) is True
-    assert await scanner.check_model_version_exists('202') is True
+    assert await scanner.check_model_version_exists('202') is True  # pyright: ignore[reportArgumentType]
     assert await scanner.check_model_version_exists(999) is False
 
     removed = await scanner._batch_update_cache_for_deleted_models([first_path])
@@ -530,7 +561,7 @@ async def test_reconcile_cache_applies_adjust_cached_entry(tmp_path: Path):
 
     applied: List[str] = []
 
-    def _adjust(self, entry: dict) -> dict:
+    def _adjust(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         applied.append(entry["file_path"])
         entry["custom_field"] = "adjusted"
         return entry
@@ -607,7 +638,7 @@ async def test_reconcile_cache_removes_duplicate_alias_when_same_real_file_seen_
     scanner = MultiRootDummyScanner([loras_root, extra_root])
     await scanner._initialize_cache()
 
-    duplicate_entry = {
+    duplicate_entry: Dict[str, Any] = {
         "file_path": _normalize_path(extra_root / "one.txt"),
         "folder": "",
         "sha256": "hash-one",
@@ -667,3 +698,623 @@ async def test_log_duplicate_filename_summary_silent_when_no_duplicates(tmp_path
     # No warning should be logged when there are no duplicates
     for record in caplog.records:
         assert "Duplicate filename conflict detected" not in record.message
+
+
+# ── _cache_entries_differ ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "a_tags, b_tags, expect_differ",
+    [
+        (["alpha", "beta"], ["beta", "alpha"], False),  # order-insensitive
+        (["alpha"], ["alpha", "beta"], True),            # count differs
+        ([], ["alpha"], True),
+        (None, [], False),                               # None ≈ []
+        (["alpha"], None, True),
+    ],
+)
+def test_cache_entries_differ_tags(a_tags, b_tags, expect_differ):
+    base = {"file_path": "/m/a.safetensors", "model_name": "A", "size": 1}
+    entry_a = {**base, "tags": a_tags}
+    entry_b = {**base, "tags": b_tags}
+    assert ModelScanner._cache_entries_differ(entry_a, entry_b) == expect_differ
+
+
+def test_cache_entries_differ_identical():
+    entry = {
+        "file_path": "/m/a.safetensors", "model_name": "A", "size": 1,
+        "tags": ["x"], "civitai": {"id": 1}, "notes": "hi",
+    }
+    assert ModelScanner._cache_entries_differ(entry, dict(entry)) is False
+
+
+def test_cache_entries_differ_field_changed():
+    a = {"file_path": "/m/a.safetensors", "model_name": "A", "size": 1}
+    b = {**a, "model_name": "B"}
+    assert ModelScanner._cache_entries_differ(a, b) is True
+
+
+def test_cache_entries_differ_extra_key():
+    a = {"file_path": "/m/a.safetensors", "model_name": "A"}
+    b = {**a, "extra_field": "value"}
+    assert ModelScanner._cache_entries_differ(a, b) is True
+
+
+# ── sync_cache_from_metadata ─────────────────────────────────────────
+
+
+def _make_cache_entry(**overrides) -> Dict[str, Any]:
+    entry = {
+        "file_path": "/m/a.safetensors",
+        "model_name": "TestModel",
+        "file_name": "a",
+        "folder": "",
+        "size": 100,
+        "modified": 10.0,
+        "sha256": "abc123",
+        "base_model": "SD1.5",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "old note",
+        "usage_tips": "{}",
+        "metadata_source": None,
+        "exclude": False,
+        "db_checked": False,
+        "last_checked_at": 0.0,
+        "tags": ["alpha"],
+        "civitai": {"id": 111, "modelId": 222, "name": "v1"},
+        "civitai_deleted": False,
+        "skip_metadata_refresh": False,
+        "hf_url": "",
+        "license_flags": 113,
+        "hash_status": "completed",
+    }
+    entry.update(overrides)
+    return entry
+
+
+@pytest.mark.asyncio
+async def test_sync_cache_no_change(tmp_path: Path):
+    """When metadata matches the cache entry, return False and mutate nothing."""
+    scanner = DummyScanner(tmp_path)
+    entry = _make_cache_entry()
+    scanner._cache = ModelCache(
+        raw_data=[dict(entry)], folders=[], name_display_mode="model_name"
+    )
+    await scanner._cache.resort()
+    scanner._tags_count = {"alpha": 1}
+    scanner._hash_index.add_entry("abc123", "/m/a.safetensors")
+
+    # metadata_dict that would produce the identical cache entry
+    metadata_dict = {
+        "file_path": "/m/a.safetensors",
+        "model_name": "TestModel",
+        "file_name": "a",
+        "folder": "",
+        "size": 100,
+        "modified": 10.0,
+        "sha256": "abc123",
+        "base_model": "SD1.5",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "old note",
+        "usage_tips": "{}",
+        "tags": ["alpha"],
+        "civitai": {"id": 111, "modelId": 222, "name": "v1"},
+        "hf_url": "",
+    }
+
+    changed = await scanner.sync_cache_from_metadata(
+        "/m/a.safetensors", metadata_dict
+    )
+    assert changed is False
+    # Verify cache was NOT mutated
+    cached = await scanner.get_cached_data()
+    assert cached.raw_data[0]["notes"] == "old note"
+
+
+@pytest.mark.asyncio
+async def test_sync_cache_in_place_update(tmp_path: Path):
+    """When metadata differs, update the cache entry in-place."""
+    scanner = DummyScanner(tmp_path)
+    entry = _make_cache_entry(notes="old note", tags=["alpha"], model_name="OldName")
+    scanner._cache = ModelCache(
+        raw_data=[dict(entry)], folders=[], name_display_mode="model_name"
+    )
+    await scanner._cache.resort()
+    scanner._tags_count = {"alpha": 1}
+    scanner._hash_index.add_entry("abc123", "/m/a.safetensors")
+
+    # Capture the exact dict object in raw_data before sync
+    original_entry_ref = scanner._cache.raw_data[0]
+
+    metadata_dict = {
+        "file_path": "/m/a.safetensors",
+        "model_name": "NewName",
+        "file_name": "a",
+        "folder": "",
+        "size": 100,
+        "modified": 10.0,
+        "sha256": "abc123",
+        "base_model": "SD1.5",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "new note",
+        "usage_tips": "{}",
+        "tags": ["beta", "gamma"],
+        "civitai": {"id": 111, "modelId": 222, "name": "v1"},
+        "hf_url": "",
+    }
+
+    changed = await scanner.sync_cache_from_metadata(
+        "/m/a.safetensors", metadata_dict
+    )
+    assert changed is True
+
+    cached = await scanner.get_cached_data()
+    updated = cached.raw_data[0]
+    # In-place: the same dict object persisted in raw_data
+    assert updated is original_entry_ref
+    assert updated["notes"] == "new note"
+    assert updated["model_name"] == "NewName"
+    assert sorted(updated["tags"]) == ["beta", "gamma"]
+    # Tag counts updated incrementally
+    assert scanner._tags_count.get("alpha", 0) == 0
+    assert scanner._tags_count.get("beta", 0) == 1
+    assert scanner._tags_count.get("gamma", 0) == 1
+
+
+@pytest.mark.asyncio
+async def test_sync_cache_not_in_cache_delegates(tmp_path: Path):
+    """When the file_path is not in the cache at all, fall back to full update."""
+    scanner = DummyScanner(tmp_path)
+    scanner._cache = ModelCache(raw_data=[], folders=[], name_display_mode="model_name")
+    await scanner._cache.resort()
+
+    metadata_dict = {
+        "file_path": "/m/b.safetensors",
+        "model_name": "BrandNew",
+        "file_name": "b",
+        "folder": "",
+        "size": 200,
+        "modified": 20.0,
+        "sha256": "def456",
+        "base_model": "SDXL",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "",
+        "usage_tips": "{}",
+        "tags": [],
+        "civitai": {},
+        "hf_url": "",
+    }
+
+    changed = await scanner.sync_cache_from_metadata(
+        "/m/b.safetensors", metadata_dict
+    )
+    assert changed is True
+    cached = await scanner.get_cached_data()
+    assert len(cached.raw_data) == 1
+    assert cached.raw_data[0]["model_name"] == "BrandNew"
+
+
+@pytest.mark.asyncio
+async def test_sync_cache_conditional_resort_skipped(tmp_path: Path, monkeypatch):
+    """When only non-sort-key fields change, resort() is NOT called."""
+    scanner = DummyScanner(tmp_path)
+    entry = _make_cache_entry(notes="old note", model_name="SameName")
+    scanner._cache = ModelCache(
+        raw_data=[dict(entry)], folders=[], name_display_mode="model_name"
+    )
+    await scanner._cache.resort()
+    scanner._cache._last_sort = ("name", "asc", None)  # name sort is active
+    scanner._tags_count = {"alpha": 1}
+    scanner._hash_index.add_entry("abc123", "/m/a.safetensors")
+
+    # Track resort calls
+    resort_called = False
+    original_resort = scanner._cache.resort
+
+    async def tracking_resort():
+        nonlocal resort_called
+        resort_called = True
+        await original_resort()
+
+    monkeypatch.setattr(scanner._cache, "resort", tracking_resort)
+
+    metadata_dict = {
+        "file_path": "/m/a.safetensors",
+        "model_name": "SameName",  # unchanged — no resort needed
+        "file_name": "a",
+        "folder": "",
+        "size": 100,
+        "modified": 10.0,
+        "sha256": "abc123",
+        "base_model": "SD1.5",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "updated note",  # changed, but not sort-relevant
+        "usage_tips": "{}",
+        "tags": ["alpha"],
+        "civitai": {"id": 111, "modelId": 222, "name": "v1"},
+        "hf_url": "",
+    }
+
+    changed = await scanner.sync_cache_from_metadata(
+        "/m/a.safetensors", metadata_dict
+    )
+    assert changed is True
+    assert resort_called is False
+
+
+@pytest.mark.asyncio
+async def test_sync_cache_conditional_resort_triggered(tmp_path: Path, monkeypatch):
+    """When the sort-key field changes, resort() IS called."""
+    scanner = DummyScanner(tmp_path)
+    entry = _make_cache_entry(model_name="OldName")
+    scanner._cache = ModelCache(
+        raw_data=[dict(entry)], folders=[], name_display_mode="model_name"
+    )
+    await scanner._cache.resort()
+    scanner._cache._last_sort = ("name", "asc", None)
+    scanner._tags_count = {"alpha": 1}
+    scanner._hash_index.add_entry("abc123", "/m/a.safetensors")
+
+    resort_calls = 0
+    original_resort = scanner._cache.resort
+
+    async def tracking_resort():
+        nonlocal resort_calls
+        resort_calls += 1
+        await original_resort()
+
+    monkeypatch.setattr(scanner._cache, "resort", tracking_resort)
+
+    metadata_dict = {
+        "file_path": "/m/a.safetensors",
+        "model_name": "NewName",  # changed — should trigger resort
+        "file_name": "a",
+        "folder": "",
+        "size": 100,
+        "modified": 10.0,
+        "sha256": "abc123",
+        "base_model": "SD1.5",
+        "preview_url": "",
+        "preview_nsfw_level": 0,
+        "from_civitai": True,
+        "favorite": False,
+        "notes": "old note",
+        "usage_tips": "{}",
+        "tags": ["alpha"],
+        "civitai": {"id": 111, "modelId": 222, "name": "v1"},
+        "hf_url": "",
+    }
+
+    changed = await scanner.sync_cache_from_metadata(
+        "/m/a.safetensors", metadata_dict
+    )
+    assert changed is True
+    assert resort_calls == 1
+
+
+# ── bulk_delete_models staging (undo-delete feature, todo 3) ───────────────
+
+
+def _make_bulk_scanner(root: Path, file_paths: List[Path]) -> DummyScanner:
+    """Build a DummyScanner whose cache mirrors the given files on disk."""
+    scanner = DummyScanner(root)
+    raw_data = []
+    for path in file_paths:
+        name = os.path.splitext(os.path.basename(path))[0]
+        raw_data.append(
+            {
+                "file_path": str(path),
+                "folder": "",
+                "sha256": f"hash-{name}",
+                "tags": ["alpha"] if "one" in name else ["beta"],
+                "model_name": name,
+                "file_name": name,
+                "size": 1,
+                "modified": 1.0,
+            }
+        )
+    scanner._cache = ModelCache(
+        raw_data=raw_data, folders=[], name_display_mode="model_name"
+    )
+    scanner._tags_count = {"alpha": 1, "beta": 1}
+    for entry in raw_data:
+        scanner._hash_index.add_entry(entry["sha256"], entry["file_path"])
+    return scanner
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_stages_two_files_into_single_batch(tmp_path: Path):
+    """Two-file bulk delete -> one merged batch id with both files staged."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    first = root / "one.txt"
+    first.write_text("one", encoding="utf-8")
+    second = root / "two.txt"
+    second.write_text("two", encoding="utf-8")
+    scanner = _make_bulk_scanner(root, [first, second])
+
+    result = await scanner.bulk_delete_models([str(first), str(second)])
+
+    assert result["success"] is True
+    assert result["status"] == "success"
+    assert result["total_deleted"] == 2
+    assert result["cache_updated"] is True
+
+    # ONE batch id, no batch_ids array, and both files staged in its dir.
+    assert "batch_id" in result
+    assert "batch_ids" not in result
+    batch_id = result["batch_id"]
+    assert batch_id is not None
+    staging = root / PENDING_DELETE_DIR_NAME
+    batch_dir = staging / batch_id
+    assert batch_dir.is_dir()
+    assert (batch_dir / "one.txt").read_bytes() == b"one"
+    assert (batch_dir / "two.txt").read_bytes() == b"two"
+
+    # Loser batch dirs are removed by the merge - exactly one batch remains.
+    batch_dirs = [d.name for d in staging.iterdir() if d.is_dir()]
+    assert batch_dirs == [batch_id]
+
+    # The manifest carries the winner's cache snapshot for later undo.
+    manifest = json.loads((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert manifest["model_snapshot"]["file_path"] == str(first)
+
+    # Originals gone; cache entries removed.
+    assert not first.exists()
+    assert not second.exists()
+    cached_paths = {item["file_path"] for item in scanner._cache.raw_data}
+    assert str(first) not in cached_paths
+    assert str(second) not in cached_paths
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_merged_manifest_reanchors_expiry(tmp_path: Path):
+    """Merged manifest expires_at is re-anchored to now+TTL at merge time."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    first = root / "one.txt"
+    first.write_text("one", encoding="utf-8")
+    second = root / "two.txt"
+    second.write_text("two", encoding="utf-8")
+    scanner = _make_bulk_scanner(root, [first, second])
+
+    before = int(time.time())
+    result = await scanner.bulk_delete_models([str(first), str(second)])
+    after = int(time.time())
+
+    batch_dir = root / PENDING_DELETE_DIR_NAME / result["batch_id"]
+    manifest = json.loads((batch_dir / "manifest.json").read_text(encoding="utf-8"))
+    # expires_at >= staging completion time + TTL (re-anchor assertion).
+    assert manifest["expires_at"] >= after + PENDING_DELETE_TTL_SECONDS - 2
+    assert manifest["expires_at"] >= before + PENDING_DELETE_TTL_SECONDS
+    # Both files are entries of the merged manifest.
+    assert len(manifest["entries"]) == 2
+    assert (batch_dir / "one.txt").exists()
+    assert (batch_dir / "two.txt").exists()
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_merge_failure_falls_back_to_batch_ids(
+    tmp_path: Path, monkeypatch
+):
+    """Merge move failure -> batch_ids array of the intact constituent batches."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    first = root / "one.txt"
+    first.write_text("one", encoding="utf-8")
+    second = root / "two.txt"
+    second.write_text("two", encoding="utf-8")
+    scanner = _make_bulk_scanner(root, [first, second])
+
+    real_rename = os.rename
+    fail_next = {"enabled": True}
+
+    def flaky_merge_rename(src: str, dst: str) -> None:
+        # Fail only when moving between batch dirs (merge), never during
+        # staging (src is then the original path, outside .lm-pending-delete).
+        if (
+            fail_next["enabled"]
+            and PENDING_DELETE_DIR_NAME in src
+            and PENDING_DELETE_DIR_NAME in dst
+        ):
+            fail_next["enabled"] = False
+            raise OSError("simulated merge failure")
+        return real_rename(src, dst)
+
+    monkeypatch.setattr(
+        "py.services.pending_delete_service.os.rename", flaky_merge_rename
+    )
+
+    result = await scanner.bulk_delete_models([str(first), str(second)])
+
+    assert result["success"] is True
+    assert result["total_deleted"] == 2
+    # No single batch id - the constituent ids are returned instead.
+    assert "batch_id" not in result
+    assert "batch_ids" in result
+    assert len(result["batch_ids"]) == 2
+
+    # Both constituent batches are intact: dirs + manifests + staged files.
+    staging = root / PENDING_DELETE_DIR_NAME
+    batch_dirs = sorted(d.name for d in staging.iterdir() if d.is_dir())
+    assert sorted(result["batch_ids"]) == batch_dirs
+    for bid in result["batch_ids"]:
+        batch_dir = staging / bid
+        assert (batch_dir / "manifest.json").exists()
+    staged_files = [
+        f.name
+        for bid in result["batch_ids"]
+        for f in (staging / bid).iterdir()
+        if f.is_file() and f.name != "manifest.json"
+    ]
+    assert sorted(staged_files) == ["one.txt", "two.txt"]
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_cancelled_after_one_staged_batch_present(
+    tmp_path: Path, monkeypatch
+):
+    """Cancelled mid-way -> status='cancelled' AND the staged subset undoable."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    first = root / "one.txt"
+    first.write_text("one", encoding="utf-8")
+    second = root / "two.txt"
+    second.write_text("two", encoding="utf-8")
+    scanner = _make_bulk_scanner(root, [first, second])
+
+    real_rename = os.rename
+    rename_count = {"n": 0}
+
+    def cancelling_rename(src: str, dst: str) -> None:
+        rename_count["n"] += 1
+        result = real_rename(src, dst)
+        # After the first file is staged, request cancellation so the loop
+        # stops before the second file is processed.
+        if rename_count["n"] == 1:
+            scanner.cancel_task()
+        return result
+
+    monkeypatch.setattr(
+        "py.services.pending_delete_service.os.rename", cancelling_rename
+    )
+
+    result = await scanner.bulk_delete_models([str(first), str(second)])
+
+    assert result["success"] is True
+    assert result["status"] == "cancelled"
+    assert result["total_deleted"] == 1
+    assert "batch_id" in result
+    assert result["batch_id"] is not None
+    assert "batch_ids" not in result
+
+    # The staged subset is merged into one undoable batch.
+    batch_dir = root / PENDING_DELETE_DIR_NAME / result["batch_id"]
+    assert batch_dir.is_dir()
+    assert (batch_dir / "one.txt").read_bytes() == b"one"
+    assert not first.exists()
+    # The second file was never touched.
+    assert second.exists()
+
+
+@pytest.mark.asyncio
+async def test_get_all_folders_enumerates_empty_directories_live(tmp_path: Path):
+    _create_files(tmp_path)
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "empty" / "nested_empty").mkdir()
+    (tmp_path / ".hidden").mkdir()
+    (tmp_path / "visible" / ".hidden_child").mkdir(parents=True)
+    (tmp_path / PENDING_DELETE_DIR_NAME).mkdir()
+
+    scanner = DummyScanner(tmp_path)
+    await scanner._initialize_cache()
+    cache = await scanner.get_cached_data()
+
+    all_folders = await scanner.get_all_folders()
+
+    # cache.folders stays models-only
+    assert sorted(cache.folders) == ["", "nested"]
+
+    # Live enumeration includes empty directories and stays a superset
+    assert set(cache.folders) <= set(all_folders)
+    assert "empty" in all_folders
+    assert "empty/nested_empty" in all_folders
+    assert "visible" in all_folders
+
+    # Hidden directories (any segment starting with '.') are excluded
+    assert not any(
+        segment.startswith(".")
+        for folder in all_folders
+        for segment in folder.split("/")
+    )
+    # The pending-delete staging dir is excluded
+    assert PENDING_DELETE_DIR_NAME not in all_folders
+
+
+@pytest.mark.asyncio
+async def test_get_all_folders_uses_ttl_cache(tmp_path: Path, monkeypatch):
+    _create_files(tmp_path)
+    scanner = DummyScanner(tmp_path)
+    await scanner._initialize_cache()
+
+    walk_calls = {"n": 0}
+    real_walk = os.walk
+
+    def counting_walk(*args, **kwargs):
+        walk_calls["n"] += 1
+        return real_walk(*args, **kwargs)
+
+    monkeypatch.setattr(model_scanner.os, "walk", counting_walk)
+
+    first = await scanner.get_all_folders()
+    assert walk_calls["n"] == 1
+
+    # Second call within the TTL reuses the cached result without re-walking
+    second = await scanner.get_all_folders()
+    assert walk_calls["n"] == 1
+    assert second == first
+
+    # After the TTL expires the roots are walked again
+    real_monotonic = time.monotonic
+    monkeypatch.setattr(
+        model_scanner.time,
+        "monotonic",
+        lambda: real_monotonic() + model_scanner.ALL_FOLDERS_CACHE_TTL_SECONDS + 1,
+    )
+    third = await scanner.get_all_folders()
+    assert walk_calls["n"] == 2
+    assert third == first
+
+
+@pytest.mark.asyncio
+async def test_get_all_folders_invalidated_after_move(tmp_path: Path):
+    first, _, _ = _create_files(tmp_path)
+    scanner = DummyScanner(tmp_path)
+
+    await scanner._initialize_cache()
+
+    cached = await scanner.get_all_folders()
+    assert scanner._all_folders_ttl_cache is not None
+    assert "new/deep" not in cached
+
+    # Simulate a move: target directories exist on disk (created by
+    # os.makedirs in move_model) and the cache entry is relocated.
+    (tmp_path / "new" / "deep").mkdir(parents=True)
+    original = _normalize_path(first)
+    new_path = _normalize_path(tmp_path / "new" / "deep" / "one.txt")
+    moved_metadata = {
+        "file_path": new_path,
+        "file_name": "one",
+        "model_name": "one",
+        "sha256": "hash-one",
+        "tags": ["alpha"],
+        "size": 1,
+        "modified": 1.0,
+    }
+
+    await scanner.update_single_model_cache(original, new_path, moved_metadata)
+
+    # The TTL cache was invalidated by the move
+    assert scanner._all_folders_ttl_cache is None
+
+    all_folders = await scanner.get_all_folders()
+    cache = await scanner.get_cached_data()
+    assert sorted(cache.folders) == ["nested", "new/deep"]
+    assert "new" in all_folders
+    assert "new/deep" in all_folders
+    assert set(cache.folders) <= set(all_folders)

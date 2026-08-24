@@ -6,6 +6,7 @@ on:
       - main
     paths:
       - "Dockerfile"
+      - "pyproject.toml"
       - "requirements.txt"
       - "standalone.py"
       - "py/**"
@@ -45,7 +46,7 @@ jobs:
         run: |
           VERSION=$(grep -m1 'version' pyproject.toml | sed 's/.*"\(.*\)".*/\1/')
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          SHORT_SHA=${GITHUB_SHA::7}
+          SHORT_SHA=$(git rev-parse --short=7 HEAD)
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Build and push

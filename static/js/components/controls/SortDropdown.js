@@ -19,6 +19,44 @@ const SORT_GROUP_SELECTOR = '.sort-dropdown-group';
 const ACTIVE_GROUP_SELECTOR = '.sort-dropdown-group.active, .dropdown-group.active';
 
 /**
+ * Apply a sort value to the page's native sort <select>, keeping the Random
+ * option's value in sync when the persisted value carries a seed
+ * (e.g. "random:abc123"). Must be used instead of assigning
+ * sortSelect.value directly whenever the value may be a seeded random
+ * sort, otherwise the native select has no matching option.
+ * @param {string} sortValue - Sort value like "name:asc" or "random:<seed>"
+ */
+export function applySortToSelect(sortValue) {
+    const sortSelect = document.getElementById('sortSelect');
+    if (!sortSelect) return;
+    const randomOpt = sortSelect.querySelector('option[value="random"], option[value^="random:"]');
+    if (randomOpt) {
+        randomOpt.value = String(sortValue).startsWith('random') ? sortValue : 'random';
+    }
+    sortSelect.value = sortValue;
+}
+
+/**
+ * Generate a fresh seeded random sort value ("random:<seed>") and keep the
+ * native <select> in sync so its value matches the persisted sort string and
+ * the dropdown shows the selected label.
+ * @returns {string} The new sort value, e.g. "random:abc123xyz"
+ */
+export function randomizeSortValue() {
+    const seed = Math.random().toString(36).slice(2, 12);
+    const value = `random:${seed}`;
+    const sortSelect = document.getElementById('sortSelect');
+    if (sortSelect) {
+        const randomOpt = sortSelect.querySelector('option[value="random"], option[value^="random:"]');
+        if (randomOpt) {
+            randomOpt.value = value;
+        }
+        sortSelect.value = value;
+    }
+    return value;
+}
+
+/**
  * Initialize a decoupled sort dropdown around a native <select>.
  * Idempotent: safe to call more than once on the same element.
  * @param {HTMLSelectElement|null} select
@@ -96,7 +134,16 @@ export function initSortDropdown(select) {
     };
 
     const choose = (value) => {
-        if (select.value === value) return;
+        if (select.value === value) {
+            // Re-picking the already-selected option is normally a no-op,
+            // matching native <select> behavior. The seeded Random sort is
+            // the exception: clicking it again should reshuffle, so let the
+            // change handler (PageControls) generate a fresh seed.
+            if (String(value).startsWith('random')) {
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+            return;
+        }
         select.value = value;
         select.dispatchEvent(new Event('change', { bubbles: true }));
     };
@@ -277,9 +324,10 @@ export function initSortDropdown(select) {
     }
 
     // Rebuild the menu when <option>s change (VLM adds/removes a temporary
-    // option at runtime).
+    // option at runtime, and the seeded Random sort option gets a new value
+    // attribute each time it is picked).
     const observer = new MutationObserver(() => buildMenu());
-    observer.observe(select, { childList: true });
+    observer.observe(select, { childList: true, subtree: true, attributes: true, attributeFilter: ['value'] });
 
     buildMenu();
     group.dataset.sortReady = '1';

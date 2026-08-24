@@ -182,6 +182,10 @@ function isEarlyAccessActive(version) {
     }
 }
 
+function isPaidPermanent(version) {
+    return version && version.isPaid === true;
+}
+
 function isDownloadAllowed(version) {
     if (!version.usageControl) {
         return true;
@@ -342,6 +346,7 @@ function resolveUpdateAvailability(record, baseModel, currentVersionId) {
     const strategy = state?.global?.settings?.version_grouping;
     const sameBaseMode = strategy === DISPLAY_FILTER_MODES.SAME_BASE;
     const hideEarlyAccess = state?.global?.settings?.hide_early_access_updates;
+    const hidePaid = state?.global?.settings?.hide_paid_updates;
 
     if (!sameBaseMode) {
         return Boolean(record?.hasUpdate);
@@ -388,6 +393,9 @@ function resolveUpdateAvailability(record, baseModel, currentVersionId) {
         if (hideEarlyAccess && isEarlyAccessActive(version)) {
             return false;
         }
+        if (hidePaid && isPaidPermanent(version)) {
+            return false;
+        }
         if (!isDownloadAllowed(version)) {
             return false;
         }
@@ -432,7 +440,7 @@ function renderMediaMarkup(version) {
 
     return `
         <div class="version-media">
-            <img src="${escapeHtml(version.previewUrl)}" alt="${escapeHtml(version.name || 'preview')}">
+            <img src="${escapeHtml(version.previewUrl)}" alt="${escapeHtml(version.name || 'preview')}" onerror="this.onerror=null; this.src='/loras_static/images/no-preview.png'">
         </div>
     `;
 }
@@ -469,6 +477,7 @@ function renderRow(version, options) {
     const downloadedBadgeLabel = translate('modals.model.versions.badges.downloaded', {}, 'Downloaded');
     const newerBadgeLabel = translate('modals.model.versions.badges.newer', {}, 'Newer Version');
     const earlyAccessBadgeLabel = translate('modals.model.versions.badges.earlyAccess', {}, 'Early Access');
+    const paidBadgeLabel = translate('modals.model.versions.badges.paid', {}, 'Paid');
     const ignoredBadgeLabel = translate('modals.model.versions.badges.ignored', {}, 'Ignored');
     const versionName = version.name || translate('modals.model.versions.labels.unnamed', {}, 'Untitled Version');
 
@@ -522,6 +531,16 @@ function renderRow(version, options) {
         }));
     }
 
+    if (isPaidPermanent(version)) {
+        badges.push(buildBadge(paidBadgeLabel, 'paid', {
+            title: translate(
+                'modals.model.versions.badges.paidTooltip',
+                {},
+                'This version requires payment to download'
+            ),
+        }));
+    }
+
     if (!isDownloadAllowed(version)) {
         const onSiteOnlyBadgeLabel = translate('modals.model.versions.badges.onSiteOnly', {}, 'On-Site Only');
         badges.push(buildBadge(onSiteOnlyBadgeLabel, 'info', {
@@ -554,15 +573,29 @@ function renderRow(version, options) {
     );
 
     const actions = [];
-    if (!version.isInLibrary) {
-        const canDownload = isDownloadAllowed(version);
-        const downloadIcon = isEarlyAccess ? '<i class="fas fa-bolt"></i> ' : '';
+    const canDownload = isDownloadAllowed(version);
+    const downloadIcon = isEarlyAccess ? '<i class="fas fa-bolt"></i> ' : '';
+    // The Download button always fetches the default (primary) file, keeping
+    // the single-file experience for users who don't care about variants.
+    // In-library versions hide it: their default file already exists locally,
+    // and multi-file versions use the "N files" badge below for the remaining
+    // variants instead (#1058). fileCount is null for records persisted before
+    // the field existed; default to the single-file behavior in that case.
+    const fileCount = typeof version.fileCount === 'number' ? version.fileCount : null;
+    const showDownload = !version.isInLibrary;
+    if (showDownload) {
         let downloadTitle;
         if (!canDownload) {
             downloadTitle = translate(
                 'modals.model.versions.actions.downloadNotAllowedTooltip',
                 {},
                 'This version is only available for on-site generation on Civitai'
+            );
+        } else if (isPaidPermanent(version)) {
+            downloadTitle = translate(
+                'modals.model.versions.actions.downloadPaidTooltip',
+                {},
+                'Download this paid version from Civitai'
             );
         } else if (isEarlyAccess) {
             downloadTitle = translate(
@@ -587,7 +620,16 @@ function renderRow(version, options) {
                 disabled: !canDownload,
             }
         ));
-    } else if (version.filePath) {
+    }
+
+    // Multi-file versions get an explicit entry into the download modal's
+    // file-selection step, mirroring the version step's file badge (#1058).
+    const fileSelectionBadge = fileCount !== null && fileCount > 1
+        ? `<button type="button" class="file-select-badge" data-version-files title="${escapeHtml(translate('modals.model.versions.actions.downloadChooseFilesTooltip', {}, 'Choose which files to download'))}">
+             <i class="fas fa-th-list"></i> ${fileCount} ${escapeHtml(translate('modals.download.fileSelection.files', {}, 'files'))} <i class="fas fa-chevron-right badge-arrow"></i>
+           </button>`
+        : '';
+    if (version.isInLibrary && version.filePath) {
         actions.push(buildActionButton(
             deleteLabel,
             'version-action-danger',
@@ -664,6 +706,7 @@ function renderRow(version, options) {
                 <div class="version-badges">${badges.join('')}</div>
                 <div class="version-meta">
                     ${buildMetaMarkup(version, { showEarlyAccess: true })}
+                    ${fileSelectionBadge}
                 </div>
             </div>
             <div class="version-actions">
@@ -948,6 +991,26 @@ export function initVersionsTab({
         }
         if (!modelId) {
             renderErrorState(container, translate('modals.model.versions.missingModelId', {}, 'This model is missing a Civitai model id.'));
+            return;
+        }
+        // HF group keys (e.g. "hf:user/repo") are not real CivitAI model IDs —
+        // skip the remote API call and show a helpful message instead.
+        const isHfGroupKey = typeof modelId === 'string' && modelId.startsWith('hf:');
+        if (isHfGroupKey) {
+            controller.isLoading = false;
+            controller.hasLoaded = true;
+            controller.record = null;
+            const hfMsg = translate(
+                'modals.model.versions.hfGroupInfo',
+                {},
+                'This is a HuggingFace model group. Open the library to see all versions in the grid.'
+            );
+            container.innerHTML = `
+                <div class="versions-empty-state">
+                    <i class="fas fa-info-circle"></i>
+                    <p>${escapeHtml(hfMsg)}</p>
+                </div>
+            `;
             return;
         }
         if (controller.hasLoaded && !forceRefresh) {
@@ -1287,15 +1350,41 @@ export function initVersionsTab({
         });
     }
 
-    async function resolveDownloadPathFromCurrentVersion() {
+    function getCurrentInLibraryVersion() {
         if (!normalizedCurrentVersionId || !controller.record?.versions) {
             return null;
         }
-
-        const currentVersion = controller.record.versions.find(
+        return controller.record.versions.find(
             v => v.versionId === normalizedCurrentVersionId && v.isInLibrary && v.filePath
-        );
-        if (!currentVersion?.filePath) {
+        ) || null;
+    }
+
+    function getDownloadPathTemplate() {
+        try {
+            const singularType = modelType.replace(/s$/, '');
+            const templates = state.global?.settings?.download_path_templates;
+            return (templates && templates[singularType]) || '';
+        } catch (error) {
+            return '';
+        }
+    }
+
+    function shouldResolveTemplatePath(targetVersion, pathInfo) {
+        if (!getDownloadPathTemplate() || !pathInfo?.modelRoot) {
+            return false;
+        }
+        const currentVersion = getCurrentInLibraryVersion();
+        const currentBase = normalizeBaseModelName(currentVersion?.baseModel);
+        const targetBase = normalizeBaseModelName(targetVersion?.baseModel);
+        if (!currentBase || !targetBase || currentBase === targetBase) {
+            return false;
+        }
+        return true;
+    }
+
+    async function resolveDownloadPathFromCurrentVersion() {
+        const currentVersion = getCurrentInLibraryVersion();
+        if (!currentVersion) {
             return null;
         }
 
@@ -1351,11 +1440,17 @@ export function initVersionsTab({
         button.disabled = true;
 
         try {
+            // The Download button only renders for versions not in the library
+            // and always fetches the default (primary) file. Multi-file
+            // variants are reached through the "N files" badge instead.
             const pathInfo = await resolveDownloadPathFromCurrentVersion();
+            const resolveTemplatePath = shouldResolveTemplatePath(version, pathInfo);
             const success = await downloadManager.downloadVersionWithDefaults(modelType, modelId, versionId, {
                 versionName: version.name || `#${version.versionId}`,
                 modelRoot: pathInfo?.modelRoot || '',
-                targetFolder: pathInfo?.targetFolder || '',
+                targetFolder: resolveTemplatePath ? '' : (pathInfo?.targetFolder || ''),
+                useDefaultPaths: resolveTemplatePath ? true : null,
+                useSaveDirAsRoot: resolveTemplatePath,
             });
 
             if (success) {
@@ -1423,6 +1518,21 @@ export function initVersionsTab({
                 default:
                     break;
             }
+            return;
+        }
+
+        // File-selection badge: enter the download modal's file step directly.
+        // Must run before the row-click navigation below (rows are clickable).
+        const filesBadge = event.target.closest('[data-version-files]');
+        if (filesBadge) {
+            event.preventDefault();
+            event.stopPropagation();
+            const row = filesBadge.closest('.model-version-row');
+            if (!row) {
+                return;
+            }
+            const versionId = Number(row.dataset.versionId);
+            await downloadManager.openFileSelectionForVersion(modelType, modelId, versionId);
             return;
         }
 

@@ -2,6 +2,16 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import { renderTemplate } from '../utils/domFixtures.js';
 
+const { appCoreInitializeMock } = vi.hoisted(() => ({
+  appCoreInitializeMock: vi.fn(),
+}));
+
+vi.mock('../../../static/js/core.js', () => ({
+  appCore: {
+    initialize: appCoreInitializeMock,
+  },
+}));
+
 const COMMUNITY_MODULE = new URL(
   '../../../static/js/community_creations.js',
   import.meta.url,
@@ -154,6 +164,7 @@ describe('Community Creations model manager', () => {
     holdFirstVisibility = false;
     releaseFirstVisibility = null;
     visibilityRequestOrder = [];
+    appCoreInitializeMock.mockResolvedValue(undefined);
     globalThis.IntersectionObserver = MockIntersectionObserver;
     globalThis.WebSocket = MockWebSocket;
     window.scrollTo = vi.fn();
@@ -215,6 +226,7 @@ describe('Community Creations model manager', () => {
     window.fetch = fetchMock;
 
     await import(COMMUNITY_MODULE);
+    expect(appCoreInitializeMock).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
         expect.stringContaining('/api/lm/community-images/by-models'),

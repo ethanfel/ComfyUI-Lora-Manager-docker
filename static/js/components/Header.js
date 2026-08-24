@@ -14,12 +14,13 @@ import { renderSupporters } from '../services/supportersService.js';
 export class HeaderManager {
     constructor() {
       this.currentPage = this.detectCurrentPage();
-      initPageState(this.currentPage);
       this.searchManager = null;
       this.filterManager = null;
+      const hasPageManagers = !['statistics', 'community'].includes(this.currentPage);
       
       // Initialize appropriate managers based on current page
-      if (this.currentPage !== 'statistics') {
+      if (hasPageManagers) {
+        initPageState(this.currentPage);
         this.initializeManagers();
       }
       
@@ -33,6 +34,7 @@ export class HeaderManager {
       if (path.includes('/checkpoints')) return 'checkpoints';
       if (path.includes('/embeddings')) return 'embeddings';
       if (path.includes('/statistics')) return 'statistics';
+      if (path.includes('/community')) return 'community';
       if (path.includes('/loras')) return 'loras';
       return 'unknown';
     }
@@ -339,12 +341,12 @@ export class HeaderManager {
       const searchInput = headerSearch?.querySelector('#searchInput');
       const searchButtons = headerSearch?.querySelectorAll('button');
 
-      if (this.currentPage === 'statistics' && headerSearch) {
+      if (['statistics', 'community'].includes(this.currentPage) && headerSearch) {
         headerSearch.classList.add('disabled');
         if (searchInput) {
           searchInput.disabled = true;
           // Use i18nHelpers to update placeholder
-          updateElementAttribute(searchInput, 'placeholder', 'header.search.notAvailable', {}, 'Search not available on statistics page');
+          updateElementAttribute(searchInput, 'placeholder', 'header.search.notAvailable', {}, 'Search not available on this page');
         }
         searchButtons?.forEach(btn => btn.disabled = true);
       } else if (headerSearch) {

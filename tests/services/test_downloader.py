@@ -9,7 +9,7 @@ from py.services.downloader import Downloader
 
 
 class FakeStream:
-    def __init__(self, chunks: Sequence[Sequence] | Sequence[bytes]):
+    def __init__(self, chunks: Sequence[bytes | tuple[bytes, float]]):
         self._chunks = list(chunks)
 
     async def read(self, _chunk_size: int) -> bytes:
@@ -25,6 +25,7 @@ class FakeStream:
             payload = item[0]
             delay = item[1]
 
+        assert isinstance(payload, bytes)
         await asyncio.sleep(delay)
         return payload
 
@@ -84,16 +85,23 @@ def _build_downloader(responses, *, max_retries=0):
     downloader.max_retries = max_retries
     downloader.base_delay = 0
     fake_session = FakeSession(responses)
-    downloader._session = fake_session
+    downloader._session = fake_session  # pyright: ignore[reportAttributeAccessIssue]
     downloader._session_created_at = datetime.now()
     downloader._proxy_url = None
     async def _noop_create_session():
-        downloader._session = fake_session
+        downloader._session = fake_session  # pyright: ignore[reportAttributeAccessIssue]
         downloader._session_created_at = datetime.now()
         downloader._proxy_url = None
 
     downloader._create_session = _noop_create_session  # type: ignore[assignment]
     return downloader
+
+
+def _session(downloader: Downloader) -> FakeSession:
+    """Return the injected fake session, asserting the runtime invariant."""
+    session = downloader._session
+    assert isinstance(session, FakeSession)
+    return session
 
 
 @pytest.mark.asyncio
@@ -196,7 +204,7 @@ async def test_download_file_recovers_from_stall(tmp_path):
 
     assert success is True
     assert Path(result_path).read_bytes() == payload
-    assert downloader._session._get_calls == 2
+    assert _session(downloader)._get_calls == 2
     assert not Path(str(target_path) + ".part").exists()
 
 
@@ -224,8 +232,8 @@ async def test_download_file_resumes_after_incomplete_integrity_check(tmp_path):
 
     assert success is True
     assert Path(result_path).read_bytes() == b"abcdef"
-    assert downloader._session._get_calls == 2
-    assert downloader._session.requests[1]["headers"]["Range"] == "bytes=3-"
+    assert _session(downloader)._get_calls == 2
+    assert _session(downloader).requests[1]["headers"]["Range"] == "bytes=3-"
     assert not Path(str(target_path) + ".part").exists()
 
 
@@ -261,6 +269,31 @@ async def test_download_file_retries_redirected_url_when_range_not_honored(tmp_p
     assert success is True
     assert Path(result_path).read_bytes() == b"abcdef"
     assert first_response.released is True
-    assert downloader._session.requests[0]["headers"]["Range"] == "bytes=3-"
-    assert downloader._session.requests[1]["url"] == redirected_url
-    assert downloader._session.requests[1]["headers"]["Range"] == "bytes=3-"
+    assert _session(downloader).requests[0]["headers"]["Range"] == "bytes=3-"
+    assert _session(downloader).requests[1]["url"] == redirected_url
+    assert _session(downloader).requests[1]["headers"]["Range"] == "bytes=3-"
+
+
+@pytest.mark.asyncio
+async def test_disable_netrc_auth_ignores_netrc_file(tmp_path, monkeypatch):
+    """netrc entries must not be auto-applied as BasicAuth.
+
+    Regression test for "Cannot combine AUTHORIZATION header with AUTH
+    argument or credentials encoded in URL": with trust_env=True aiohttp
+    loads credentials from netrc files, which conflict with the explicit
+    Authorization: Bearer header used for CivitAI requests.
+    """
+    import aiohttp
+
+    from py.services.downloader import _disable_netrc_auth
+
+    netrc_file = tmp_path / ".netrc"
+    netrc_file.write_text("machine civitai.red\nlogin user\npassword pass\n")
+    monkeypatch.setenv("NETRC", str(netrc_file))
+
+    async with aiohttp.ClientSession(trust_env=True) as session:
+        # Premise: a plain session would pick up the netrc credentials.
+        assert session._get_netrc_auth("civitai.red") is not None
+
+        _disable_netrc_auth(session)
+        assert session._get_netrc_auth("civitai.red") is None

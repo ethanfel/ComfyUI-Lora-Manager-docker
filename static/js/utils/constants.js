@@ -66,13 +66,30 @@ export const BASE_MODELS = {
     HUNYUAN_VIDEO: "Hunyuan Video",
     // Other models
     ANIMA: "Anima",
+    ACE_AUDIO: "ACE Audio",
+    BOOGU: "Boogu",
     ERNIE: "Ernie",
     ERNIE_TURBO: "Ernie Turbo",
-    NUCLEUS: "Nucleus",
+    GROK: "Grok",
+    HAPPY_HORSE: "HappyHorse",
+    HIDREAM_O1: "HiDream-O1",
+    IDEOGRAM_4_0: "Ideogram 4.0",
+    KREA_2: "Krea 2",
+    LENS: "Lens",
     PONY_V7: "Pony V7",
+    MAI: "MAI",
+    NUCLEUS: "Nucleus",
+    QWEN_2: "Qwen 2",
+    UPSCALER: "Upscaler",
+    WAN_IMAGE_2_7: "Wan Image 2.7",
+    WAN_VIDEO_2_7: "Wan Video 2.7",
     // Default
     UNKNOWN: "Other"
 };
+
+// Custom dataTransfer MIME type tagging internal model-card drags (move-to-folder).
+// Preview-drop handlers use it to ignore drags that did not come from the OS file system.
+export const MODEL_CARD_DRAG_MIME_TYPE = 'application/x-lora-manager-model-card';
 
 // Model sub-type display names (new canonical field: sub_type)
 export const MODEL_SUBTYPE_DISPLAY_NAMES = {
@@ -142,22 +159,6 @@ export const BASE_MODEL_ABBREVIATIONS = {
     [BASE_MODELS.FLUX_2_KLEIN_4B]: 'FK4',
     [BASE_MODELS.FLUX_2_KLEIN_4B_BASE]: 'FK4B',
 
-    // Other diffusion models
-    [BASE_MODELS.AURAFLOW]: 'AF',
-    [BASE_MODELS.CHROMA]: 'CHR',
-    [BASE_MODELS.PIXART_A]: 'PXA',
-    [BASE_MODELS.PIXART_E]: 'PXE',
-    [BASE_MODELS.HUNYUAN_1]: 'HY',
-    [BASE_MODELS.LUMINA]: 'L',
-    [BASE_MODELS.KOLORS]: 'KLR',
-    [BASE_MODELS.NOOBAI]: 'NAI',
-    [BASE_MODELS.ILLUSTRIOUS]: 'IL',
-    [BASE_MODELS.PONY]: 'PONY',
-    [BASE_MODELS.HIDREAM]: 'HID',
-    [BASE_MODELS.QWEN]: 'QWEN',
-    [BASE_MODELS.ZIMAGE_TURBO]: 'ZIT',
-    [BASE_MODELS.ZIMAGE_BASE]: 'ZIB',
-
     // Video models
     [BASE_MODELS.SVD]: 'SVD',
     [BASE_MODELS.LTXV]: 'LTXV',
@@ -194,9 +195,22 @@ export const BASE_MODEL_ABBREVIATIONS = {
     [BASE_MODELS.ZIMAGE_TURBO]: 'ZIT',
     [BASE_MODELS.ZIMAGE_BASE]: 'ZIB',
     [BASE_MODELS.ANIMA]: 'ANI',
+    [BASE_MODELS.ACE_AUDIO]: 'ACE',
+    [BASE_MODELS.BOOGU]: 'BOOG',
     [BASE_MODELS.ERNIE]: 'ERNI',
     [BASE_MODELS.ERNIE_TURBO]: 'ETRB',
+    [BASE_MODELS.GROK]: 'GROK',
+    [BASE_MODELS.HAPPY_HORSE]: 'HAPP',
+    [BASE_MODELS.HIDREAM_O1]: 'HIO1',
+    [BASE_MODELS.IDEOGRAM_4_0]: 'ID40',
+    [BASE_MODELS.KREA_2]: 'KR2',
+    [BASE_MODELS.LENS]: 'LENS',
+    [BASE_MODELS.MAI]: 'MAI',
     [BASE_MODELS.NUCLEUS]: 'NUCL',
+    [BASE_MODELS.QWEN_2]: 'QWN2',
+    [BASE_MODELS.UPSCALER]: 'UPSC',
+    [BASE_MODELS.WAN_IMAGE_2_7]: 'WI27',
+    [BASE_MODELS.WAN_VIDEO_2_7]: 'WAN',
 
     // Default
     [BASE_MODELS.UNKNOWN]: 'OTH'
@@ -323,6 +337,7 @@ export const PATH_TEMPLATE_PLACEHOLDERS = [
 export const DEFAULT_PATH_TEMPLATES = {
     lora: '{base_model}/{first_tag}',
     checkpoint: '{base_model}',
+    unet: '{base_model}',
     embedding: '{first_tag}'
 };
 
@@ -359,21 +374,24 @@ export function getMatureBlurThreshold(settings = {}) {
 export const NODE_TYPES = {
     LORA_LOADER: 1,
     LORA_STACKER: 2,
-    WAN_VIDEO_LORA_SELECT: 3
+    WAN_VIDEO_LORA_SELECT: 3,
+    HOOK_LORA: 4
 };
 
 // Node type names to IDs mapping
 export const NODE_TYPE_NAMES = {
     "Lora Loader (LoraManager)": NODE_TYPES.LORA_LOADER,
     "Lora Stacker (LoraManager)": NODE_TYPES.LORA_STACKER,
-    "WanVideo Lora Select (LoraManager)": NODE_TYPES.WAN_VIDEO_LORA_SELECT
+    "WanVideo Lora Select (LoraManager)": NODE_TYPES.WAN_VIDEO_LORA_SELECT,
+    "Create Hook LoRA (LoraManager)": NODE_TYPES.HOOK_LORA
 };
 
 // Node type icons
 export const NODE_TYPE_ICONS = {
     [NODE_TYPES.LORA_LOADER]: "fas fa-l",
     [NODE_TYPES.LORA_STACKER]: "fas fa-s",
-    [NODE_TYPES.WAN_VIDEO_LORA_SELECT]: "fas fa-w"
+    [NODE_TYPES.WAN_VIDEO_LORA_SELECT]: "fas fa-w",
+    [NODE_TYPES.HOOK_LORA]: "fas fa-h"
 };
 
 // Default ComfyUI node color when bgcolor is null
@@ -392,7 +410,9 @@ export const BASE_MODEL_CATEGORIES = {
         BASE_MODELS.WAN_VIDEO_14B_I2V_480P, BASE_MODELS.WAN_VIDEO_14B_I2V_720P,
         BASE_MODELS.WAN_VIDEO_2_2_TI2V_5B, BASE_MODELS.WAN_VIDEO_2_2_T2V_A14B,
         BASE_MODELS.WAN_VIDEO_2_2_I2V_A14B, BASE_MODELS.WAN_VIDEO_2_5_T2V,
-        BASE_MODELS.WAN_VIDEO_2_5_I2V
+        BASE_MODELS.WAN_VIDEO_2_5_I2V,
+        BASE_MODELS.HAPPY_HORSE,
+        BASE_MODELS.WAN_IMAGE_2_7, BASE_MODELS.WAN_VIDEO_2_7
     ],
     'Flux Models': [BASE_MODELS.FLUX_1_D, BASE_MODELS.FLUX_1_S, BASE_MODELS.FLUX_1_KONTEXT, BASE_MODELS.FLUX_1_KREA, BASE_MODELS.FLUX_2_D, BASE_MODELS.FLUX_2_KLEIN_9B, BASE_MODELS.FLUX_2_KLEIN_9B_BASE, BASE_MODELS.FLUX_2_KLEIN_4B, BASE_MODELS.FLUX_2_KLEIN_4B_BASE],
     'Other Models': [
@@ -400,7 +420,10 @@ export const BASE_MODEL_CATEGORIES = {
         BASE_MODELS.QWEN, BASE_MODELS.AURAFLOW, BASE_MODELS.CHROMA, BASE_MODELS.ZIMAGE_TURBO, BASE_MODELS.ZIMAGE_BASE,
         BASE_MODELS.PIXART_A, BASE_MODELS.PIXART_E, BASE_MODELS.HUNYUAN_1,
         BASE_MODELS.LUMINA, BASE_MODELS.KOLORS, BASE_MODELS.NOOBAI, BASE_MODELS.ANIMA,
-        BASE_MODELS.ERNIE, BASE_MODELS.ERNIE_TURBO, BASE_MODELS.NUCLEUS,
+        BASE_MODELS.ACE_AUDIO, BASE_MODELS.BOOGU, BASE_MODELS.ERNIE, BASE_MODELS.ERNIE_TURBO,
+        BASE_MODELS.GROK, BASE_MODELS.HIDREAM_O1, BASE_MODELS.IDEOGRAM_4_0,
+        BASE_MODELS.LENS, BASE_MODELS.MAI, BASE_MODELS.NUCLEUS,
+        BASE_MODELS.QWEN_2, BASE_MODELS.KREA_2, BASE_MODELS.UPSCALER,
         BASE_MODELS.UNKNOWN
     ]
 };

@@ -83,7 +83,12 @@ def ensure_library_root_exists(library_name: Optional[str] = None) -> str:
 
 
 def get_model_folder(model_hash: str, library_name: Optional[str] = None) -> str:
-    """Return the folder path for a model's example images."""
+    """Return the folder path for a model's example images.
+
+    Multi-library ↔ single-library consolidation is handled once at startup by
+    ``ExampleImagesMigration._consolidate_library_folders`` — this function is a
+    pure path computation on the hot path (no directory scans).
+    """
 
     if not model_hash:
         return ""

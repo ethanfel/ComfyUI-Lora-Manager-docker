@@ -49,10 +49,6 @@ export const MODEL_CONFIG = {
  * @returns {Object} Object containing all API endpoints for the model type
  */
 export function getApiEndpoints(modelType) {
-    if (!Object.values(MODEL_TYPES).includes(modelType)) {
-        throw new Error(`Invalid model type: ${modelType}`);
-    }
-
     return {
         // Base CRUD operations
         list: `/api/lm/${modelType}/list`,
@@ -93,6 +89,7 @@ export function getApiEndpoints(modelType) {
         // Query operations
         scan: `/api/lm/${modelType}/scan`,
         topTags: `/api/lm/${modelType}/top-tags`,
+        searchTags: `/api/lm/${modelType}/search-tags`,
         baseModels: `/api/lm/${modelType}/base-models`,
         roots: `/api/lm/${modelType}/roots`,
         folders: `/api/lm/${modelType}/folders`,
@@ -187,7 +184,14 @@ export const DOWNLOAD_ENDPOINTS = {
     downloadGet: '/api/lm/download-model-get',
     cancelGet: '/api/lm/cancel-download-get',
     progress: '/api/lm/download-progress',
-    exampleImages: '/api/lm/force-download-example-images' // New endpoint for downloading example images
+    exampleImages: '/api/lm/force-download-example-images', // Re-process example images ignoring previous status
+    exampleImagesMissing: '/api/lm/download-example-images' // Download only missing example images
+};
+
+// Hugging Face API endpoints
+export const HF_ENDPOINTS = {
+    repoFiles: '/api/lm/hf-repo-files',
+    download: '/api/lm/download-hf-model',
 };
 
 // WebSocket endpoints

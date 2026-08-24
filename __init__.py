@@ -3,6 +3,8 @@ try:  # pragma: no cover - import fallback for pytest collection
     from .py.nodes.lora_loader import LoraLoaderLM, LoraTextLoaderLM
     from .py.nodes.checkpoint_loader import CheckpointLoaderLM
     from .py.nodes.unet_loader import UNETLoaderLM
+    from .py.nodes.random_checkpoint_loader import RandomCheckpointLoaderLM
+    from .py.nodes.random_unet_loader import RandomUNETLoaderLM
     from .py.nodes.trigger_word_toggle import TriggerWordToggleLM
     from .py.nodes.prompt import PromptLM
     from .py.nodes.text import TextLM
@@ -15,6 +17,10 @@ try:  # pragma: no cover - import fallback for pytest collection
     from .py.nodes.lora_pool import LoraPoolLM
     from .py.nodes.lora_randomizer import LoraRandomizerLM
     from .py.nodes.lora_cycler import LoraCyclerLM
+    from .py.nodes.lora_info import LoraInfoLM
+    from .py.nodes.lora_syntax_to_path import LoraSyntaxToPath
+    from .py.nodes.create_hook_lora import CreateHookLoraLM
+    from .py.nodes.metadata_overwrite import MetadataOverwriteLM
     from .py.metadata_collector import init as init_metadata_collector
 except (
     ImportError
@@ -36,6 +42,12 @@ except (
         "py.nodes.checkpoint_loader"
     ).CheckpointLoaderLM
     UNETLoaderLM = importlib.import_module("py.nodes.unet_loader").UNETLoaderLM
+    RandomCheckpointLoaderLM = importlib.import_module(
+        "py.nodes.random_checkpoint_loader"
+    ).RandomCheckpointLoaderLM
+    RandomUNETLoaderLM = importlib.import_module(
+        "py.nodes.random_unet_loader"
+    ).RandomUNETLoaderLM
     TriggerWordToggleLM = importlib.import_module(
         "py.nodes.trigger_word_toggle"
     ).TriggerWordToggleLM
@@ -56,6 +68,16 @@ except (
         "py.nodes.lora_randomizer"
     ).LoraRandomizerLM
     LoraCyclerLM = importlib.import_module("py.nodes.lora_cycler").LoraCyclerLM
+    LoraInfoLM = importlib.import_module("py.nodes.lora_info").LoraInfoLM
+    LoraSyntaxToPath = importlib.import_module(
+        "py.nodes.lora_syntax_to_path"
+    ).LoraSyntaxToPath
+    CreateHookLoraLM = importlib.import_module(
+        "py.nodes.create_hook_lora"
+    ).CreateHookLoraLM
+    MetadataOverwriteLM = importlib.import_module(
+        "py.nodes.metadata_overwrite"
+    ).MetadataOverwriteLM
     init_metadata_collector = importlib.import_module("py.metadata_collector").init
 
 NODE_CLASS_MAPPINGS = {
@@ -65,6 +87,8 @@ NODE_CLASS_MAPPINGS = {
     LoraTextLoaderLM.NAME: LoraTextLoaderLM,
     CheckpointLoaderLM.NAME: CheckpointLoaderLM,
     UNETLoaderLM.NAME: UNETLoaderLM,
+    RandomCheckpointLoaderLM.NAME: RandomCheckpointLoaderLM,
+    RandomUNETLoaderLM.NAME: RandomUNETLoaderLM,
     TriggerWordToggleLM.NAME: TriggerWordToggleLM,
     LoraStackerLM.NAME: LoraStackerLM,
     LoraStackCombinerLM.NAME: LoraStackCombinerLM,
@@ -75,6 +99,10 @@ NODE_CLASS_MAPPINGS = {
     LoraPoolLM.NAME: LoraPoolLM,
     LoraRandomizerLM.NAME: LoraRandomizerLM,
     LoraCyclerLM.NAME: LoraCyclerLM,
+    LoraInfoLM.NAME: LoraInfoLM,
+    LoraSyntaxToPath.NAME: LoraSyntaxToPath,
+    CreateHookLoraLM.NAME: CreateHookLoraLM,
+    MetadataOverwriteLM.NAME: MetadataOverwriteLM,
 }
 
 WEB_DIRECTORY = "./web/comfyui"

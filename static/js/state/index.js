@@ -13,6 +13,8 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     language: 'en',
     show_only_sfw: false,
     enable_metadata_archive_db: false,
+    enable_civarchive_api: true,
+    metadata_provider_order: 'civitai_archive_sqlite',
     proxy_enabled: false,
     proxy_type: 'http',
     proxy_host: '',
@@ -36,6 +38,7 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     card_blur_amount: 8,
     autoplay_on_hover: false,
     display_density: 'default',
+    recipes_layout: 'grid',
     card_info_display: 'always',
     model_name_display: 'model_name',
     lora_syntax_format: 'legacy',
@@ -46,6 +49,7 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     priority_tags: { ...DEFAULT_PRIORITY_TAG_CONFIG },
     version_grouping: 'same_base',
     hide_early_access_updates: false,
+    hide_paid_updates: false,
     auto_organize_exclusions: [],
     metadata_refresh_skip_paths: [],
     skip_previously_downloaded_model_versions: false,
@@ -55,6 +59,10 @@ const DEFAULT_SETTINGS_BASE = Object.freeze({
     strip_lora_on_copy: false,
     use_new_license_icons: true,
     group_by_model: false,
+    llm_provider: 'openai',
+    llm_api_key: '',
+    llm_api_base: '',
+    llm_model: '',
 });
 
 export function createDefaultSettings() {
@@ -95,6 +103,7 @@ export const state = {
                 modelname: true,
                 tags: false,
                 creator: false,
+                hash: false,
                 recursive: getStorageItem(`${MODEL_TYPES.LORA}_recursiveSearch`, true),
             },
             filters: {
@@ -139,6 +148,7 @@ export const state = {
                 tags: {},
                 license: {},
                 modelTypes: [],
+                loraAvailability: [],
                 search: ''
             },
             pageSize: 20,
@@ -160,6 +170,7 @@ export const state = {
                 filename: true,
                 modelname: true,
                 creator: false,
+                hash: false,
                 recursive: getStorageItem(`${MODEL_TYPES.CHECKPOINT}_recursiveSearch`, true),
             },
             filters: {
@@ -199,6 +210,7 @@ export const state = {
                 modelname: true,
                 tags: false,
                 creator: false,
+                hash: false,
                 recursive: getStorageItem(`${MODEL_TYPES.EMBEDDING}_recursiveSearch`, true),
             },
             filters: {

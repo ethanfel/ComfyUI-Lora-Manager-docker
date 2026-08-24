@@ -1,6 +1,7 @@
 import { BaseContextMenu } from './BaseContextMenu.js';
 import { ModelContextMenuMixin } from './ModelContextMenuMixin.js';
 import { showToast, copyToClipboard, sendLoraToWorkflow } from '../../utils/uiHelpers.js';
+import { isModelWeightFile } from '../../utils/modelFileTypes.js';
 import { setSessionItem, removeSessionItem } from '../../utils/storageHelpers.js';
 import { updateRecipeMetadata } from '../../api/recipeApi.js';
 import { state } from '../../state/index.js';
@@ -96,6 +97,10 @@ export class RecipeContextMenu extends BaseContextMenu {
             case 'repair':
                 // Repair recipe metadata
                 this.repairRecipe(recipeId);
+                break;
+            case 'rematch':
+                // Rematch recipe resources to local models
+                this.rematchRecipe(recipeId);
                 break;
             case 'reimport':
                 this.reimportRecipe(recipeId);
@@ -251,7 +256,7 @@ export class RecipeContextMenu extends BaseContextMenu {
                 loras: validLoras.map(lora => {
                     const civitaiInfo = lora.civitaiInfo;
                     const modelFile = civitaiInfo.files ?
-                        civitaiInfo.files.find(file => file.type === 'Model') : null;
+                        civitaiInfo.files.find(file => isModelWeightFile(file.type)) : null;
 
                     return {
                         // Basic lora info
@@ -260,8 +265,9 @@ export class RecipeContextMenu extends BaseContextMenu {
                         strength: lora.strength || 1.0,
 
                         // Model identifiers
+                        modelId: lora.modelId || lora.model_id || civitaiInfo.modelId,
                         hash: modelFile?.hashes?.SHA256?.toLowerCase() || lora.hash,
-                        modelVersionId: civitaiInfo.id || lora.modelVersionId,
+                        id: civitaiInfo.id || lora.modelVersionId,
 
                         // Metadata
                         thumbnailUrl: civitaiInfo.images?.[0]?.url || '',
@@ -326,6 +332,62 @@ export class RecipeContextMenu extends BaseContextMenu {
         } catch (error) {
             console.error('Error repairing recipe:', error);
             showToast('recipes.contextMenu.repair.failed', { message: error.message }, 'error');
+        }
+    }
+
+    async rematchRecipe(recipeId) {
+        if (!recipeId) {
+            showToast('toast.recipes.rematchFailed', { message: 'Missing recipe ID' }, 'error');
+            return;
+        }
+
+        // Capture before any await: the menu's click handler nulls currentCard
+        const filePath = this.currentCard?.dataset?.filepath;
+
+        try {
+            showToast('Rematching recipe to local models...', {}, 'info');
+
+            const response = await fetch(`/api/lm/recipe/${recipeId}/rematch`, {
+                method: 'POST'
+            });
+            const result = await response.json();
+
+            if (result.success) {
+                const matchedEntries = result.matched_entries || result.rematched || 0;
+                const failures = result.errors || 0;
+                if (matchedEntries > 0) {
+                    const toastKey = failures > 0
+                        ? 'toast.recipes.rematchCompleteErrors'
+                        : 'toast.recipes.rematchComplete';
+                    showToast(
+                        toastKey,
+                        { rematched: matchedEntries, skipped: result.skipped || 0, total: 1, entries: matchedEntries, recipes: 1, failures },
+                        failures > 0 ? 'warning' : 'success'
+                    );
+                    const detailResponse = await fetch(`/api/lm/recipe/${recipeId}`);
+                    if (detailResponse.ok) {
+                        const updatedRecipe = await detailResponse.json();
+                        if (filePath && state.virtualScroller) {
+                            state.virtualScroller.updateSingleItem(filePath, updatedRecipe);
+                        }
+                    }
+                } else if (result.unresolved_entries > 0) {
+                    // Entries existed but have no local model — expected for
+                    // models deleted from Civitai; informational, not an error.
+                    showToast(
+                        'toast.recipes.rematchUnmatched',
+                        { entries: result.unresolved_entries, recipes: 1, total: 1 },
+                        'info'
+                    );
+                } else {
+                    showToast('toast.recipes.rematchSkipped', { total: 1 }, 'info');
+                }
+            } else {
+                throw new Error(result.error || 'Rematch failed');
+            }
+        } catch (error) {
+            console.error('Error rematching recipe:', error);
+            showToast('toast.recipes.rematchFailed', { message: error.message }, 'error');
         }
     }
 

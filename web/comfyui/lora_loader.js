@@ -10,9 +10,7 @@ import {
   getWidgetByName,
   getWidgetSerializedValue,
 } from "./utils.js";
-import { addLorasWidget } from "./loras_widget.js";
 import { applyLoraValuesToText, debounce } from "./lora_syntax_utils.js";
-import { applySelectionHighlight } from "./trigger_word_highlight.js";
 
 app.registerExtension({
   name: "LoraManager.LoraLoader",
@@ -36,22 +34,28 @@ app.registerExtension({
 
     // Handle broadcast mode (for Desktop/non-browser support)
     if (numericNodeId === -1) {
-      // Find all Lora Loader nodes in the current graph
-      const loraLoaderNodes = getAllGraphNodes(app.graph)
+      // Find all compatible nodes in the current graph
+      const compatibleClasses = new Set([
+        "Lora Loader (LoraManager)",
+        "Lora Stacker (LoraManager)",
+        "WanVideo Lora Select (LoraManager)",
+        "Create Hook LoRA (LoraManager)",
+      ]);
+      const targetNodes = getAllGraphNodes(app.graph)
         .map(({ node }) => node)
-        .filter((node) => node?.comfyClass === "Lora Loader (LoraManager)");
+        .filter((node) => compatibleClasses.has(node?.comfyClass));
 
-      // Update each Lora Loader node found
-      if (loraLoaderNodes.length > 0) {
-        loraLoaderNodes.forEach((node) => {
+      // Update each node found
+      if (targetNodes.length > 0) {
+        targetNodes.forEach((node) => {
           this.updateNodeLoraCode(node, loraCode, mode);
         });
         console.log(
-          `Updated ${loraLoaderNodes.length} Lora Loader nodes in broadcast mode`
+          `Updated ${targetNodes.length} nodes in broadcast mode`
         );
       } else {
         console.warn(
-          "No Lora Loader nodes found in the workflow for broadcast update"
+          "No compatible LoRA nodes found in the workflow for broadcast update"
         );
       }
 
@@ -64,10 +68,11 @@ app.registerExtension({
       !node ||
       (node.comfyClass !== "Lora Loader (LoraManager)" &&
         node.comfyClass !== "Lora Stacker (LoraManager)" &&
-        node.comfyClass !== "WanVideo Lora Select (LoraManager)")
+        node.comfyClass !== "WanVideo Lora Select (LoraManager)" &&
+        node.comfyClass !== "Create Hook LoRA (LoraManager)")
     ) {
       console.warn(
-        "Node not found or not a LoraLoader:",
+        "Node not found or not a compatible LoRA node:",
         graphId ?? "root",
         nodeId
       );
@@ -180,32 +185,32 @@ app.registerExtension({
           }
         });
 
-        // Get the widget object directly from the returned object
-        this.lorasWidget = addLorasWidget(
-          this,
-          "loras",
-          {
-            onSelectionChange: (selection) =>
-              applySelectionHighlight(this, selection),
-          },
-          (value) => {
-            // Prevent recursive calls
-            if (isUpdating) return;
-            isUpdating = true;
+        // The "loras" widget is declared in INPUT_TYPES (LORAS type) and
+        // created by the LoraManager.LorasWidget extension; take it over here.
+        const lorasWidget = getWidgetByName(this, "loras");
+        if (!lorasWidget) {
+          console.warn("LoRA Manager: loras widget not found for Lora Loader");
+          return;
+        }
+        this.lorasWidget = lorasWidget;
 
-            try {
-              // Collect all active loras from this node and its input chain
-              const allActiveLoraNames = collectActiveLorasFromChain(this);
+        lorasWidget.callback = (value) => {
+          // Prevent recursive calls
+          if (isUpdating) return;
+          isUpdating = true;
 
-              // Update trigger words for connected toggle nodes with the aggregated lora names
-              updateConnectedTriggerWords(this, allActiveLoraNames);
-            } finally {
-              isUpdating = false;
-            }
+          try {
+            // Collect all active loras from this node and its input chain
+            const allActiveLoraNames = collectActiveLorasFromChain(this);
 
-            scheduleInputSync(value);
+            // Update trigger words for connected toggle nodes with the aggregated lora names
+            updateConnectedTriggerWords(this, allActiveLoraNames);
+          } finally {
+            isUpdating = false;
           }
-        ).widget;
+
+          scheduleInputSync(value);
+        };
 
         // Set up callback for the text input widget to trigger merge logic
         inputWidget.callback = (value) => {

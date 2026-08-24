@@ -38,6 +38,12 @@ from ...services.settings_manager import get_settings_manager
 from ...services.websocket_manager import ws_manager
 from ...services.downloader import get_downloader
 from ...services.errors import ResourceNotFoundError
+from ...services.llm_service import (
+    PROVIDER_PRESETS,
+    fetch_ollama_models,
+    get_all_provider_models,
+    get_provider_model_ids,
+)
 from ...services.cache_health_monitor import CacheHealthMonitor, CacheHealthStatus
 from ...utils.models import BaseModelMetadata
 from ...utils.constants import (
@@ -48,6 +54,9 @@ from ...utils.constants import (
     SUPPORTED_MEDIA_EXTENSIONS,
     VALID_LORA_TYPES,
 )
+from .hf_handlers import HfHandler
+from .agent_handlers import AgentHandler
+from .model_handlers import ModelCivitaiHandler
 from ...utils.civitai_utils import rewrite_preview_url
 from ...utils.example_images_paths import (
     find_non_compliant_items_in_example_images_root,
@@ -268,7 +277,7 @@ def _collect_comfyui_session_logs(
 ) -> dict[str, Any]:
     if log_entries is None:
         try:
-            import app.logger as comfy_logger
+            import app.logger as comfy_logger  # pyright: ignore[reportMissingImports]
 
             log_entries = list(comfy_logger.get_logs() or [])
         except Exception as exc:  # pragma: no cover - environment dependent
@@ -414,10 +423,10 @@ class PromptServerProtocol(Protocol):
     """Subset of PromptServer used by the handlers."""
 
     instance: "PromptServerProtocol"
-    sockets: dict  # maps clientId (sid) → WebSocketResponse
+    sockets: dict[str, Any]  # maps clientId (sid) → WebSocketResponse
 
     def send_sync(
-        self, event: str, payload: dict | None = None, sid: str | None = None
+        self, event: str, payload: dict[str, Any] | None = None, sid: str | None = None
     ) -> None:  # pragma: no cover - protocol
         ...
 
@@ -435,7 +444,12 @@ class UsageStatsFactory(Protocol):
 class MetadataProviderProtocol(Protocol):
     async def get_model_versions(
         self, model_id: int
-    ) -> dict | None:  # pragma: no cover - protocol
+    ) -> dict[str, Any] | None:  # pragma: no cover - protocol
+        ...
+
+    async def get_user_models(
+        self, username: str, cursor: str | None = None
+    ) -> Any:  # pragma: no cover - protocol
         ...
 
 
@@ -458,16 +472,16 @@ class MetadataArchiveManagerProtocol(Protocol):
 class BackupServiceProtocol(Protocol):
     async def create_snapshot(
         self, *, snapshot_type: str = "manual", persist: bool = False
-    ) -> dict:  # pragma: no cover - protocol
+    ) -> dict[str, Any]:  # pragma: no cover - protocol
         ...
 
-    async def restore_snapshot(self, archive_path: str) -> dict:  # pragma: no cover - protocol
+    async def restore_snapshot(self, archive_path: str) -> dict[str, Any]:  # pragma: no cover - protocol
         ...
 
-    def get_status(self) -> dict:  # pragma: no cover - protocol
+    def get_status(self) -> dict[str, Any]:  # pragma: no cover - protocol
         ...
 
-    def get_available_snapshots(self) -> list[dict]:  # pragma: no cover - protocol
+    def get_available_snapshots(self) -> list[dict[str, Any]]:  # pragma: no cover - protocol
         ...
 
 
@@ -483,7 +497,7 @@ class NodeRegistry:
     def __init__(self) -> None:
         self._lock = asyncio.Lock()
         # sid → {unique_id → node_info}
-        self._tab_nodes: Dict[str, Dict[str, dict]] = {}
+        self._tab_nodes: Dict[str, Dict[str, dict[str, Any]]] = {}
         self._ready = asyncio.Event()
         self._waiting_clients: set[str] = set()
 
@@ -496,7 +510,7 @@ class NodeRegistry:
     # Helpers to build one node dict (extracted so it's reused for each tab)
     # ------------------------------------------------------------------
     @staticmethod
-    def _build_node_dict(node: dict) -> dict:
+    def _build_node_dict(node: dict[str, Any]) -> dict[str, Any]:
         node_id = node["node_id"]
         graph_id = str(node["graph_id"])
         unique_id = f"{graph_id}:{node_id}"
@@ -505,11 +519,11 @@ class NodeRegistry:
         bgcolor = node.get("bgcolor") or DEFAULT_NODE_COLOR
 
         raw_capabilities = node.get("capabilities")
-        capabilities: dict = {}
+        capabilities: dict[str, Any] = {}
         if isinstance(raw_capabilities, dict):
             capabilities = dict(raw_capabilities)
 
-        raw_widget_names: list | None = node.get("widget_names")
+        raw_widget_names: list[Any] | None = node.get("widget_names")
         if not isinstance(raw_widget_names, list):
             capability_widget_names = capabilities.get("widget_names")
             raw_widget_names = (
@@ -557,20 +571,26 @@ class NodeRegistry:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
-    async def register_nodes(self, sid: str, nodes: list[dict]) -> None:
+    async def register_nodes(self, sid: str, nodes: list[dict[str, Any]]) -> None:
         """Register/replace the node list for a single ComfyUI tab (identified by *sid*)."""
-        tab_nodes: dict[str, dict] = {}
+        tab_nodes: dict[str, dict[str, Any]] = {}
         for node in nodes:
             nd = self._build_node_dict(node)
             tab_nodes[nd["unique_id"]] = nd
 
         async with self._lock:
+            prev_count = len(self._tab_nodes.get(sid, {}))
             self._tab_nodes[sid] = tab_nodes
             self._waiting_clients.discard(sid)
             if not self._waiting_clients:
                 self._ready.set()
+            total_tabs = len(self._tab_nodes)
 
-        logger.debug("Registered %s nodes from client %s", len(nodes), sid)
+        if len(nodes) != prev_count or len(nodes) > 0:
+            logger.debug(
+                "[LM:Registry] stored %s nodes (was %s) for client %s (total tabs: %s)",
+                len(nodes), prev_count, sid, total_tabs,
+            )
 
     def prepare_for_refresh(self, active_sids: list[str]) -> None:
         """Set the list of client IDs we expect to hear from during the next refresh cycle."""
@@ -588,18 +608,25 @@ class NodeRegistry:
         except asyncio.TimeoutError:
             return False
 
-    async def get_merged_registry(self, active_sids: set[str] | None = None) -> dict:
+    async def get_merged_registry(self, active_sids: set[str] | None = None) -> dict[str, Any]:
         """Return the union of all known tab nodes, pruning any tab that is no
         longer connected."""
         async with self._lock:
             # Garbage-collect stale entries (disconnected tabs)
+            stale_sids = []
             if active_sids is not None:
                 for sid in list(self._tab_nodes):
                     if sid not in active_sids:
+                        stale_sids.append(sid)
                         del self._tab_nodes[sid]
+            if stale_sids:
+                logger.debug(
+                    "[LM:Registry] GC pruned %s disconnected tabs: %s",
+                    len(stale_sids), stale_sids,
+                )
 
-            merged: dict[str, dict] = {}
-            tab_info: dict[str, dict] = {}
+            merged: dict[str, dict[str, Any]] = {}
+            tab_info: dict[str, dict[str, Any]] = {}
             for sid, nodes in self._tab_nodes.items():
                 tab_info[sid] = {
                     "node_count": len(nodes),
@@ -622,8 +649,59 @@ class NodeRegistry:
 
 
 class HealthCheckHandler:
+    def __init__(
+        self,
+        scanner_getters: Mapping[str, Callable[[], Awaitable[Any]]] | None = None,
+    ) -> None:
+        self._scanner_getters = scanner_getters or {
+            "lora": ServiceRegistry.get_lora_scanner,
+            "checkpoint": ServiceRegistry.get_checkpoint_scanner,
+            "embedding": ServiceRegistry.get_embedding_scanner,
+            "recipe": ServiceRegistry.get_recipe_scanner,
+        }
+
     async def health_check(self, request: web.Request) -> web.Response:
         return web.json_response({"status": "ok"})
+
+    async def get_init_status(self, request: web.Request) -> web.Response:
+        """Report aggregate scanner initialization status.
+
+        Used by the initialization page's polling fallback when the
+        /ws/init-progress WebSocket is unavailable. Omits pageType so every
+        page accepts the update and only reloads once all scanners are done.
+        """
+        pending: list[str] = []
+        for name, getter in self._scanner_getters.items():
+            try:
+                scanner = await getter()
+            except Exception:
+                pending.append(name)
+                continue
+            cache_ready = getattr(scanner, "_cache", None) is not None
+            is_initializing = getattr(scanner, "is_initializing", None)
+            busy = (
+                is_initializing()
+                if callable(is_initializing)
+                else bool(getattr(scanner, "_is_initializing", False))
+            )
+            if busy or not cache_ready:
+                pending.append(name)
+
+        if pending:
+            return web.json_response(
+                {
+                    "status": "initializing",
+                    "stage": "processing",
+                    "details": "Initializing: " + ", ".join(pending),
+                }
+            )
+        return web.json_response(
+            {
+                "status": "complete",
+                "progress": 100,
+                "details": "Initialization complete",
+            }
+        )
 
 
 class SupportersHandler:
@@ -632,7 +710,7 @@ class SupportersHandler:
     def __init__(self, logger: logging.Logger | None = None) -> None:
         self._logger = logger or logging.getLogger(__name__)
 
-    def _load_supporters(self) -> dict:
+    def _load_supporters(self) -> dict[str, Any]:
         """Load supporters data from JSON file."""
         try:
             current_file = os.path.abspath(__file__)
@@ -1208,10 +1286,8 @@ class DoctorHandler:
         settings_snapshot = _sanitize_sensitive_data(
             getattr(self._settings, "settings", {}) or {}
         )
-        startup_messages_getter = getattr(self._settings, "get_startup_messages", None)
-        startup_messages = (
-            list(startup_messages_getter()) if callable(startup_messages_getter) else []
-        )
+        startup_messages_getter: Any = getattr(self._settings, "get_startup_messages", None)
+        startup_messages = list(startup_messages_getter()) if startup_messages_getter else []
 
         environment = {
             "app_version": app_version,
@@ -1398,8 +1474,9 @@ class SettingsHandler:
             "libraries",
             "active_library",
             # Sensitive — never expose the actual value to the frontend;
-            # frontend receives a boolean instead (civitai_api_key_set).
+            # frontend receives a boolean instead (*_set).
             "civitai_api_key",
+            "llm_api_key",
         }
     )
 
@@ -1417,7 +1494,7 @@ class SettingsHandler:
         *,
         settings_service=None,
         metadata_provider_updater: Callable[
-            [], Awaitable[None]
+            [], Awaitable[Any]
         ] = update_metadata_providers,
         downloader_factory: Callable[
             [], Awaitable[DownloaderProtocol]
@@ -1457,11 +1534,13 @@ class SettingsHandler:
             # Sensitive fields: only expose a boolean indicating whether set
             raw_key = self._settings.get("civitai_api_key")
             response_data["civitai_api_key_set"] = bool(raw_key)
+            raw_llm_key = self._settings.get("llm_api_key")
+            response_data["llm_api_key_set"] = bool(raw_llm_key)
             settings_file = getattr(self._settings, "settings_file", None)
             if settings_file:
                 response_data["settings_file"] = settings_file
-            messages_getter = getattr(self._settings, "get_startup_messages", None)
-            messages = list(messages_getter()) if callable(messages_getter) else []
+            messages_getter: Any = getattr(self._settings, "get_startup_messages", None)
+            messages = list(messages_getter()) if messages_getter else []
             return web.json_response(
                 {
                     "success": True,
@@ -1538,6 +1617,11 @@ class SettingsHandler:
                             {"success": False, "error": validation_error}
                         )
 
+                if key == "update_channel" and value not in ("release", "nightly"):
+                    return web.json_response(
+                        {"success": False, "error": "update_channel must be 'release' or 'nightly'"}
+                    )
+
                 if value == "__DELETE__" and key in (
                     "proxy_username",
                     "proxy_password",
@@ -1546,7 +1630,11 @@ class SettingsHandler:
                 else:
                     self._settings.set(key, value)
 
-                if key == "enable_metadata_archive_db":
+                if key in (
+                    "enable_metadata_archive_db",
+                    "enable_civarchive_api",
+                    "metadata_provider_order",
+                ):
                     await self._metadata_provider_updater()
 
                 if key in self._PROXY_KEYS:
@@ -1560,6 +1648,42 @@ class SettingsHandler:
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Error updating settings: %s", exc, exc_info=True)
             return web.Response(status=500, text=str(exc))
+
+    async def get_llm_models(self, request: web.Request) -> web.Response:
+        """Return the model list for a provider.
+
+        For ``ollama`` the list is fetched live from the local Ollama API
+        (only models actually pulled locally are shown).  For all other
+        providers the opencode model catalog is used.
+
+        Query parameters:
+            provider (required): Internal provider id (``openai``, ``ollama``, etc.).
+
+        Returns:
+            ``{"success": true, "models": ["gpt-4o", ...]}``.
+        """
+        provider_id = request.query.get("provider", "").strip()
+        if not provider_id:
+            return web.json_response(
+                {"success": False, "error": "provider query parameter is required", "models": []},
+                status=400,
+            )
+
+        try:
+            if provider_id == "ollama":
+                api_base = request.query.get("api_base", "").strip() or self._settings.get("llm_api_base", "")
+                if not api_base:
+                    api_base = "http://localhost:11434/v1"
+                models = await fetch_ollama_models(api_base)
+            else:
+                models = await get_provider_model_ids(provider_id)
+            return web.json_response({"success": True, "models": models})
+        except Exception as exc:
+            logger.warning("get_llm_models failed for %s: %s", provider_id, exc)
+            return web.json_response(
+                {"success": False, "error": str(exc), "models": []},
+                status=500,
+            )
 
     def _validate_example_images_path(self, folder_path: str) -> str | None:
         if not os.path.exists(folder_path):
@@ -1582,6 +1706,20 @@ class SettingsHandler:
 
     def _is_dedicated_example_images_folder(self, folder_path: str) -> bool:
         return is_valid_example_images_root(folder_path)
+
+    async def get_provider_models(self, request: web.Request) -> web.Response:
+        """Return the model catalog for all preset providers.
+
+        This endpoint is called asynchronously by the settings UI so that
+        page rendering never blocks on the remote model catalog fetch.
+        """
+        catalog_provider_ids = [p for p in PROVIDER_PRESETS if p != "custom"]
+        try:
+            provider_models = await get_all_provider_models(catalog_provider_ids)
+            return web.json_response({"success": True, "models": provider_models})
+        except Exception as exc:
+            logger.warning("Failed to fetch provider models: %s", exc)
+            return web.json_response({"success": False, "models": {}, "error": str(exc)})
 
 
 class UsageStatsHandler:
@@ -1710,6 +1848,124 @@ class LoraCodeHandler:
             logger.error("Failed to update lora code: %s", exc, exc_info=True)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
+    async def get_update_lora_code(self, request: web.Request) -> web.Response:
+        """GET version of update_lora_code — reads parameters from query string.
+
+        Query params:
+          lora_code (required)  — the LoRA syntax to send
+          mode     (optional)   — "append" (default) or "replace"
+          node_id  (repeatable) — target node id(s), e.g. node_id=3&node_id=5
+          node_ids (optional)   — JSON-encoded array for complex references with graph_id:
+                                   [{"node_id":3,"graph_id":"g1"}, ...]
+        """
+        try:
+            node_ids_raw = request.query.get("node_ids")
+            node_id_list = request.query.getall("node_id", [])
+            lora_code = request.query.get("lora_code", "")
+            mode = request.query.get("mode", "append")
+
+            if not lora_code:
+                return web.json_response(
+                    {"success": False, "error": "Missing lora_code parameter"},
+                    status=400,
+                )
+
+            node_ids = None
+            if node_ids_raw:
+                try:
+                    node_ids = json.loads(node_ids_raw)
+                except (json.JSONDecodeError, TypeError):
+                    return web.json_response(
+                        {"success": False, "error": "node_ids must be a valid JSON array"},
+                        status=400,
+                    )
+                if not isinstance(node_ids, list) or not node_ids:
+                    return web.json_response(
+                        {"success": False, "error": "node_ids must be a non-empty JSON array"},
+                        status=400,
+                    )
+            elif node_id_list:
+                node_ids = node_id_list
+
+            results = []
+            if node_ids is None:
+                try:
+                    self._prompt_server.instance.send_sync(
+                        "lora_code_update",
+                        {"id": -1, "lora_code": lora_code, "mode": mode},
+                    )
+                    results.append({"node_id": "broadcast", "success": True})
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.error("Error broadcasting lora code: %s", exc)
+                    results.append(
+                        {"node_id": "broadcast", "success": False, "error": str(exc)}
+                    )
+            else:
+                for entry in node_ids:
+                    node_identifier = entry
+                    graph_identifier = None
+                    if isinstance(entry, dict):
+                        node_identifier = entry.get("node_id")
+                        graph_identifier = entry.get("graph_id")
+
+                    if node_identifier is None:
+                        results.append(
+                            {
+                                "node_id": node_identifier,
+                                "graph_id": graph_identifier,
+                                "success": False,
+                                "error": "Missing node_id parameter",
+                            }
+                        )
+                        continue
+
+                    try:
+                        parsed_node_id = int(node_identifier)
+                    except (TypeError, ValueError):
+                        parsed_node_id = node_identifier
+
+                    payload = {
+                        "id": parsed_node_id,
+                        "lora_code": lora_code,
+                        "mode": mode,
+                    }
+
+                    if graph_identifier is not None:
+                        payload["graph_id"] = str(graph_identifier)
+
+                    try:
+                        self._prompt_server.instance.send_sync(
+                            "lora_code_update",
+                            payload,
+                        )
+                        results.append(
+                            {
+                                "node_id": parsed_node_id,
+                                "graph_id": payload.get("graph_id"),
+                                "success": True,
+                            }
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive logging
+                        logger.error(
+                            "Error sending lora code to node %s (graph %s): %s",
+                            parsed_node_id,
+                            graph_identifier,
+                            exc,
+                        )
+                        results.append(
+                            {
+                                "node_id": parsed_node_id,
+                                "graph_id": payload.get("graph_id"),
+                                "success": False,
+                                "error": str(exc),
+                            }
+                        )
+
+            return web.json_response({"success": True, "results": results})
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to update lora code (GET): %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
 
 class TrainedWordsHandler:
     async def get_trained_words(self, request: web.Request) -> web.Response:
@@ -1804,11 +2060,11 @@ async def _noop_backup_service() -> None:
 
 @dataclass
 class ServiceRegistryAdapter:
-    get_lora_scanner: Callable[[], Awaitable]
-    get_checkpoint_scanner: Callable[[], Awaitable]
-    get_embedding_scanner: Callable[[], Awaitable]
-    get_downloaded_version_history_service: Callable[[], Awaitable]
-    get_backup_service: Callable[[], Awaitable] = _noop_backup_service
+    get_lora_scanner: Callable[[], Awaitable[Any]]
+    get_checkpoint_scanner: Callable[[], Awaitable[Any]]
+    get_embedding_scanner: Callable[[], Awaitable[Any]]
+    get_downloaded_version_history_service: Callable[[], Awaitable[Any]]
+    get_backup_service: Callable[[], Awaitable[Any]] = _noop_backup_service
 
 
 class ModelLibraryHandler:
@@ -1849,13 +2105,70 @@ class ModelLibraryHandler:
         return await self._service_registry.get_downloaded_version_history_service()
 
     @staticmethod
-    def _with_downloaded_flag(versions: list[dict]) -> list[dict]:
-        enriched: list[dict] = []
+    def _with_downloaded_flag(versions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        enriched: list[dict[str, Any]] = []
         for version in versions:
             entry = dict(version)
             entry.setdefault("hasBeenDownloaded", True)
             enriched.append(entry)
         return enriched
+
+    @staticmethod
+    async def _get_downloaded_files(
+        scanner: Any, model_version_id: int
+    ) -> list[dict[str, Any]]:
+        """Return per-file downloaded state for a version in the library.
+
+        This handler has no CivitAI version payload, so the remote file list
+        is taken from the local entries' cached ``civitai`` metadata (the
+        full version payload persisted at download time, see
+        ``BaseModelMetadata.from_civitai_info``) and matched with the same
+        D2 rule used by ``get_civitai_versions`` (#1058). Local entries that
+        cannot be matched to a known remote file (e.g. missing metadata or
+        renamed files) are still reported with ``fileId`` set to None.
+        Returns ``[{fileId, fileName, filePath}]``.
+        """
+        try:
+            cache = await scanner.get_cached_data()
+        except Exception:  # pragma: no cover - defensive fallback
+            logger.debug(
+                "Failed to read cache for downloaded files of version %s",
+                model_version_id,
+                exc_info=True,
+            )
+            return []
+
+        files_getter = getattr(cache, "get_files_by_version_id", None)
+        local_entries = files_getter(model_version_id) if files_getter else []
+        if not local_entries:
+            return []
+
+        version_payload: Mapping[str, Any] = {}
+        for entry in local_entries:
+            civitai = entry.get("civitai") if isinstance(entry, Mapping) else None
+            if isinstance(civitai, Mapping) and isinstance(civitai.get("files"), list):
+                version_payload = civitai
+                break
+
+        downloaded = ModelCivitaiHandler._match_downloaded_files(
+            version_payload, local_entries
+        )
+
+        # Surface local files that D2 could not map to a known remote file
+        matched_paths = {item.get("filePath") for item in downloaded}
+        for entry in local_entries:
+            if not isinstance(entry, Mapping):
+                continue
+            if entry.get("file_path") in matched_paths:
+                continue
+            downloaded.append(
+                {
+                    "fileId": None,
+                    "fileName": entry.get("file_name"),
+                    "filePath": entry.get("file_path"),
+                }
+            )
+        return downloaded
 
     async def check_model_exists(self, request: web.Request) -> web.Response:
         try:
@@ -1892,9 +2205,11 @@ class ModelLibraryHandler:
 
                 exists = False
                 model_type = None
+                matched_scanner = None
                 if await lora_scanner.check_model_version_exists(model_version_id):
                     exists = True
                     model_type = "lora"
+                    matched_scanner = lora_scanner
                 elif (
                     checkpoint_scanner
                     and await checkpoint_scanner.check_model_version_exists(
@@ -1903,6 +2218,7 @@ class ModelLibraryHandler:
                 ):
                     exists = True
                     model_type = "checkpoint"
+                    matched_scanner = checkpoint_scanner
                 elif (
                     embedding_scanner
                     and await embedding_scanner.check_model_version_exists(
@@ -1911,6 +2227,7 @@ class ModelLibraryHandler:
                 ):
                     exists = True
                     model_type = "embedding"
+                    matched_scanner = embedding_scanner
 
                 if exists:
                     return web.json_response(
@@ -1919,6 +2236,9 @@ class ModelLibraryHandler:
                             "exists": True,
                             "modelType": model_type,
                             "hasBeenDownloaded": False,
+                            "downloadedFiles": await self._get_downloaded_files(
+                                matched_scanner, model_version_id
+                            ),
                         }
                     )
 
@@ -1940,6 +2260,7 @@ class ModelLibraryHandler:
                         "exists": False,
                         "modelType": history_type,
                         "hasBeenDownloaded": has_been_downloaded,
+                        "downloadedFiles": [],
                     }
                 )
 
@@ -2043,7 +2364,7 @@ class ModelLibraryHandler:
             checkpoint_scanner = await self._service_registry.get_checkpoint_scanner()
             embedding_scanner = await self._service_registry.get_embedding_scanner()
 
-            results: list[dict] = []
+            results: list[dict[str, Any]] = []
             for model_id in model_ids:
                 lora_versions = await lora_scanner.get_model_versions_by_id(model_id)
                 if lora_versions:
@@ -2152,7 +2473,7 @@ class ModelLibraryHandler:
                 )
 
             try:
-                model_version_id = int(data.get("modelVersionId"))
+                model_version_id = int(data.get("modelVersionId"))  # pyright: ignore[reportArgumentType]
             except (TypeError, ValueError):
                 return web.json_response(
                     {"success": False, "error": "Parameter modelVersionId must be an integer"},
@@ -2224,8 +2545,8 @@ class ModelLibraryHandler:
             embedding_scanner = await self._service_registry.get_embedding_scanner()
 
             found_type = None
-            file_path = None
             found_cache = None
+            entries: list = []
 
             for model_type, scanner in (
                 ("lora", lora_scanner),
@@ -2236,27 +2557,43 @@ class ModelLibraryHandler:
                 if cache and model_version_id in cache.version_index:
                     found_type = model_type
                     found_cache = cache
-                    entry = cache.version_index[model_version_id]
-                    file_path = entry.get("file_path")
+                    # A version can have several local files (#1058); collect
+                    # them all so the delete below covers every file.
+                    files_getter = getattr(cache, "get_files_by_version_id", None)
+                    if files_getter is not None:
+                        entries = files_getter(model_version_id)
+                    else:
+                        entries = [cache.version_index[model_version_id]]
                     break
 
-            if not file_path:
+            file_paths = [
+                entry.get("file_path")
+                for entry in entries
+                if isinstance(entry, dict) and entry.get("file_path")
+            ]
+
+            if not file_paths:
                 return web.json_response(
                     {"success": False, "error": "Model version not found in any scanner cache"},
                     status=404,
                 )
 
-            target_dir = os.path.dirname(file_path)
-            base_name = os.path.basename(file_path)
-            file_name, extension = os.path.splitext(base_name)
-            await delete_model_artifacts(target_dir, file_name, main_extension=extension)
+            for file_path in file_paths:
+                target_dir = os.path.dirname(file_path)
+                base_name = os.path.basename(file_path)
+                file_name, extension = os.path.splitext(base_name)
+                await delete_model_artifacts(target_dir, file_name, main_extension=extension)
 
             if found_cache:
+                removed_paths = set(file_paths)
                 found_cache.raw_data = [
                     item
                     for item in found_cache.raw_data
-                    if item.get("file_path") != file_path
+                    if item.get("file_path") not in removed_paths
                 ]
+                rebuild = getattr(found_cache, "rebuild_version_index", None)
+                if rebuild is not None:
+                    rebuild()
                 await found_cache.resort()
 
             scanner_map = {
@@ -2264,10 +2601,11 @@ class ModelLibraryHandler:
                 "checkpoint": checkpoint_scanner,
                 "embedding": embedding_scanner,
             }
-            scanner = scanner_map.get(found_type)
+            scanner = scanner_map.get(found_type or "")
             if scanner:
-                persist = getattr(scanner, "_persist_current_cache", None)
-                if callable(persist):
+                scanner.bump_cache_version()
+                persist: Any = getattr(scanner, "_persist_current_cache", None)
+                if persist:
                     await persist()
 
             history_service = await self._get_download_history_service()
@@ -2278,6 +2616,7 @@ class ModelLibraryHandler:
                     "success": True,
                     "modelType": found_type,
                     "modelVersionId": model_version_id,
+                    "deletedFiles": len(file_paths),
                 }
             )
         except Exception as exc:
@@ -2389,6 +2728,8 @@ class ModelLibraryHandler:
                     status=400,
                 )
 
+            cursor = request.query.get("cursor")
+
             metadata_provider = await self._metadata_provider_factory()
             if not metadata_provider:
                 return web.json_response(
@@ -2397,7 +2738,7 @@ class ModelLibraryHandler:
                 )
 
             try:
-                models = await metadata_provider.get_user_models(username)
+                result = await metadata_provider.get_user_models(username, cursor)
             except NotImplementedError:
                 return web.json_response(
                     {
@@ -2407,14 +2748,35 @@ class ModelLibraryHandler:
                     status=501,
                 )
 
-            if models is None:
+            if result is None:
                 return web.json_response(
                     {"success": False, "error": "Failed to fetch user models"},
                     status=502,
                 )
 
+            if isinstance(result, dict):
+                models = result.get("items")
+                next_cursor = result.get("nextCursor")
+            else:
+                # Defensive: tolerate providers that still return a raw list
+                models = result
+                next_cursor = None
+
             if not isinstance(models, list):
                 models = []
+            if next_cursor is not None and not isinstance(next_cursor, str):
+                next_cursor = str(next_cursor)
+
+            estimated_total = None
+            if cursor is None:
+                get_count = getattr(metadata_provider, "get_creator_model_count", None)
+                if get_count is not None:
+                    try:
+                        estimated_total = await get_count(username)
+                    except Exception:  # best-effort only
+                        estimated_total = None
+                if not isinstance(estimated_total, int):
+                    estimated_total = None
 
             lora_scanner = await self._service_registry.get_lora_scanner()
             checkpoint_scanner = await self._service_registry.get_checkpoint_scanner()
@@ -2425,15 +2787,16 @@ class ModelLibraryHandler:
             }
             lora_type_aliases = {model_type.lower() for model_type in VALID_LORA_TYPES}
 
-            type_scanner_map: Dict[str, object | None] = {
+            type_scanner_map: Dict[str, Any] = {
                 **{alias: lora_scanner for alias in lora_type_aliases},
                 "checkpoint": checkpoint_scanner,
                 "textualinversion": embedding_scanner,
             }
 
-            versions: list[dict] = []
+            versions: list[dict[str, Any]] = []
             history_service = await self._get_download_history_service()
             model_ids: list[int] = []
+            model_count = 0
             for model in models:
                 try:
                     model_ids.append(int(model.get("id")))
@@ -2467,6 +2830,8 @@ class ModelLibraryHandler:
                 if model_type not in normalized_allowed_types:
                     continue
 
+                model_count += 1
+
                 scanner = type_scanner_map.get(model_type)
                 if scanner is None:
                     return web.json_response(
@@ -2480,6 +2845,8 @@ class ModelLibraryHandler:
                 tags_value = model.get("tags")
                 tags = tags_value if isinstance(tags_value, list) else []
                 model_id = model.get("id")
+                if model_id is None:
+                    continue
                 try:
                     model_id_int = int(model_id)
                 except (TypeError, ValueError):
@@ -2495,6 +2862,8 @@ class ModelLibraryHandler:
                         continue
 
                     version_id = version.get("id")
+                    if version_id is None:
+                        continue
                     try:
                         version_id_int = int(version_id)
                     except (TypeError, ValueError):
@@ -2532,7 +2901,15 @@ class ModelLibraryHandler:
                     )
 
             return web.json_response(
-                {"success": True, "username": username, "versions": versions}
+                {
+                    "success": True,
+                    "username": username,
+                    "versions": versions,
+                    "modelCount": model_count,
+                    "nextCursor": next_cursor,
+                    "hasMore": next_cursor is not None,
+                    "estimatedTotal": estimated_total,
+                }
             )
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Failed to get Civitai user models: %s", exc, exc_info=True)
@@ -2548,7 +2925,7 @@ class MetadataArchiveHandler:
         ] = get_metadata_archive_manager,
         settings_service=None,
         metadata_provider_updater: Callable[
-            [], Awaitable[None]
+            [], Awaitable[Any]
         ] = update_metadata_providers,
     ) -> None:
         self._metadata_archive_manager_factory = metadata_archive_manager_factory
@@ -2695,7 +3072,7 @@ class BackupHandler:
 
             if request.content_type.startswith("multipart/"):
                 reader = await request.multipart()
-                field = await reader.next()
+                field: Any = await reader.next()
                 uploaded = False
                 while field is not None:
                     if getattr(field, "filename", None):
@@ -3055,6 +3432,8 @@ class NodeRegistryHandler:
         self._node_registry = node_registry
         self._prompt_server = prompt_server
         self._standalone_mode = standalone_mode
+        self._refresh_lock = asyncio.Lock()
+        self._last_slow_path_ts: float = 0.0
 
     async def register_nodes(self, request: web.Request) -> web.Response:
         try:
@@ -3101,7 +3480,12 @@ class NodeRegistryHandler:
                     )
                 graph_name = node.get("graph_name")
                 try:
-                    node["node_id"] = int(node_id)
+                    # Handle compound node IDs from expanded group subgraphs,
+                    # e.g. "252:0" → 0 (parent scope is already in graph_id)
+                    if isinstance(node_id, str) and ":" in node_id:
+                        node["node_id"] = int(node_id.rsplit(":", 1)[-1])
+                    else:
+                        node["node_id"] = int(node_id)
                 except (TypeError, ValueError):
                     return web.json_response(
                         {
@@ -3142,42 +3526,101 @@ class NodeRegistryHandler:
                     status=503,
                 )
 
-            # Snapshot of currently-connected ComfyUI tabs
-            active_sids = list(self._prompt_server.instance.sockets.keys())
-            self._node_registry.prepare_for_refresh(active_sids)
-
-            try:
-                self._prompt_server.instance.send_sync("lora_registry_refresh", {})
-                logger.debug(
-                    "Sent registry refresh request (expecting %s clients)", len(active_sids)
-                )
-            except Exception as exc:
-                logger.error("Failed to send registry refresh message: %s", exc)
-                return web.json_response(
-                    {
-                        "success": False,
-                        "error": "Communication Error",
-                        "message": f"Failed to communicate with ComfyUI frontend: {exc}",
-                    },
-                    status=500,
-                )
-
-            if not await self._node_registry.wait_for_all(timeout=2.0):
-                logger.warning(
-                    "Registry refresh timeout after 2s (%s/%s clients responded)",
-                    len(active_sids) - self._node_registry.pending_client_count,
-                    len(active_sids),
-                )
-
-            # Re-read current sockets after the wait: a tab may have connected
-            # while we were waiting, and we don't want to garbage-collect it.
             current_sids = set(self._prompt_server.instance.sockets.keys())
+
+            # Fast path: if the frontend has already pushed node data (via
+            # afterConfigureGraph / graphChanged hooks), return it immediately
+            # without triggering a WebSocket round-trip.
             registry_info = await self._node_registry.get_merged_registry(
                 active_sids=current_sids
             )
+            if registry_info["tab_count"] > 0:
+                logger.debug(
+                    "[LM:Registry] fast path: %s nodes across %s tabs %s",
+                    registry_info["node_count"],
+                    registry_info["tab_count"],
+                    dict(registry_info.get("tabs", {})),
+                )
+                return web.json_response({"success": True, "data": registry_info})
+
+            # Slow path: registry is empty — trigger refresh via WebSocket.
+            # Serialize with an async lock so concurrent callers don't all
+            # trigger separate WS refresh cycles.  The second caller will
+            # re-check the fast path and (usually) find populated data.
+            async with self._refresh_lock:
+                # Re-check after acquiring the lock — another concurrent call
+                # may have populated the cache while we were waiting.
+                registry_info = await self._node_registry.get_merged_registry(
+                    active_sids=current_sids
+                )
+                if registry_info["tab_count"] > 0:
+                    logger.debug(
+                        "[LM:Registry] fast path after lock wait: %s nodes across %s tabs",
+                        registry_info["node_count"],
+                        registry_info["tab_count"],
+                    )
+                    return web.json_response({"success": True, "data": registry_info})
+
+                # Cooldown: if the slow path ran recently (< 2 s) and
+                # returned empty, skip another WS round-trip.
+                elapsed = time.monotonic() - self._last_slow_path_ts
+                if elapsed < 2.0:
+                    logger.debug(
+                        "[LM:Registry] slow path cooldown (%.1fs since last refresh), returning empty",
+                        elapsed,
+                    )
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Empty Registry",
+                            "message": "No workflow nodes found — ensure ComfyUI is open and the extension is loaded.",
+                        },
+                        status=408,
+                    )
+
+                logger.debug(
+                    "[LM:Registry] slow path: cache empty, triggering WS refresh (%s connected tabs: %s)",
+                    len(current_sids), list(current_sids)[:5],
+                )
+                active_sids = list(current_sids)
+                self._node_registry.prepare_for_refresh(active_sids)
+
+                try:
+                    self._prompt_server.instance.send_sync("lora_registry_refresh", {})
+                    logger.debug(
+                        "Sent registry refresh request (expecting %s clients)", len(active_sids)
+                    )
+                except Exception as exc:
+                    logger.error("Failed to send registry refresh message: %s", exc)
+                    return web.json_response(
+                        {
+                            "success": False,
+                            "error": "Communication Error",
+                            "message": f"Failed to communicate with ComfyUI frontend: {exc}",
+                        },
+                        status=500,
+                    )
+
+                if not await self._node_registry.wait_for_all(timeout=0.5):
+                    logger.warning(
+                        "Registry refresh timeout after 0.5s (%s/%s clients responded)",
+                        len(active_sids) - self._node_registry.pending_client_count,
+                        len(active_sids),
+                    )
+
+                # Re-read current sockets after the wait: a tab may have connected
+                # while we were waiting, and we don't want to garbage-collect it.
+                current_sids = set(self._prompt_server.instance.sockets.keys())
+                registry_info = await self._node_registry.get_merged_registry(
+                    active_sids=current_sids
+                )
+                self._last_slow_path_ts = time.monotonic()
 
             if registry_info["node_count"] == 0:
-                logger.warning("No nodes registered after refresh")
+                logger.debug(
+                    "[LM:Registry] refresh OK — %s connected tab(s) but 0 compatible nodes found",
+                    registry_info["tab_count"],
+                )
                 return web.json_response(
                     {
                         "success": False,
@@ -3213,7 +3656,7 @@ class NodeRegistryHandler:
                     status=400,
                 )
 
-            if not isinstance(value, str) or not value:
+            if value is None or (isinstance(value, str) and not value):
                 return web.json_response(
                     {"success": False, "error": "Missing value parameter"}, status=400
                 )
@@ -3248,7 +3691,7 @@ class NodeRegistryHandler:
                 except (TypeError, ValueError):
                     parsed_node_id = node_identifier
 
-                payload: dict = {
+                payload: dict[str, Any] = {
                     "id": parsed_node_id,
                     "value": value,
                     "mode": mode,
@@ -3291,6 +3734,130 @@ class NodeRegistryHandler:
             logger.error("Failed to update node widget: %s", exc, exc_info=True)
             return web.json_response({"success": False, "error": str(exc)}, status=500)
 
+    async def get_update_node_widget(self, request: web.Request) -> web.Response:
+        """GET version of update_node_widget — reads parameters from query string.
+
+        Query params:
+          widget_name  (optional)   — the widget name to update (required unless action is set)
+          action       (optional)   — alternative action, e.g. "inject_text" (required unless widget_name is set)
+          value        (required)   — the value to set
+          mode         (optional)   — "replace" (default) or "append"
+          node_id      (repeatable) — target node id(s), e.g. node_id=3&node_id=5
+          node_ids     (optional)   — JSON-encoded array for complex references:
+                                       [{"node_id":3,"graph_id":"g1"}, ...]
+        """
+        try:
+            widget_name = request.query.get("widget_name")
+            action = request.query.get("action")
+            value = request.query.get("value")
+            mode = request.query.get("mode", "replace")
+            node_ids_raw = request.query.get("node_ids")
+            node_id_list = request.query.getall("node_id", [])
+
+            if not action and (not isinstance(widget_name, str) or not widget_name):
+                return web.json_response(
+                    {
+                        "success": False,
+                        "error": "Missing parameter: provide either 'action' or 'widget_name'",
+                    },
+                    status=400,
+                )
+
+            if value is None or (isinstance(value, str) and not value):
+                return web.json_response(
+                    {"success": False, "error": "Missing value parameter"}, status=400
+                )
+
+            node_ids = None
+            if node_ids_raw:
+                try:
+                    node_ids = json.loads(node_ids_raw)
+                except (json.JSONDecodeError, TypeError):
+                    return web.json_response(
+                        {"success": False, "error": "node_ids must be a valid JSON array"},
+                        status=400,
+                    )
+                if not isinstance(node_ids, list) or not node_ids:
+                    return web.json_response(
+                        {"success": False, "error": "node_ids must be a non-empty JSON array"},
+                        status=400,
+                    )
+            elif node_id_list:
+                node_ids = node_id_list
+
+            if not isinstance(node_ids, list) or not node_ids:
+                return web.json_response(
+                    {"success": False, "error": "node_ids must be a non-empty list"},
+                    status=400,
+                )
+
+            results = []
+            for entry in node_ids:
+                node_identifier = entry
+                graph_identifier = None
+                if isinstance(entry, dict):
+                    node_identifier = entry.get("node_id")
+                    graph_identifier = entry.get("graph_id")
+
+                if node_identifier is None:
+                    results.append(
+                        {
+                            "node_id": node_identifier,
+                            "graph_id": graph_identifier,
+                            "success": False,
+                            "error": "Missing node_id parameter",
+                        }
+                    )
+                    continue
+
+                try:
+                    parsed_node_id = int(node_identifier)
+                except (TypeError, ValueError):
+                    parsed_node_id = node_identifier
+
+                payload: dict[str, Any] = {
+                    "id": parsed_node_id,
+                    "value": value,
+                    "mode": mode,
+                }
+                if action:
+                    payload["action"] = action
+                if widget_name:
+                    payload["widget_name"] = widget_name
+
+                if graph_identifier is not None:
+                    payload["graph_id"] = str(graph_identifier)
+
+                try:
+                    self._prompt_server.instance.send_sync("lm_widget_update", payload)
+                    results.append(
+                        {
+                            "node_id": parsed_node_id,
+                            "graph_id": payload.get("graph_id"),
+                            "success": True,
+                        }
+                    )
+                except Exception as exc:  # pragma: no cover - defensive logging
+                    logger.error(
+                        "Error sending widget update to node %s (graph %s): %s",
+                        parsed_node_id,
+                        graph_identifier,
+                        exc,
+                    )
+                    results.append(
+                        {
+                            "node_id": parsed_node_id,
+                            "graph_id": payload.get("graph_id"),
+                            "success": False,
+                            "error": str(exc),
+                        }
+                    )
+
+            return web.json_response({"success": True, "results": results})
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Failed to update node widget (GET): %s", exc, exc_info=True)
+            return web.json_response({"success": False, "error": str(exc)}, status=500)
+
 
 class MiscHandlerSet:
     """Aggregate handlers into a lookup compatible with the registrar."""
@@ -3315,6 +3882,8 @@ class MiscHandlerSet:
         doctor: DoctorHandler,
         example_workflows: ExampleWorkflowsHandler,
         base_model: BaseModelHandlerSet,
+        hf_handler: Any = None,
+        agent_handler: Any = None,
     ) -> None:
         self.health = health
         self.settings = settings
@@ -3333,12 +3902,15 @@ class MiscHandlerSet:
         self.doctor = doctor
         self.example_workflows = example_workflows
         self.base_model = base_model
+        self.hf_handler = hf_handler
+        self.agent_handler = agent_handler
 
     def to_route_mapping(
         self,
     ) -> Mapping[str, Callable[[web.Request], Awaitable[web.StreamResponse]]]:
         return {
             "health_check": self.health.health_check,
+            "get_init_status": self.health.get_init_status,
             "get_settings": self.settings.get_settings,
             "update_settings": self.settings.update_settings,
             "get_doctor_diagnostics": self.doctor.get_doctor_diagnostics,
@@ -3348,13 +3920,17 @@ class MiscHandlerSet:
             "get_priority_tags": self.settings.get_priority_tags,
             "get_settings_libraries": self.settings.get_libraries,
             "activate_library": self.settings.activate_library,
+            "get_llm_models": self.settings.get_llm_models,
+            "get_provider_models": self.settings.get_provider_models,
             "update_usage_stats": self.usage_stats.update_usage_stats,
             "get_usage_stats": self.usage_stats.get_usage_stats,
             "update_lora_code": self.lora_code.update_lora_code,
+            "get_update_lora_code": self.lora_code.get_update_lora_code,
             "get_trained_words": self.trained_words.get_trained_words,
             "get_model_example_files": self.model_examples.get_model_example_files,
             "register_nodes": self.node_registry.register_nodes,
             "update_node_widget": self.node_registry.update_node_widget,
+            "get_update_node_widget": self.node_registry.get_update_node_widget,
             "get_registry": self.node_registry.get_registry,
             "check_model_exists": self.model_library.check_model_exists,
             "check_models_exist": self.model_library.check_models_exist,
@@ -3378,6 +3954,14 @@ class MiscHandlerSet:
             "get_supporters": self.supporters.get_supporters,
             "get_example_workflows": self.example_workflows.get_example_workflows,
             "get_example_workflow": self.example_workflows.get_example_workflow,
+            # Hugging Face handlers
+            "get_hf_repo_files": self.hf_handler.get_hf_repo_files,
+            "download_hf_model": self.hf_handler.download_hf_model,
+            "set_hf_url": self.hf_handler.set_hf_url,
+            # Agent skill handlers
+            "get_agent_skills": self.agent_handler.get_agent_skills,
+            "execute_agent_skill": self.agent_handler.execute_agent_skill,
+            "cancel_agent_skill": self.agent_handler.cancel_agent_skill,
             # Base model handlers
             "get_base_models": self.base_model.get_base_models,
             "refresh_base_models": self.base_model.refresh_base_models,

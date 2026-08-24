@@ -483,10 +483,18 @@ export class VirtualScroller {
         element.style.width = `${this.itemWidth}px`;
         element.style.height = `${this.itemHeight}px`;
 
-        // Remove max-width constraint from model-card to allow dynamic sizing
-        const modelCard = element.querySelector('.model-card');
+        // Remove max-width/min-width constraints from the model-card to allow
+        // dynamic sizing. The card is either the item element itself (e.g.
+        // RecipeCard returns the .model-card root) or a descendant (ModelCard).
+        // Without this, the CSS min-width of 200px forces compact-density cards
+        // wider than their allocated column, and the last column gets clipped
+        // by the grid's overflow-x: hidden.
+        const modelCard = element.classList.contains('model-card')
+            ? element
+            : element.querySelector('.model-card');
         if (modelCard) {
             modelCard.style.maxWidth = 'none';
+            modelCard.style.minWidth = '0';
         }
 
         return element;
@@ -691,10 +699,17 @@ export class VirtualScroller {
             const pageType = state.currentPageType;
 
             if (pageType === 'recipes') {
-                placeholderText = `
-                    <p>No recipes found</p>
-                    <p>Add recipe images to your recipes folder to see them here.</p>
-                `;
+                if (String(getCurrentPageState().sortBy).startsWith('opened')) {
+                    placeholderText = `
+                        <p>No recently opened recipes</p>
+                        <p>Recipes you open will appear here.</p>
+                    `;
+                } else {
+                    placeholderText = `
+                        <p>No recipes found</p>
+                        <p>Add recipe images to your recipes folder to see them here.</p>
+                    `;
+                }
             } else if (pageType === 'loras') {
                 placeholderText = `
                     <p>No LoRAs found</p>

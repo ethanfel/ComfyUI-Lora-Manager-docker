@@ -37,17 +37,18 @@ export function handleStrengthDrag(name, initialStrength, initialX, event, widge
       syncClipStrengthIfCollapsed(lorasData[loraIndex]);
     }
     
-    // Update the widget value only if updateWidget flag is true
-    // This allows us to update inputs directly during drag without triggering re-render
-    if (updateWidget) {
-      widget.value = formatLoraValue(lorasData);
-    }
+    // Always write back to widget.value to persist the mutation.
+    // During drag (updateWidget=false), setValue skips renderLoras via __dragActive flag,
+    // so the DOM survives and pointer capture is preserved.
+    widget.value = formatLoraValue(lorasData);
     
-    // Force re-render via callback only if updateWidget is true
+    // Only fire callback on the final commit, not during drag
     if (updateWidget && widget.callback) {
       widget.callback(widget.value);
     }
   }
+  
+  return newStrength;
 }
 
 // Function to handle proportional strength adjustment for all LoRAs via header dragging
@@ -90,12 +91,11 @@ export function handleAllStrengthsDrag(initialStrengths, initialX, event, widget
     lorasData[index].clipStrength = Number(newClipStrength);
   });
   
-  // Update widget value only if updateWidget flag is true
-  if (updateWidget) {
-    widget.value = formatLoraValue(lorasData);
-  }
+  // Always write back to widget.value to persist mutations.
+  // During drag (updateWidget=false), setValue skips renderLoras via __dragActive flag.
+  widget.value = formatLoraValue(lorasData);
   
-  // Force re-render via callback only if updateWidget is true
+  // Only fire callback on the final commit, not during drag
   if (updateWidget && widget.callback) {
     widget.callback(widget.value);
   }
@@ -149,6 +149,13 @@ export function initDrag(
     activePointerId = e.pointerId;
     currentDragElement = e.currentTarget;
 
+    // Suppress renderLoras in setValue during drag so the DOM survives.
+    // The getter creates a new array on every read, so mutations to a
+    // parsed copy are lost unless we write back through widget.value.
+    // Writing back would normally trigger a full DOM re-render via setValue,
+    // destroying pointer capture. __dragActive tells setValue to skip the render.
+    widget.__dragActive = true;
+
     // Capture pointer to receive all subsequent events regardless of stopPropagation
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
@@ -181,17 +188,12 @@ export function initDrag(
     }
 
     // Call the strength adjustment function without updating widget.value during drag
-    handleStrengthDrag(name, initialStrength, initialX, e, widget, isClipStrength, false);
+    const newStrength = handleStrengthDrag(name, initialStrength, initialX, e, widget, isClipStrength, false);
     
     // Update strength input directly instead of re-rendering to avoid losing event listeners
     const strengthInput = currentDragElement.querySelector('.lm-lora-strength-input');
-    if (strengthInput) {
-      const lorasData = parseLoraValue(widget.value);
-      const loraData = lorasData.find(l => l.name === name);
-      if (loraData) {
-        const strengthValue = isClipStrength ? loraData.clipStrength : loraData.strength;
-        strengthInput.value = Number(strengthValue).toFixed(2);
-      }
+    if (strengthInput && typeof newStrength === 'number') {
+      strengthInput.value = newStrength.toFixed(2);
     }
     
     // Prevent showing the preview tooltip during drag
@@ -226,23 +228,30 @@ export function initDrag(
     // Remove the class to restore normal cursor behavior
     document.body.classList.remove('lm-lora-strength-dragging');
 
-    // Only call onDragEnd and re-render if we actually dragged
-    if (wasDragging) {
-      if (typeof onDragEnd === 'function') {
-        onDragEnd();
-      }
+    // Only call onDragEnd and re-render if we actually dragged.
+    // try-finally guarantees __dragActive is always cleared, preventing a
+    // permanent UI freeze if onDragEnd or setValue throws during cleanup.
+    try {
+      if (wasDragging) {
+        if (typeof onDragEnd === 'function') {
+          onDragEnd();
+        }
 
-      // Commit final value through options.setValue so external observers are notified.
-      // During drag, handleStrengthDrag mutates widgetValue in-place (updateWidget=false),
-      // bypassing widget.value setter and options.setValue entirely. This assignment
-      // flushes the in-place mutation through the setter so any setValue wrappers fire.
-      widget.value = widget.value;
-      if (typeof widget.callback === 'function') {
-        widget.callback(widget.value);
+        // Re-enable renderLoras in setValue and flush final value through setter.
+        // The last handleStrengthDrag call already wrote the final strength to
+        // widgetValue via setValue (with render suppressed). widget.value = widget.value
+        // triggers setValue again, which now calls renderLoras since __dragActive is false.
+        widget.__dragActive = false;
+        widget.value = widget.value;
+        if (typeof widget.callback === 'function') {
+          widget.callback(widget.value);
+        }
       }
+    } finally {
+      widget.__dragActive = false;
     }
   };
-  
+
   dragEl.addEventListener('pointerup', endDrag);
   dragEl.addEventListener('pointercancel', endDrag);
 }
@@ -284,6 +293,9 @@ export function initHeaderDrag(headerEl, widget, renderFunction) {
     hasMoved = false;
     activePointerId = e.pointerId;
     currentHeaderElement = e.currentTarget;
+
+    // Suppress renderLoras in setValue during drag (see initDrag for rationale)
+    widget.__dragActive = true;
 
     // Capture pointer to receive all subsequent events regardless of stopPropagation
     const target = e.currentTarget;
@@ -352,13 +364,20 @@ export function initHeaderDrag(headerEl, widget, renderFunction) {
     // Remove the class to restore normal cursor behavior
     document.body.classList.remove('lm-lora-strength-dragging');
 
-    // Only re-render if we actually dragged
-    if (wasDragging) {
-      // Commit final value through options.setValue so external observers are notified.
-      widget.value = widget.value;
-      if (typeof widget.callback === 'function') {
-        widget.callback(widget.value);
+    // Only re-render if we actually dragged.
+    // try-finally guarantees __dragActive is always cleared, preventing a
+    // permanent UI freeze if setValue throws during cleanup.
+    try {
+      if (wasDragging) {
+        // Re-enable renderLoras in setValue and flush final value through setter
+        widget.__dragActive = false;
+        widget.value = widget.value;
+        if (typeof widget.callback === 'function') {
+          widget.callback(widget.value);
+        }
       }
+    } finally {
+      widget.__dragActive = false;
     }
   };
 
@@ -438,7 +457,9 @@ export function initReorderDrag(dragHandle, loraName, widget, renderFunction) {
       if (firstEntry) {
         const rect = firstEntry.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
-        dropIndicator.style.top = `${(rect.top - containerRect.top - 2) / scale}px`;
+        // Convert GBCR visual offset to container-local space (rect/containerRect are post-scale,
+        // scrollTop is pre-scale), so only the visual-diff portion is divided by scale
+        dropIndicator.style.top = `${(rect.top - containerRect.top) / scale + container.scrollTop - 2}px`;
         dropIndicator.style.opacity = '1';
       }
     } else if (targetIndex < entries.length) {
@@ -447,7 +468,7 @@ export function initReorderDrag(dragHandle, loraName, widget, renderFunction) {
       if (targetEntry) {
         const rect = targetEntry.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
-        dropIndicator.style.top = `${(rect.top - containerRect.top - 2) / scale}px`;
+        dropIndicator.style.top = `${(rect.top - containerRect.top) / scale + container.scrollTop - 2}px`;
         dropIndicator.style.opacity = '1';
       }
     } else {
@@ -456,7 +477,7 @@ export function initReorderDrag(dragHandle, loraName, widget, renderFunction) {
       if (lastEntry) {
         const rect = lastEntry.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
-        dropIndicator.style.top = `${(rect.bottom - containerRect.top + 2) / scale}px`;
+        dropIndicator.style.top = `${(rect.bottom - containerRect.top) / scale + container.scrollTop + 2}px`;
         dropIndicator.style.opacity = '1';
       }
     }
@@ -701,6 +722,8 @@ export function createContextMenu(x, y, loraName, widget, previewTooltip, render
   menu.className = 'lm-lora-context-menu';
   menu.style.left = `${x}px`;
   menu.style.top = `${y}px`;
+  // Render off-screen until measured so we can adjust for viewport edges
+  menu.style.visibility = 'hidden';
 
   // View on Civitai option with globe icon
   const viewOnCivitaiOption = createMenuItem(
@@ -956,6 +979,21 @@ export function createContextMenu(x, y, loraName, widget, previewTooltip, render
   menu.appendChild(saveOption);
   
   document.body.appendChild(menu);
+
+  // Flip/clamp position so the menu stays fully inside the viewport
+  const VIEWPORT_MARGIN = 8;
+  const menuRect = menu.getBoundingClientRect();
+  let menuLeft = x;
+  let menuTop = y;
+  if (menuLeft + menuRect.width > window.innerWidth - VIEWPORT_MARGIN) {
+    menuLeft = Math.max(VIEWPORT_MARGIN, window.innerWidth - menuRect.width - VIEWPORT_MARGIN);
+  }
+  if (menuTop + menuRect.height > window.innerHeight - VIEWPORT_MARGIN) {
+    menuTop = Math.max(VIEWPORT_MARGIN, window.innerHeight - menuRect.height - VIEWPORT_MARGIN);
+  }
+  menu.style.left = `${menuLeft}px`;
+  menu.style.top = `${menuTop}px`;
+  menu.style.visibility = '';
 
   // Close menu when clicking outside
   const closeMenu = (e) => {

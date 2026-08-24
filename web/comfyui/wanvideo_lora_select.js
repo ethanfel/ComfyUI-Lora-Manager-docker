@@ -7,7 +7,6 @@ import {
   getWidgetByName,
   getWidgetSerializedValue,
 } from "./utils.js";
-import { addLorasWidget } from "./loras_widget.js";
 import { applyLoraValuesToText, debounce } from "./lora_syntax_utils.js";
 
 app.registerExtension({
@@ -63,7 +62,16 @@ app.registerExtension({
           }
         });
 
-        const result = addLorasWidget(this, "loras", {}, (value) => {
+        // The "loras" widget is declared in INPUT_TYPES (LORAS type) and
+        // created by the LoraManager.LorasWidget extension; take it over here.
+        const lorasWidget = getWidgetByName(this, "loras");
+        if (!lorasWidget) {
+          console.warn("LoRA Manager: loras widget not found for WanVideo Lora Select");
+          return;
+        }
+        this.lorasWidget = lorasWidget;
+
+        lorasWidget.callback = (value) => {
           // Prevent recursive calls
           if (isUpdating) return;
           isUpdating = true;
@@ -82,9 +90,7 @@ app.registerExtension({
           }
 
           scheduleInputSync(value);
-        });
-
-        this.lorasWidget = result.widget;
+        };
 
         // Set up callback for the text input widget to trigger merge logic
         inputWidget.callback = (value) => {

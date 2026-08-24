@@ -1,6 +1,11 @@
 import os
 import sys
 import json
+from typing import Any, cast
+# Ensure the script's directory is on sys.path so that py.* imports resolve
+# regardless of the current working directory (e.g. when launched via
+# ComfyUI's python_embeded from the ComfyUI root directory).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from py.middleware.cache_middleware import cache_control
 from py.middleware.error_middleware import api_json_error
 from py.utils.settings_paths import ensure_settings_file
@@ -15,7 +20,7 @@ def mock_nodes_directory():
     nodes_dir = os.path.join(os.path.dirname(__file__), "py", "nodes")
     if os.path.exists(nodes_dir):
         # Create a mock module for the nodes package itself
-        sys.modules["py.nodes"] = type("MockNodesModule", (), {})
+        sys.modules["py.nodes"] = type("MockNodesModule", (), {})  # pyright: ignore[reportArgumentType]
 
         # Create mock modules for all Python files in the nodes directory
         for file in os.listdir(nodes_dir):
@@ -23,7 +28,7 @@ def mock_nodes_directory():
                 module_name = file[:-3]  # Remove .py extension
                 full_module_name = f"py.nodes.{module_name}"
                 # Create empty module object
-                sys.modules[full_module_name] = type(
+                sys.modules[full_module_name] = type(  # pyright: ignore[reportArgumentType]
                     f"Mock{module_name.capitalize()}Module", (), {}
                 )
                 print(f"Created mock module for: {full_module_name}")
@@ -87,6 +92,10 @@ class MockFolderPaths:
 
 # Create mock server module with PromptServer
 class MockPromptServer:
+    last_prompt_id: Any = None
+    last_node_id: Any = None
+    client_id: Any = None
+
     def __init__(self):
         self.app = None
 
@@ -104,9 +113,9 @@ class MockMetadataCollector:
 
 
 # Initialize basic mocks before any imports
-sys.modules["folder_paths"] = MockFolderPaths()
-sys.modules["server"] = type("server", (), {"PromptServer": MockPromptServer()})
-sys.modules["py.metadata_collector"] = MockMetadataCollector()
+sys.modules["folder_paths"] = MockFolderPaths()  # pyright: ignore[reportArgumentType]
+sys.modules["server"] = type("server", (), {"PromptServer": MockPromptServer()})  # pyright: ignore[reportArgumentType]
+sys.modules["py.metadata_collector"] = MockMetadataCollector()  # pyright: ignore[reportArgumentType]
 
 # Now we can safely import modules that depend on folder_paths and server
 import argparse
@@ -155,10 +164,15 @@ from py.config import config
 class StandaloneServer:
     """Server implementation for standalone mode"""
 
+    last_prompt_id: Any = None
+    last_node_id: Any = None
+    client_id: Any = None
+
     def __init__(self):
+        middlewares: list[Any] = [api_json_error, cache_control]
         self.app = web.Application(
             logger=logger,
-            middlewares=[api_json_error, cache_control],
+            middlewares=middlewares,
             client_max_size=256 * 1024 * 1024,
             handler_args={
                 "max_field_size": HEADER_SIZE_LIMIT,
@@ -299,8 +313,9 @@ class StandaloneLoraManager(LoraManager):
     """Extended LoraManager for standalone mode"""
 
     @classmethod
-    def add_routes(cls, server_instance):
+    def add_routes(cls, server_instance=None):
         """Initialize and register all routes for standalone mode"""
+        server_instance = cast(Any, server_instance)
         app = server_instance.app
 
         # Store app in a global-like location for compatibility
@@ -324,6 +339,7 @@ class StandaloneLoraManager(LoraManager):
         from py.routes.recipe_routes import RecipeRoutes
         from py.routes.update_routes import UpdateRoutes
         from py.routes.misc_routes import MiscRoutes
+        from py.routes.pending_delete_routes import PendingDeleteRoutes
         from py.routes.example_images_routes import ExampleImagesRoutes
         from py.routes.preview_routes import PreviewRoutes
         from py.routes.stats_routes import StatsRoutes
@@ -343,6 +359,7 @@ class StandaloneLoraManager(LoraManager):
         RecipeRoutes.setup_routes(app)
         UpdateRoutes.setup_routes(app)
         MiscRoutes.setup_routes(app)
+        PendingDeleteRoutes.setup_routes(app)
         ExampleImagesRoutes.setup_routes(app, ws_manager=ws_manager)
         PreviewRoutes.setup_routes(app)
         try:

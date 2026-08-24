@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Iterable, List
+from typing import Any, Dict, Iterable, List
 
 import pytest
 
@@ -146,6 +146,8 @@ def test_save_paths_repairs_empty_default_roots(monkeypatch: pytest.MonkeyPatch,
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -183,6 +185,8 @@ def test_save_paths_repairs_stale_default_roots(monkeypatch: pytest.MonkeyPatch,
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -220,6 +224,8 @@ def test_save_paths_keeps_valid_default_roots(monkeypatch: pytest.MonkeyPatch, t
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -357,6 +363,8 @@ def test_save_paths_keeps_default_roots_in_extra_paths(monkeypatch: pytest.Monke
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -409,6 +417,8 @@ def test_save_paths_keeps_default_roots_in_extra_paths_with_windows_slash_mismat
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -460,6 +470,8 @@ def test_save_paths_repairs_empty_default_roots_to_extra_paths_when_primary_miss
 
     class FakeSettingsService:
         active_library = "comfyui"
+        name: str = ""
+        payload: Dict[str, Any] = {}
 
         def get_libraries(self):
             return {
@@ -577,7 +589,7 @@ def test_apply_library_settings_merges_extra_paths(monkeypatch, tmp_path):
     assert str(extra_loras_dir) in config_instance.extra_loras_roots
     assert str(checkpoints_dir) in config_instance.base_models_roots
     assert str(extra_checkpoints_dir) in config_instance.extra_checkpoints_roots
-    assert str(embeddings_dir) in config_instance.embeddings_roots
+    assert str(embeddings_dir) in (config_instance.embeddings_roots or [])
     assert str(extra_embeddings_dir) in config_instance.extra_embeddings_roots
 
 
@@ -609,7 +621,7 @@ def test_apply_library_settings_without_extra_paths(monkeypatch, tmp_path):
     assert config_instance.extra_loras_roots == []
     assert str(checkpoints_dir) in config_instance.base_models_roots
     assert config_instance.extra_checkpoints_roots == []
-    assert str(embeddings_dir) in config_instance.embeddings_roots
+    assert str(embeddings_dir) in (config_instance.embeddings_roots or [])
     assert config_instance.extra_embeddings_roots == []
 
 
@@ -823,3 +835,73 @@ def test_apply_library_settings_ignores_extra_lora_path_overlapping_primary_root
         "same lora folder" in record.message.lower()
         for record in caplog.records
     )
+
+
+def test_save_paths_removes_stale_empty_default_when_comfyui_exists(
+    monkeypatch: pytest.MonkeyPatch, tmp_path,
+):
+    """When an empty-shell 'default' library coexists with 'comfyui', the
+    stale 'default' entry should be removed and 'comfyui' activated."""
+    folder_paths = _setup_config_environment(monkeypatch, tmp_path)
+
+    class FakeSettingsService:
+        def __init__(self):
+            # Replicate the user's settings.json: empty default + populated comfyui
+            self.libraries = {
+                "default": {
+                    "folder_paths": {},
+                    "extra_folder_paths": {},
+                    "default_lora_root": "",
+                    "default_checkpoint_root": "",
+                    "default_unet_root": "",
+                    "default_embedding_root": "",
+                    "recipes_path": "",
+                },
+                "comfyui": {
+                    "folder_paths": {
+                        key: list(value) for key, value in folder_paths.items()
+                    },
+                    "default_lora_root": folder_paths["loras"][0],
+                    "default_checkpoint_root": folder_paths["checkpoints"][0],
+                    "default_embedding_root": folder_paths["embeddings"][0],
+                },
+            }
+            # No active_library key — get_active_library_name() falls back to
+            # dict order, returning "default".
+            self.active_library = "default"
+            self.delete_calls: list[str] = []
+            self.upsert_calls: list[tuple[str, dict[str, Any]]] = []
+
+        def get_libraries(self):
+            return dict(self.libraries)
+
+        def delete_library(self, name: str):
+            self.delete_calls.append(name)
+            self.libraries.pop(name, None)
+
+        def rename_library(self, *_):
+            raise AssertionError("rename_library should not be invoked")
+
+        def get_active_library_name(self):
+            return self.active_library
+
+        def upsert_library(self, name: str, **payload):
+            self.upsert_calls.append((name, payload))
+            self.libraries[name] = {**payload}
+            if payload.get("activate"):
+                self.active_library = name
+
+    fake_settings = FakeSettingsService()
+    monkeypatch.setattr(settings_manager_module, "settings", fake_settings)
+
+    config_module.Config()
+
+    assert fake_settings.delete_calls == ["default"]
+    assert "default" not in fake_settings.libraries
+    assert set(fake_settings.libraries.keys()) == {"comfyui"}
+
+    assert len(fake_settings.upsert_calls) == 1
+    name, payload = fake_settings.upsert_calls[0]
+    assert name == "comfyui"
+    assert payload["activate"] is True
+    assert fake_settings.active_library == "comfyui"

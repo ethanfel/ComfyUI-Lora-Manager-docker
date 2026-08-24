@@ -2,6 +2,7 @@ import copy
 import json
 import logging
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
@@ -198,22 +199,24 @@ async def test_get_civitai_versions_degrades_when_download_history_unavailable(m
 
     handler = ModelCivitaiHandler(
         service=service,
-        settings_service=SimpleNamespace(get=lambda *_: False),
-        ws_manager=SimpleNamespace(),
+        settings_service=SimpleNamespace(get=lambda *_: False),  # pyright: ignore[reportArgumentType]
+        ws_manager=SimpleNamespace(),  # pyright: ignore[reportArgumentType]
         logger=logging.getLogger(__name__),
         metadata_provider_factory=metadata_provider_factory,
         validate_model_type=lambda *_: True,
         expected_model_types=lambda: "LoRA",
         find_model_file=lambda *_: None,
-        metadata_sync=SimpleNamespace(),
-        metadata_refresh_use_case=SimpleNamespace(),
-        metadata_progress_callback=lambda *_args, **_kwargs: None,
+        metadata_sync=SimpleNamespace(),  # pyright: ignore[reportArgumentType]
+        metadata_refresh_use_case=SimpleNamespace(),  # pyright: ignore[reportArgumentType]
+        metadata_progress_callback=lambda *_args, **_kwargs: None,  # pyright: ignore[reportArgumentType]
     )
 
     response = await handler.get_civitai_versions(
-        SimpleNamespace(match_info={"model_id": "42"})
+        SimpleNamespace(match_info={"model_id": "42"})  # pyright: ignore[reportArgumentType]
     )
-    payload = json.loads(response.text)
+    text = response.text
+    assert text is not None
+    payload = json.loads(text)
 
     assert response.status == 200
     assert payload[0]["id"] == 7
@@ -284,10 +287,14 @@ async def test_refresh_model_updates_filters_records_without_updates():
         async def json(self):
             return {}
 
-    response = await handler.refresh_model_updates(DummyRequest())
+    response = await handler.refresh_model_updates(
+    DummyRequest()  # pyright: ignore[reportArgumentType]
+)
     assert response.status == 200
 
-    payload = json.loads(response.text)
+    text = response.text
+    assert text is not None
+    payload = json.loads(text)
     assert payload["success"] is True
     assert len(payload["records"]) == 1
     assert payload["records"][0]["modelId"] == 1
@@ -347,7 +354,9 @@ async def test_refresh_model_updates_with_target_ids():
         async def json(self):
             return {"modelIds": [1, "2", None]}
 
-    response = await handler.refresh_model_updates(DummyRequest())
+    response = await handler.refresh_model_updates(
+    DummyRequest()  # pyright: ignore[reportArgumentType]
+)
     assert response.status == 200
 
     call = update_service.calls[0]
@@ -399,7 +408,9 @@ async def test_refresh_model_updates_accepts_snake_case_ids():
         async def json(self):
             return {"model_ids": [3, "4", "abc", None]}
 
-    response = await handler.refresh_model_updates(DummyRequest())
+    response = await handler.refresh_model_updates(
+    DummyRequest()  # pyright: ignore[reportArgumentType]
+)
     assert response.status == 200
 
     call = update_service.calls[0]
@@ -429,9 +440,9 @@ async def test_fetch_missing_license_data_updates_metadata(monkeypatch):
             return None, False
         return SimpleNamespace(to_dict=lambda: copy.deepcopy(data)), False
 
-    saved: list[tuple[str, dict]] = []
+    saved: list[tuple[str, dict[str, Any]]] = []
 
-    async def fake_save(path: str, metadata: dict):
+    async def fake_save(path: str, metadata: dict[str, Any]):
         saved.append((path, copy.deepcopy(metadata)))
         return True
 
@@ -479,10 +490,14 @@ async def test_fetch_missing_license_data_updates_metadata(monkeypatch):
         async def json(self):
             return {}
 
-    response = await handler.fetch_missing_civitai_license_data(DummyRequest())
+    response = await handler.fetch_missing_civitai_license_data(
+    DummyRequest()  # pyright: ignore[reportArgumentType]
+)
     assert response.status == 200
 
-    payload = json.loads(response.text)
+    text = response.text
+    assert text is not None
+    payload = json.loads(text)
     assert payload["success"] is True
     assert len(payload["updated"]) == 3
     assert provider_calls == [[10, 20]]
@@ -516,9 +531,9 @@ async def test_fetch_missing_license_data_filters_model_ids(monkeypatch):
             return None, False
         return SimpleNamespace(to_dict=lambda: copy.deepcopy(data)), False
 
-    saved: list[tuple[str, dict]] = []
+    saved: list[tuple[str, dict[str, Any]]] = []
 
-    async def fake_save(path: str, metadata: dict):
+    async def fake_save(path: str, metadata: dict[str, Any]):
         saved.append((path, copy.deepcopy(metadata)))
         return True
 
@@ -566,11 +581,133 @@ async def test_fetch_missing_license_data_filters_model_ids(monkeypatch):
         async def json(self):
             return {"modelIds": [20]}
 
-    response = await handler.fetch_missing_civitai_license_data(DummyRequest())
+    response = await handler.fetch_missing_civitai_license_data(
+    DummyRequest()  # pyright: ignore[reportArgumentType]
+)
     assert response.status == 200
 
-    payload = json.loads(response.text)
+    text = response.text
+    assert text is not None
+    payload = json.loads(text)
     assert payload["success"] is True
     assert len(payload["updated"]) == 1
     assert provider_calls == [[20]]
     assert len(saved) == 1
+
+
+def test_serialize_version_permanent_paid_is_not_early_access():
+    """Permanent paid versions (is_paid, no end date) must not be flagged as
+    early access, mirroring _is_early_access_active in the update service."""
+    version = ModelVersionRecord(
+        version_id=7, name="v7", base_model=None, released_at=None, size_bytes=None,
+        preview_url=None, is_in_library=False, should_ignore=False,
+        early_access_ends_at=None, is_early_access=True, usage_control="Download",
+        paid_access=json.dumps({"permanent": True, "endsAt": None}), is_paid=True,
+    )
+    serialized = ModelUpdateHandler._serialize_version(version, None)
+    assert serialized["isEarlyAccess"] is False
+    assert serialized["isPaid"] is True
+    assert serialized["paidAccess"] == {"permanent": True, "endsAt": None}
+
+
+def test_serialize_version_timed_paid_is_early_access():
+    """Timed paid gates (endsAt in the future) stay flagged as early access."""
+    version = ModelVersionRecord(
+        version_id=8, name="v8", base_model=None, released_at=None, size_bytes=None,
+        preview_url=None, is_in_library=False, should_ignore=False,
+        early_access_ends_at="2099-01-01T00:00:00.000Z", is_early_access=True,
+        usage_control="Download",
+        paid_access=json.dumps({"permanent": False, "endsAt": "2099-01-01T00:00:00.000Z"}),
+        is_paid=False,
+    )
+    serialized = ModelUpdateHandler._serialize_version(version, None)
+    assert serialized["isEarlyAccess"] is True
+    assert serialized["isPaid"] is False
+
+
+def test_serialize_version_malformed_paid_access_does_not_crash():
+    """A malformed paid_access row must degrade to None instead of failing
+    the whole versions-list response."""
+    version = ModelVersionRecord(
+        version_id=10, name="v10", base_model=None, released_at=None, size_bytes=None,
+        preview_url=None, is_in_library=False, should_ignore=False,
+        early_access_ends_at=None, is_early_access=True, usage_control=None,
+        paid_access="{not json", is_paid=False,
+    )
+    serialized = ModelUpdateHandler._serialize_version(version, None)
+    assert serialized["paidAccess"] is None
+    assert serialized["isEarlyAccess"] is True
+
+
+async def test_enrich_early_access_details_skips_permanent_paid(monkeypatch):
+    """Permanent paid versions must not trigger per-version CivitAI fetches in
+    _enrich_early_access_details: they are not early access and can never get
+    an end time, so enriching them is wasted API traffic."""
+    record = ModelUpdateRecord(
+        model_type="lora",
+        model_id=1,
+        versions=[
+            ModelVersionRecord(
+                version_id=100, name="paid", base_model=None, released_at=None,
+                size_bytes=None, preview_url=None, is_in_library=False,
+                should_ignore=False, early_access_ends_at=None,
+                is_early_access=True, usage_control="Download",
+                paid_access='{"permanent": true, "endsAt": null}', is_paid=True,
+            ),
+            ModelVersionRecord(
+                version_id=200, name="ea", base_model=None, released_at=None,
+                size_bytes=None, preview_url=None, is_in_library=False,
+                should_ignore=False, early_access_ends_at=None,
+                is_early_access=True, usage_control="Download",
+                paid_access=None, is_paid=False,
+            ),
+        ],
+        last_checked_at=1.0,
+        should_ignore_model=False,
+    )
+
+    fetched: list[int] = []
+
+    async def fake_version_info(version_id: str):
+        fetched.append(int(version_id))
+        return {"earlyAccessEndsAt": "2099-01-01T00:00:00.000Z"}, None
+
+    provider = SimpleNamespace(get_model_version_info=fake_version_info)
+
+    async def metadata_selector(name):
+        assert name == "civitai_api"
+        return provider
+
+    handler = ModelUpdateHandler(
+        service=DummyService(SimpleNamespace(raw_data=[], version_index={})),
+        update_service=SimpleNamespace(),
+        metadata_provider_selector=metadata_selector,
+        settings_service=SimpleNamespace(get=lambda *_: False),
+        logger=logging.getLogger(__name__),
+    )
+
+    enriched = await handler._enrich_early_access_details(record)
+
+    # Only the timed EA version (200) is fetched; the permanent paid one (100) is skipped.
+    assert fetched == [200]
+    enriched_map = {v.version_id: v for v in enriched.versions}
+    assert enriched_map[200].early_access_ends_at == "2099-01-01T00:00:00.000Z"
+    assert enriched_map[100].early_access_ends_at is None
+
+
+def test_serialize_version_includes_file_count():
+    version = ModelVersionRecord(
+        version_id=11, name="v11", base_model=None, released_at=None, size_bytes=None,
+        preview_url=None, is_in_library=True, should_ignore=False, file_count=2,
+    )
+    serialized = ModelUpdateHandler._serialize_version(version, None)
+    assert serialized["fileCount"] == 2
+
+
+def test_serialize_version_file_count_defaults_to_none():
+    version = ModelVersionRecord(
+        version_id=12, name="v12", base_model=None, released_at=None, size_bytes=None,
+        preview_url=None, is_in_library=False, should_ignore=False,
+    )
+    serialized = ModelUpdateHandler._serialize_version(version, None)
+    assert serialized["fileCount"] is None

@@ -14,11 +14,16 @@ from ..services.service_registry import ServiceRegistry
 from ..utils.example_images_paths import (
     ExampleImagePathResolver,
     ensure_library_root_exists,
+    get_example_images_root,
+    is_hash_folder,
     uses_library_scoped_folders,
 )
 from ..utils.metadata_manager import MetadataManager
 from .example_images_processor import ExampleImagesProcessor
-from .example_images_metadata import MetadataUpdater
+from .example_images_metadata import (
+    MetadataUpdater,
+    update_cache_from_metadata,
+)
 from ..services.downloader import get_downloader
 from ..services.settings_manager import get_settings_manager
 
@@ -30,7 +35,7 @@ class ExampleImagesDownloadError(RuntimeError):
 class DownloadInProgressError(ExampleImagesDownloadError):
     """Raised when a download is already running."""
 
-    def __init__(self, progress_snapshot: dict) -> None:
+    def __init__(self, progress_snapshot: Dict[str, Any]) -> None:
         super().__init__("Download already in progress")
         self.progress_snapshot = progress_snapshot
 
@@ -49,7 +54,7 @@ class DownloadConfigurationError(ExampleImagesDownloadError):
 logger = logging.getLogger(__name__)
 
 
-class _DownloadProgress(dict):
+class _DownloadProgress(dict[str, Any]):
     """Mutable mapping maintaining download progress with set-aware serialisation."""
 
     def __init__(self) -> None:
@@ -72,9 +77,10 @@ class _DownloadProgress(dict):
             refreshed_models=set(),
             failed_models=set(),
             reprocessed_models=set(),
+            rate_limited_models=set(),
         )
 
-    def snapshot(self) -> dict:
+    def snapshot(self) -> Dict[str, Any]:
         """Return a JSON-serialisable snapshot of the current progress."""
 
         snapshot = dict(self)
@@ -82,7 +88,15 @@ class _DownloadProgress(dict):
         snapshot["refreshed_models"] = list(self["refreshed_models"])
         snapshot["failed_models"] = list(self["failed_models"])
         snapshot["reprocessed_models"] = list(self.get("reprocessed_models", set()))
+        snapshot["rate_limited_models"] = list(self.get("rate_limited_models", set()))
         return snapshot
+
+
+# When fewer candidates than this remain in check_pending_models, probe each
+# model folder directly (preserving legacy-folder migration semantics). Above
+# it, build a folder index with a single directory scan so libraries with
+# 100k+ models do not pay one syscall per candidate.
+_BULK_LOOKUP_THRESHOLD = 1000
 
 
 def _model_directory_has_files(path: str) -> bool:
@@ -101,11 +115,41 @@ def _model_directory_has_files(path: str) -> bool:
     return False
 
 
+def _build_example_folder_index(output_dir: str) -> dict[str, bool]:
+    """Build a ``{hash: has_files}`` index for a library's example-image folders.
+
+    A single directory scan over the library root replaces ``O(candidates)``
+    per-folder ``os.scandir`` calls, which is required for libraries with
+    100k+ models. Each hash folder is classified by whether it contains any
+    entries, matching the semantics of ``_model_directory_has_files``.
+    """
+
+    index: dict[str, bool] = {}
+    if not output_dir or not os.path.isdir(output_dir):
+        return index
+
+    try:
+        with os.scandir(output_dir) as entries:
+            for entry in entries:
+                name = entry.name
+                if not entry.is_dir() or not is_hash_folder(name):
+                    continue
+                try:
+                    with os.scandir(entry.path) as subentries:
+                        index[name.lower()] = any(subentries)
+                except OSError:
+                    index[name.lower()] = False
+    except OSError:
+        pass
+
+    return index
+
+
 class DownloadManager:
     """Manages downloading example images for models."""
 
     def __init__(self, *, ws_manager, state_lock: asyncio.Lock | None = None) -> None:
-        self._download_task: asyncio.Task | None = None
+        self._download_task: asyncio.Task[Any] | None = None
         self._is_downloading = False
         self._progress = _DownloadProgress()
         self._ws_manager = ws_manager
@@ -118,7 +162,7 @@ class DownloadManager:
             return ""
         return ensure_library_root_exists(library_name)
 
-    async def start_download(self, options: dict):
+    async def start_download(self, options: Dict[str, Any]):
         """Start downloading example images for models."""
 
         # Step 1: Parse options (fast, non-blocking)
@@ -128,6 +172,7 @@ class DownloadManager:
         model_types = data.get("model_types", ["lora", "checkpoint"])
         delay = float(data.get("delay", 0.2))
         force = data.get("force", False)
+        model_hashes = data.get("model_hashes", [])
 
         # Step 2: Validate configuration (fast lookup)
         settings_manager = get_settings_manager()
@@ -153,13 +198,15 @@ class DownloadManager:
         # Step 3: Load progress file (I/O operation, done outside lock)
         processed_models = set()
         failed_models = set()
+        rate_limited_models = set()
         
         try:
-            progress_file, processed_models, failed_models = await self._load_progress_file(output_dir)
+            progress_file, processed_models, failed_models, rate_limited_models = await self._load_progress_file(output_dir)
             logger.debug(
-                "Loaded previous progress, %s models already processed, %s models marked as failed",
+                "Loaded previous progress, %s models already processed, %s models marked as failed, %s models rate-limited",
                 len(processed_models),
                 len(failed_models),
+                len(rate_limited_models),
             )
         except Exception as e:
             logger.error(f"Failed to load progress file: {e}")
@@ -175,6 +222,7 @@ class DownloadManager:
                 self._progress.reset()
                 self._progress["processed_models"] = processed_models
                 self._progress["failed_models"] = failed_models
+                self._progress["rate_limited_models"] = rate_limited_models
                 self._stop_requested = False
                 self._progress["status"] = "running"
                 self._progress["start_time"] = time.time()
@@ -194,6 +242,7 @@ class DownloadManager:
                         delay,
                         active_library,
                         force,
+                        model_hashes,
                     )
                 )
 
@@ -220,7 +269,7 @@ class DownloadManager:
 
         return {"success": True, "message": "Download started", "status": snapshot}
 
-    def _handle_download_task_done(self, task: asyncio.Task, output_dir: str) -> None:
+    def _handle_download_task_done(self, task: asyncio.Task[Any], output_dir: str) -> None:
         """Handle download task completion, including saving progress on error."""
         try:
             # This will re-raise any exception from the task
@@ -233,7 +282,7 @@ class DownloadManager:
             except Exception as save_error:
                 logger.error(f"Failed to save progress after task failure: {save_error}")
 
-    async def get_status(self, request) -> dict:
+    async def get_status(self, request) -> Dict[str, Any]:
         """Get the current status of example images download."""
 
         return {
@@ -242,8 +291,8 @@ class DownloadManager:
             "status": self._progress.snapshot(),
         }
 
-    async def _load_progress_file(self, output_dir: str) -> tuple[str, set, set]:
-        """Load progress file from disk. Returns (progress_file_path, processed_models, failed_models).
+    async def _load_progress_file(self, output_dir: str) -> tuple[str, set[str], set[str], set[str]]:
+        """Load progress file from disk. Returns (progress_file_path, processed_models, failed_models, rate_limited_models).
 
         This is a separate async method to allow running in executor to avoid blocking event loop.
         """
@@ -252,8 +301,12 @@ class DownloadManager:
             None, self._load_progress_file_sync, output_dir
         )
 
-    def _load_progress_file_sync(self, output_dir: str) -> tuple[str, set, set]:
-        """Synchronous implementation of progress file loading."""
+    def _load_progress_file_sync(self, output_dir: str) -> tuple[str, set[str], set[str], set[str]]:
+        """Synchronous implementation of progress file loading.
+
+        Returns:
+            tuple: (progress_file_path, processed_models, failed_models, rate_limited_models)
+        """
         progress_file = os.path.join(output_dir, ".download_progress.json")
         progress_source = progress_file
 
@@ -289,6 +342,7 @@ class DownloadManager:
 
         processed_models = set()
         failed_models = set()
+        rate_limited_models = set()
 
         if os.path.exists(progress_source):
             try:
@@ -296,13 +350,13 @@ class DownloadManager:
                     saved_progress = json.load(f)
                     processed_models = set(saved_progress.get("processed_models", []))
                     failed_models = set(saved_progress.get("failed_models", []))
+                    rate_limited_models = set(saved_progress.get("rate_limited_models", []))
             except Exception:
-                # Return empty sets on error
                 pass
 
-        return progress_file, processed_models, failed_models
+        return progress_file, processed_models, failed_models, rate_limited_models
 
-    def _load_progress_sets_sync(self, progress_file: str) -> tuple[set, set]:
+    def _load_progress_sets_sync(self, progress_file: str) -> tuple[set[str], set[str]]:
         """Load only the processed and failed model sets from progress file.
 
         This is a lighter version for quick checks without legacy migration.
@@ -323,7 +377,7 @@ class DownloadManager:
 
         return processed_models, failed_models
 
-    async def check_pending_models(self, model_types: list[str]) -> dict:
+    async def check_pending_models(self, model_types: list[str]) -> Dict[str, Any]:
         """Quickly check how many models need example images downloaded.
         
         This is a lightweight check that avoids the overhead of starting
@@ -400,13 +454,48 @@ class DownloadManager:
             # Calculate pending count: check which models actually need processing.
             # A model is pending if it has a hash, is not already processed or known-failed,
             # and its folder doesn't exist or is empty.
-            pending_hashes = set()
-            for model_hash, model_name in all_models_with_hash:
-                if model_hash not in processed_models and model_hash not in failed_models:
+            candidate_hashes = [
+                model_hash
+                for model_hash, _ in all_models_with_hash
+                if model_hash not in processed_models
+                and model_hash not in failed_models
+            ]
+
+            pending_hashes: set[str] = set()
+            # For small candidate counts the existing per-folder check is fine
+            # and handles legacy folder migration.
+            # For large libraries, scan the library root once and do set lookups.
+            if len(candidate_hashes) <= _BULK_LOOKUP_THRESHOLD or not output_dir:
+                for model_hash in candidate_hashes:
                     model_dir = ExampleImagePathResolver.get_model_folder(
                         model_hash, active_library
                     )
                     if not _model_directory_has_files(model_dir):
+                        pending_hashes.add(model_hash)
+            else:
+                folder_index = await asyncio.get_event_loop().run_in_executor(
+                    None, _build_example_folder_index, output_dir
+                )
+                # In multi-library mode, folders that have not been consolidated
+                # into the library root yet (startup migration skipped, failed
+                # move, or created at the legacy path afterwards) still live at
+                # the legacy root/<hash> location. Only scan that root when at
+                # least one candidate is missing from the library-root index, so
+                # the fully-consolidated case does not pay an extra directory
+                # pass on every call.
+                if uses_library_scoped_folders() and any(
+                    not folder_index.get(model_hash, False)
+                    for model_hash in candidate_hashes
+                ):
+                    legacy_root = get_example_images_root()
+                    if legacy_root and legacy_root != output_dir:
+                        legacy_index = await asyncio.get_event_loop().run_in_executor(
+                            None, _build_example_folder_index, legacy_root
+                        )
+                        for hash_key, has_files in legacy_index.items():
+                            folder_index.setdefault(hash_key, has_files)
+                for model_hash in candidate_hashes:
+                    if not folder_index.get(model_hash, False):
                         pending_hashes.add(model_hash)
 
             pending_count = len(pending_hashes)
@@ -490,8 +579,9 @@ class DownloadManager:
         delay,
         library_name,
         force: bool = False,
+        model_hashes: list[str] | None = None,
     ):
-        """Download example images for all models."""
+        """Download example images for all models (or only the given hashes)."""
 
         downloader = await get_downloader()
 
@@ -519,6 +609,18 @@ class DownloadManager:
                         if model.get("sha256"):
                             all_models.append((scanner_type, model, scanner))
 
+            # Restrict to the requested hashes when provided (empty = all models).
+            # Explicit targets are a directed user request, so previously failed
+            # models are retried instead of skipped.
+            explicit_targets = bool(model_hashes)
+            if model_hashes:
+                hash_set = {h.lower() for h in model_hashes}
+                all_models = [
+                    (scanner_type, model, scanner)
+                    for scanner_type, model, scanner in all_models
+                    if model.get("sha256", "").lower() in hash_set
+                ]
+
             # Update total count
             self._progress["total"] = len(all_models)
             logger.debug(f"Found {self._progress['total']} models to process")
@@ -542,6 +644,7 @@ class DownloadManager:
                     downloader,
                     library_name,
                     force,
+                    explicit_targets,
                 )
 
                 # Update progress
@@ -638,6 +741,7 @@ class DownloadManager:
         downloader,
         library_name,
         force: bool = False,
+        explicit_targets: bool = False,
     ):
         """Process a single model download."""
 
@@ -660,8 +764,9 @@ class DownloadManager:
             self._progress["current_model"] = f"{model_name} ({model_hash[:8]})"
             await self._broadcast_progress(status="running")
 
-            # Skip if already in failed models (unless force mode is enabled)
-            if not force and model_hash in self._progress["failed_models"]:
+            # Skip if already in failed models (unless force mode is enabled or
+            # the model was explicitly targeted by hash)
+            if not force and not explicit_targets and model_hash in self._progress["failed_models"]:
                 logger.debug(f"Skipping known failed model: {model_name}")
                 return False
 
@@ -670,29 +775,33 @@ class DownloadManager:
             )
             existing_files = _model_directory_has_files(model_dir)
 
-            # Skip if already processed AND directory exists with files
-            if model_hash in self._progress["processed_models"]:
-                if existing_files:
-                    logger.debug(f"Skipping already processed model: {model_name}")
+            # Model-level guard: a populated folder counts as done. Explicitly
+            # targeted models bypass it so the per-image existence pre-check can
+            # fill individual gaps without re-fetching existing files.
+            if not explicit_targets:
+                # Skip if already processed AND directory exists with files
+                if model_hash in self._progress["processed_models"]:
+                    if existing_files:
+                        logger.debug(f"Skipping already processed model: {model_name}")
+                        return False
+
+                    logger.debug(
+                        "Model %s (%s) marked as processed but folder empty or missing, reprocessing triggered",
+                        model_name,
+                        model_hash,
+                    )
+                    # Track that we are reprocessing this model for summary logging
+                    self._progress["reprocessed_models"].add(model_hash)
+                    # Remove from processed models since we need to reprocess
+                    self._progress["processed_models"].discard(model_hash)
+
+                if existing_files and model_hash not in self._progress["processed_models"]:
+                    logger.debug(
+                        "Model folder already populated for %s, marking as processed without download",
+                        model_name,
+                    )
+                    self._progress["processed_models"].add(model_hash)
                     return False
-
-                logger.debug(
-                    "Model %s (%s) marked as processed but folder empty or missing, reprocessing triggered",
-                    model_name,
-                    model_hash,
-                )
-                # Track that we are reprocessing this model for summary logging
-                self._progress["reprocessed_models"].add(model_hash)
-                # Remove from processed models since we need to reprocess
-                self._progress["processed_models"].discard(model_hash)
-
-            if existing_files and model_hash not in self._progress["processed_models"]:
-                logger.debug(
-                    "Model folder already populated for %s, marking as processed without download",
-                    model_name,
-                )
-                self._progress["processed_models"].add(model_hash)
-                return False
 
             if not model_dir:
                 logger.warning(
@@ -732,11 +841,13 @@ class DownloadManager:
                     success,
                     is_stale,
                     failed_images,
+                    rate_limited_images,
                 ) = await ExampleImagesProcessor.download_model_images_with_tracking(
                     model_hash, model_name, images, model_dir, optimize, downloader
                 )
 
                 failed_urls: Set[str] = set(failed_images)
+                rate_limited_urls: Set[str] = set(rate_limited_images)
 
                 # If metadata is stale, try to refresh it
                 if is_stale and model_hash not in self._progress["refreshed_models"]:
@@ -760,6 +871,7 @@ class DownloadManager:
                             success,
                             _,
                             additional_failed,
+                            additional_rate_limited,
                         ) = await ExampleImagesProcessor.download_model_images_with_tracking(
                             model_hash,
                             model_name,
@@ -770,30 +882,51 @@ class DownloadManager:
                         )
 
                         failed_urls.update(additional_failed)
+                        rate_limited_urls.update(additional_rate_limited)
 
                     self._progress["refreshed_models"].add(model_hash)
 
-                if failed_urls:
+                # Separate permanent failures from rate-limited ones
+                permanent_failures = failed_urls - rate_limited_urls
+
+                if permanent_failures:
                     await self._remove_failed_images_from_metadata(
                         model_hash,
                         model_name,
                         model_dir,
-                        failed_urls,
+                        permanent_failures,
                         scanner,
                     )
 
-                if failed_urls:
+                if rate_limited_urls:
+                    self._progress["rate_limited_models"].add(model_hash)
+                    logger.warning(
+                        "%d example images for %s are rate-limited (429), will retry next time",
+                        len(rate_limited_urls),
+                        model_name,
+                    )
+                    # Clear failed_models so non-force runs can retry
+                    if (force or explicit_targets) and model_hash in self._progress["failed_models"]:
+                        self._progress["failed_models"].discard(model_hash)
+                        logger.info(
+                            f"Removed {model_name} from failed_models after force retry with rate-limited images"
+                        )
+
+                if rate_limited_urls:
+                    # Don't mark as failed or fully processed — rate-limited
+                    # images will be retried next time.
+                    pass
+                elif permanent_failures:
                     self._progress["failed_models"].add(model_hash)
                     self._progress["processed_models"].add(model_hash)
                     logger.info(
                         "Removed %s failed example images for %s",
-                        len(failed_urls),
+                        len(permanent_failures),
                         model_name,
                     )
                 elif success:
                     self._progress["processed_models"].add(model_hash)
-                    # Remove from failed_models if force mode enabled and model was previously failed
-                    if force and model_hash in self._progress["failed_models"]:
+                    if (force or explicit_targets) and model_hash in self._progress["failed_models"]:
                         self._progress["failed_models"].discard(model_hash)
                         logger.info(
                             f"Removed {model_name} from failed_models after successful force retry"
@@ -850,6 +983,7 @@ class DownloadManager:
                 "processed_models": list(self._progress["processed_models"]),
                 "refreshed_models": list(self._progress["refreshed_models"]),
                 "failed_models": list(self._progress["failed_models"]),
+                "rate_limited_models": list(self._progress.get("rate_limited_models", set())),
                 "completed": self._progress["completed"],
                 "total": self._progress["total"],
                 "last_update": time.time(),
@@ -866,7 +1000,7 @@ class DownloadManager:
         except Exception as e:
             logger.error(f"Failed to save progress file: {e}")
 
-    async def start_force_download(self, options: dict):
+    async def start_force_download(self, options: Dict[str, Any]):
         """Force download example images for specific models."""
 
         async with self._state_lock:
@@ -1155,11 +1289,13 @@ class DownloadManager:
                     success,
                     is_stale,
                     failed_images,
+                    rate_limited_images,
                 ) = await ExampleImagesProcessor.download_model_images_with_tracking(
                     model_hash, model_name, images, model_dir, optimize, downloader
                 )
 
                 failed_urls: Set[str] = set(failed_images)
+                rate_limited_urls: Set[str] = set(rate_limited_images)
 
                 # If metadata is stale, try to refresh it
                 if is_stale and model_hash not in self._progress["refreshed_models"]:
@@ -1183,6 +1319,7 @@ class DownloadManager:
                             success,
                             _,
                             additional_failed_images,
+                            additional_rate_limited,
                         ) = await ExampleImagesProcessor.download_model_images_with_tracking(
                             model_hash,
                             model_name,
@@ -1192,21 +1329,35 @@ class DownloadManager:
                             downloader,
                         )
 
-                        # Combine failed images from both attempts
                         failed_urls.update(additional_failed_images)
+                        rate_limited_urls.update(additional_rate_limited)
 
                     self._progress["refreshed_models"].add(model_hash)
 
-                # For forced downloads, remove failed images from metadata
-                if failed_urls:
+                # Separate permanent failures from rate-limited ones
+                permanent_failures = failed_urls - rate_limited_urls
+
+                # Only remove permanently failed images from metadata
+                if permanent_failures:
                     await self._remove_failed_images_from_metadata(
-                        model_hash, model_name, model_dir, failed_urls, scanner
+                        model_hash, model_name, model_dir, permanent_failures, scanner
                     )
 
-                # Mark as processed
-                if (
-                    success or failed_urls
-                ):  # Mark as processed if we successfully downloaded some images or removed failed ones
+                if rate_limited_urls:
+                    self._progress["rate_limited_models"].add(model_hash)
+                    logger.warning(
+                        "%d example images for %s are rate-limited (429), will retry next time",
+                        len(rate_limited_urls),
+                        model_name,
+                    )
+
+                # Mark as processed only when no rate-limited images remain
+                if rate_limited_urls:
+                    pass
+                elif permanent_failures:
+                    self._progress["processed_models"].add(model_hash)
+                    self._progress["failed_models"].add(model_hash)
+                elif success:
                     self._progress["processed_models"].add(model_hash)
 
                 return True  # Return True to indicate a remote download happened
@@ -1229,15 +1380,20 @@ class DownloadManager:
         model_dir: str,
         failed_images: Iterable[str],
         scanner,
+        error_type: str = "not_found",
     ) -> None:
-        """Mark failed images in model metadata so they won't be retried."""
+        """Mark failed images in model metadata so they won't be retried.
+
+        Args:
+            error_type: Reason string stored in the image's ``downloadError`` field
+                        (default ``"not_found"``).
+        """
 
         failed_set: Set[str] = {url for url in failed_images if url}
         if not failed_set:
             return
 
         try:
-            # Get current model data
             model_data = await MetadataUpdater.get_updated_model(model_hash, scanner)
             if not model_data:
                 logger.warning(
@@ -1268,7 +1424,7 @@ class DownloadManager:
                     continue
 
                 image["downloadFailed"] = True
-                image.setdefault("downloadError", "not_found")
+                image.setdefault("downloadError", error_type)
                 logger.debug(
                     "Marked example image %s for %s as failed due to missing remote asset",
                     image_url,
@@ -1286,8 +1442,8 @@ class DownloadManager:
                 await MetadataManager.save_metadata(file_path, model_copy)
 
                 try:
-                    await scanner.update_single_model_cache(
-                        file_path, file_path, model_data
+                    await update_cache_from_metadata(
+                        scanner, file_path, model_copy
                     )
                 except AttributeError:
                     logger.debug(

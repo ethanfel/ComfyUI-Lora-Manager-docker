@@ -3,7 +3,7 @@
 import json
 import os
 import tempfile
-from typing import Dict, List
+from typing import Any, Dict, List
 
 import pytest
 
@@ -27,7 +27,7 @@ def temp_db_path():
 
 
 @pytest.fixture
-def sample_recipes() -> List[Dict]:
+def sample_recipes() -> List[Dict[str, Any]]:
     """Create sample recipe data."""
     return [
         {
@@ -133,6 +133,7 @@ class TestPersistentRecipeCache:
 
         # Load and verify
         loaded = cache.load_cache()
+        assert loaded is not None
         r1 = next(r for r in loaded.raw_data if r["id"] == "recipe-001")
         assert r1["title"] == "Updated Title"
         assert r1["favorite"] is False
@@ -147,6 +148,7 @@ class TestPersistentRecipeCache:
 
         # Load and verify
         loaded = cache.load_cache()
+        assert loaded is not None
         assert len(loaded.raw_data) == 1
         assert loaded.raw_data[0]["id"] == "recipe-002"
 
@@ -203,6 +205,7 @@ class TestPersistentRecipeCache:
         cache.save_cache(recipes)
 
         loaded = cache.load_cache()
+        assert loaded is not None
         assert len(loaded.raw_data) == 1
         assert loaded.raw_data[0]["id"] == "valid-001"
 
@@ -251,6 +254,7 @@ class TestPersistentRecipeCache:
         cache.save_cache(recipes)
 
         loaded = cache.load_cache()
+        assert loaded is not None
         loras = loaded.raw_data[0]["loras"]
         assert len(loras) == 2
         assert loras[0]["modelVersionId"] == 12345
@@ -509,6 +513,7 @@ class TestPersistentRecipeCache:
         cache.save_cache(sample_recipes)
 
         loaded = cache.load_cache()
+        assert loaded is not None
         assert loaded.image_id_map == {}
 
     def test_image_id_map_survives_recipe_update(self, temp_db_path, sample_recipes):
@@ -522,6 +527,7 @@ class TestPersistentRecipeCache:
         cache.update_recipe(updated)
 
         loaded = cache.load_cache()
+        assert loaded is not None
         assert loaded.image_id_map == {"123": "recipe-alpha"}
 
     def test_save_image_id_map_persists_without_full_save(self, temp_db_path, sample_recipes):
@@ -532,6 +538,7 @@ class TestPersistentRecipeCache:
         cache.save_image_id_map({"555": "new-recipe", "666": "another-recipe"})
 
         loaded = cache.load_cache()
+        assert loaded is not None
         assert loaded.image_id_map == {"555": "new-recipe", "666": "another-recipe"}
 
     def test_save_image_id_map_overwrites_previous(self, temp_db_path, sample_recipes):
@@ -542,4 +549,88 @@ class TestPersistentRecipeCache:
         cache.save_image_id_map({"222": "new-only"})
 
         loaded = cache.load_cache()
+        assert loaded is not None
         assert loaded.image_id_map == {"222": "new-only"}
+
+
+class TestHasWorkflowColumn:
+    """has_workflow column persistence (plan 3.1)."""
+
+    def test_save_and_load_roundtrip(self, temp_db_path):
+        """has_workflow must round-trip through save_cache()/load_cache()."""
+        cache = PersistentRecipeCache(db_path=temp_db_path)
+        recipes = [
+            {"id": "wf-1", "title": "Has Workflow", "has_workflow": True},
+            {"id": "wf-2", "title": "No Workflow", "has_workflow": False},
+            {"id": "wf-3", "title": "Unset Workflow"},
+        ]
+        cache.save_cache(recipes)
+
+        loaded = cache.load_cache()
+        assert loaded is not None
+        by_id = {r["id"]: r for r in loaded.raw_data}
+        assert by_id["wf-1"]["has_workflow"] is True
+        assert by_id["wf-2"]["has_workflow"] is False
+        assert by_id["wf-3"]["has_workflow"] is False
+
+    def test_prepare_recipe_row_matches_column_order(self, temp_db_path):
+        """The prepared row must append has_workflow in column order."""
+        cache = PersistentRecipeCache(db_path=temp_db_path)
+        row_true = cache._prepare_recipe_row({"id": "r1", "has_workflow": True}, "")
+        row_false = cache._prepare_recipe_row({"id": "r2", "has_workflow": False}, "")
+
+        assert row_true[-1] == 1
+        assert row_false[-1] == 0
+        assert len(row_true) == len(cache._RECIPE_COLUMNS)
+        assert cache._RECIPE_COLUMNS[-1] == "has_workflow"
+
+    def test_update_recipe_preserves_has_workflow(self, temp_db_path):
+        """update_recipe() must write the has_workflow column correctly."""
+        cache = PersistentRecipeCache(db_path=temp_db_path)
+        cache.save_cache([{"id": "wf-update", "title": "x", "has_workflow": True}])
+        cache.update_recipe({"id": "wf-update", "title": "y", "has_workflow": False})
+
+        loaded = cache.load_cache()
+        assert loaded is not None
+        assert loaded.raw_data[0]["has_workflow"] is False
+
+    def test_migrates_legacy_database_adds_has_workflow(self, temp_db_path):
+        """A database created before has_workflow existed must still load."""
+        import sqlite3
+
+        conn = sqlite3.connect(temp_db_path)
+        conn.execute(
+            """
+            CREATE TABLE recipes (
+                recipe_id TEXT PRIMARY KEY,
+                file_path TEXT,
+                json_path TEXT,
+                title TEXT,
+                folder TEXT,
+                source_path TEXT,
+                base_model TEXT,
+                fingerprint TEXT,
+                created_date REAL,
+                modified REAL,
+                file_mtime REAL,
+                file_size INTEGER,
+                favorite INTEGER DEFAULT 0,
+                repair_version INTEGER DEFAULT 0,
+                preview_nsfw_level INTEGER DEFAULT 0,
+                loras_json TEXT,
+                checkpoint_json TEXT,
+                gen_params_json TEXT,
+                tags_json TEXT
+            )
+            """
+        )
+        conn.execute("INSERT INTO recipes (recipe_id, title) VALUES ('legacy-1', 'Legacy')")
+        conn.commit()
+        conn.close()
+
+        cache = PersistentRecipeCache(db_path=temp_db_path)
+
+        loaded = cache.load_cache()
+        assert loaded is not None
+        assert loaded.raw_data[0]["id"] == "legacy-1"
+        assert loaded.raw_data[0]["has_workflow"] is False

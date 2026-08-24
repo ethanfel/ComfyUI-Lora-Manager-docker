@@ -1,6 +1,7 @@
 import { app } from "../../scripts/app.js";
 import { forwardMiddleMouseToCanvas, forwardWheelToCanvas } from "./utils.js";
 import { copyToClipboard } from "./loras_widget_utils.js";
+import { ensureLmStyles } from "./lm_styles_loader.js";
 
 const MIN_HEIGHT = 150;
 const GROUP_EDITOR_ID = "lm-trigger-group-editor";
@@ -438,6 +439,12 @@ function renderGroupEditor(widget, tagData, index) {
     return;
   }
 
+  // Preserve the scroll position across re-renders: toggling a child tag
+  // rebuilds the whole panel, and a fresh panel would otherwise jump back
+  // to the top.
+  const previousScrollTop = state.panelEl ? state.panelEl.scrollTop : 0;
+  const previousScrollLeft = state.panelEl ? state.panelEl.scrollLeft : 0;
+
   if (state.panelEl) {
     state.panelEl.remove();
   }
@@ -550,6 +557,8 @@ function renderGroupEditor(widget, tagData, index) {
   state.lastAnchorRect = getRectSnapshot(state.anchorEl);
   attachGroupEditorCloseHandlers(widget);
   positionGroupEditor(widget);
+  panel.scrollTop = previousScrollTop;
+  panel.scrollLeft = previousScrollLeft;
   startGroupEditorTracking(widget);
 }
 
@@ -695,6 +704,16 @@ export function addTagsWidget(node, name, opts, callback, wheelSensitivity = 0.0
     alignContent: "flex-start",
     outline: "none",
   });
+
+  // Set a fixed minimum height so the node has a reasonable starting size.
+  // Adding or removing tags does NOT change the node size — the container
+  // scrolls when content exceeds the allocated space.
+  ensureLmStyles();
+  container.style.setProperty("--comfy-widget-min-height", `${MIN_HEIGHT}px`);
+
+  if (typeof LiteGraph !== "undefined" && LiteGraph.vueNodesMode) {
+    container.classList.add("lm-vue-node");
+  }
 
   const initialTagsData = opts?.defaultVal || [];
 

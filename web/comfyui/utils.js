@@ -8,6 +8,7 @@ export const LORA_PROVIDER_NODE_TYPES = [
   "Lora Stacker (LoraManager)",
   "Lora Randomizer (LoraManager)",
   "Lora Cycler (LoraManager)",
+  "Create Hook LoRA (LoraManager)",
 ];
 
 export const LORA_STACK_AGGREGATOR_NODE_TYPES = [
@@ -35,7 +36,11 @@ function isMapLike(collection) {
     return collection && typeof collection.entries === "function" && typeof collection.values === "function";
 }
 
-function getChildGraphs(graph) {
+/**
+ * Return the subgraph LGraph instances nested under `graph`, across both
+ * Map-like and plain-object `_subgraphs` containers.
+ */
+export function getChildGraphs(graph) {
     if (!graph || !graph._subgraphs) {
         return [];
     }
@@ -438,6 +443,7 @@ export function mergeLoras(lorasText, lorasArr) {
         active: lora.active !== undefined ? lora.active : true,
         expanded: lora.expanded !== undefined ? lora.expanded : false,
         clipStrength: lora.clipStrength !== undefined ? lora.clipStrength : parsedLoras[lora.name].clipStrength,
+        selected: !!lora.selected,
       });
       usedNames.add(lora.name);
     }
@@ -451,6 +457,7 @@ export function mergeLoras(lorasText, lorasArr) {
         strength: parsedLoras[name].strength,
         active: true,
         clipStrength: parsedLoras[name].clipStrength,
+        selected: false,
       });
     }
   }

@@ -39,8 +39,8 @@ const NEW_TAB_ZOOM_LEVEL = 0.8;
 const STRENGTH_STEP_SETTING_ID = "loramanager.strength_step";
 const STRENGTH_STEP_DEFAULT = 0.05;
 
-const LORA_WIDGET_MAX_VISIBLE_SETTING_ID = "loramanager.lora_widget_max_visible_loras";
-const LORA_WIDGET_MAX_VISIBLE_DEFAULT = 12;
+const LORA_ACTIVE_FILTERS_AUTOCOMPLETE_SETTING_ID = "loramanager.lora_active_filters_autocomplete";
+const LORA_ACTIVE_FILTERS_AUTOCOMPLETE_DEFAULT = false;
 
 // ============================================================================
 // Helper Functions
@@ -171,6 +171,26 @@ const getPromptTagAutocompletePreference = (() => {
         }
     };
 })();
+
+/**
+ * Persist a LoRA Manager setting through ComfyUI's setting API.
+ * Returns true when the setting was written successfully.
+ */
+const setLoraManagerSettingValue = async (settingId, value) => {
+    const settingManager = app?.extensionManager?.setting;
+    if (settingManager && typeof settingManager.set === "function") {
+        await settingManager.set(settingId, value);
+        return true;
+    }
+
+    const setting = app?.ui?.settings?.settingsById?.[settingId];
+    if (setting) {
+        app.ui.settings.setSettingValue(settingId, value);
+        return true;
+    }
+
+    return false;
+};
 
 const getAutocompleteAppendCommaPreference = (() => {
     let settingsUnavailableLogged = false;
@@ -363,28 +383,28 @@ const getStrengthStepPreference = (() => {
     };
 })();
 
-const getLoraWidgetMaxVisibleLoras = (() => {
+const getLoraActiveFiltersAutocompletePreference = (() => {
     let settingsUnavailableLogged = false;
 
     return () => {
         const settingManager = app?.extensionManager?.setting;
         if (!settingManager || typeof settingManager.get !== "function") {
             if (!settingsUnavailableLogged) {
-                console.warn("LoRA Manager: settings API unavailable, using default max visible loras.");
+                console.warn("LoRA Manager: settings API unavailable, using default lora active filters autocomplete setting.");
                 settingsUnavailableLogged = true;
             }
-            return LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+            return LORA_ACTIVE_FILTERS_AUTOCOMPLETE_DEFAULT;
         }
 
         try {
-            const value = settingManager.get(LORA_WIDGET_MAX_VISIBLE_SETTING_ID);
-            return value ?? LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+            const value = settingManager.get(LORA_ACTIVE_FILTERS_AUTOCOMPLETE_SETTING_ID);
+            return value ?? LORA_ACTIVE_FILTERS_AUTOCOMPLETE_DEFAULT;
         } catch (error) {
             if (!settingsUnavailableLogged) {
-                console.warn("LoRA Manager: unable to read max visible loras setting, using default.", error);
+                console.warn("LoRA Manager: unable to read lora active filters autocomplete setting, using default.", error);
                 settingsUnavailableLogged = true;
             }
-            return LORA_WIDGET_MAX_VISIBLE_DEFAULT;
+            return LORA_ACTIVE_FILTERS_AUTOCOMPLETE_DEFAULT;
         }
     };
 })();
@@ -422,8 +442,16 @@ app.registerExtension({
             name: "Enable Tag Autocomplete in Prompt Nodes",
             type: "boolean",
             defaultValue: PROMPT_TAG_AUTOCOMPLETE_DEFAULT,
-            tooltip: "When enabled, typing will trigger tag autocomplete suggestions. Commands (e.g., /character, /artist) always work regardless of this setting.",
+            tooltip: "When enabled, typing in a Prompt (LoraManager) node triggers tag autocomplete suggestions. You can also toggle it by typing /autocomplete or /noautocomplete in the node, or from the node's right-click menu. Slash commands (e.g., /character, /artist) always work regardless of this setting.",
             category: ["LoRA Manager", "Autocomplete", "Prompt"],
+        },
+        {
+            id: LORA_ACTIVE_FILTERS_AUTOCOMPLETE_SETTING_ID,
+            name: "Search LoRA autocomplete within active filters",
+            type: "boolean",
+            defaultValue: LORA_ACTIVE_FILTERS_AUTOCOMPLETE_DEFAULT,
+            tooltip: "When enabled, LoRA autocomplete suggestions respect the active filters (folder/base model/tags) set in the LoRA Manager page. Commands /activefilters and /noactivefilters toggle this mode.",
+            category: ["LoRA Manager", "Autocomplete", "LoRA Active Filters"],
         },
         {
             id: AUTOCOMPLETE_APPEND_COMMA_SETTING_ID,
@@ -491,19 +519,6 @@ app.registerExtension({
             defaultValue: STRENGTH_STEP_DEFAULT,
             tooltip: "Step size for adjusting LoRA strength via arrow buttons or keyboard (default: 0.05)",
             category: ["LoRA Manager", "LoRA Widget", "Strength Step"],
-        },
-        {
-            id: LORA_WIDGET_MAX_VISIBLE_SETTING_ID,
-            name: "Node 2.0: Maximum visible LoRA entries",
-            type: "slider",
-            attrs: {
-                min: 3,
-                max: 50,
-                step: 1,
-            },
-            defaultValue: LORA_WIDGET_MAX_VISIBLE_DEFAULT,
-            tooltip: "When using Node 2.0 rendering, limit the loras widget height to show at most this many entries (default: 12). Excess entries are accessible via scrollbar.",
-            category: ["LoRA Manager", "LoRA Widget", "Max Visible"],
         },
     ],
     async setup() {
@@ -581,6 +596,7 @@ app.registerExtension({
 // ============================================================================
 
 export {
+    PROMPT_TAG_AUTOCOMPLETE_SETTING_ID,
     getWheelSensitivity,
     getAutoPathCorrectionPreference,
     getAutocompleteAppendCommaPreference,
@@ -591,5 +607,6 @@ export {
     getUsageStatisticsPreference,
     getNewTabTemplatePreference,
     getStrengthStepPreference,
-    getLoraWidgetMaxVisibleLoras,
+    getLoraActiveFiltersAutocompletePreference,
+    setLoraManagerSettingValue,
 };

@@ -1,11 +1,189 @@
+from __future__ import annotations
+
 import json
+import os
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any, Dict, cast
 
 import pytest
 
-from py.services.model_lifecycle_service import ModelLifecycleService
+from py.services.model_lifecycle_service import ModelLifecycleService, _require_path_in_library_roots
+from py.services.pending_delete_service import PENDING_DELETE_DIR_NAME, _reset_pending_delete_service
 from py.utils.metadata_manager import MetadataManager
 from py.utils.models import LoraMetadata
+
+
+async def _empty_metadata_loader(path: str) -> Dict[str, object]:
+    """Default metadata loader for tests: return an empty payload."""
+    return {}
+
+
+class ScannerWithRoots:
+    def __init__(self, roots):
+        self._roots = list(roots)
+
+    def get_model_roots(self):
+        return self._roots
+
+
+class TestRequirePathInLibraryRoots:
+    def test_accepts_path_within_root(self, tmp_path):
+        root = tmp_path / "loras"
+        root.mkdir()
+        model = root / "model.safetensors"
+        model.write_text("")
+
+        scanner = ScannerWithRoots([str(root)])
+        _require_path_in_library_roots(str(model), scanner)
+
+    def test_rejects_path_outside_roots(self, tmp_path):
+        root = tmp_path / "loras"
+        root.mkdir()
+        outside = tmp_path / "outside" / "model.safetensors"
+        outside.parent.mkdir(parents=True)
+        outside.write_text("")
+
+        scanner = ScannerWithRoots([str(root)])
+        with pytest.raises(ValueError, match="outside configured library"):
+            _require_path_in_library_roots(str(outside), scanner)
+
+    def test_passes_when_no_roots_configured(self, tmp_path):
+        f = tmp_path / "model.safetensors"
+        f.write_text("")
+
+        scanner = ScannerWithRoots([])
+        _require_path_in_library_roots(str(f), scanner)
+
+    def test_accepts_path_matching_root_exactly(self, tmp_path):
+        root = tmp_path / "loras"
+        root.mkdir()
+
+        scanner = ScannerWithRoots([str(root)])
+        _require_path_in_library_roots(str(root), scanner)
+
+    def test_accepts_symlink_within_root(self, tmp_path):
+        """Symlinks under a configured root are legitimate business paths
+        and should be accepted — containment works on business-path space,
+        not resolved physical paths."""
+        root = tmp_path / "loras"
+        root.mkdir()
+
+        outside_dir = tmp_path / "outside"
+        outside_dir.mkdir()
+        outside_file = outside_dir / "escaped.safetensors"
+        outside_file.write_text("")
+
+        symlink = root / "link.safetensors"
+        symlink.symlink_to(outside_file)
+
+        scanner = ScannerWithRoots([str(root)])
+        # Symlink path is under root in business-path space → accepted
+        _require_path_in_library_roots(str(symlink), scanner)
+
+    def test_rejects_dot_dot_traversal(self, tmp_path):
+        """Verify that ``..`` components are still resolved and blocked —
+        ``abspath`` normalises dot-dot but does not resolve symlinks."""
+        root = tmp_path / "loras"
+        root.mkdir()
+
+        # A path that traverses up out of the root via ..
+        escaped = os.path.join(str(root), "..", "..", "etc", "passwd")
+
+        scanner = ScannerWithRoots([str(root)])
+        with pytest.raises(ValueError, match="outside configured library"):
+            _require_path_in_library_roots(escaped, scanner)
+
+
+class ScannerForDelete:
+    def __init__(self, raw_data, roots, model_type="lora"):
+        self.model_type = model_type
+        self.cache = DummyCache(raw_data)
+        self._hash_index = DummyHashIndex()
+        self._roots = list(roots)
+        self._persist_calls = []
+
+    def get_model_roots(self):
+        return self._roots
+
+    async def get_cached_data(self):
+        return self.cache
+
+    async def _persist_current_cache(self):
+        self._persist_calls.append(True)
+
+
+@pytest.mark.asyncio
+async def test_delete_model_rejects_path_outside_roots(tmp_path: Path):
+    root = tmp_path / "loras"
+    root.mkdir()
+    model = root / "model.safetensors"
+    model.write_bytes(b"data")
+
+    scanner = ScannerForDelete(
+        raw_data=[{"file_path": str(model)}],
+        roots=[str(root)],
+    )
+    service = ModelLifecycleService(
+        scanner=scanner,
+        metadata_manager=DummyMetadataManager({"civitai": {"modelId": 1}}),
+        metadata_loader=_empty_metadata_loader,
+    )
+    # Path within root should work (model file exists)
+    result = await service.delete_model(str(model))
+    assert result["success"] is True
+
+    # Path outside root should be rejected
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"data")
+    scanner2 = ScannerForDelete(
+        raw_data=[],
+        roots=[str(root)],
+    )
+    service2 = ModelLifecycleService(
+        scanner=scanner2,
+        metadata_manager=DummyMetadataManager({}),
+        metadata_loader=_empty_metadata_loader,
+    )
+    with pytest.raises(ValueError, match="outside configured library"):
+        await service2.delete_model(str(outside))
+
+
+@pytest.mark.asyncio
+async def test_rename_model_rejects_path_outside_roots(tmp_path: Path):
+    root = tmp_path / "loras"
+    root.mkdir()
+
+    scanner = ScannerWithRoots([str(root)])
+    service = ModelLifecycleService(
+        scanner=scanner,
+        metadata_manager=DummyMetadataManager({}),
+        metadata_loader=_empty_metadata_loader,
+    )
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"data")
+
+    with pytest.raises(ValueError, match="outside configured library"):
+        await service.rename_model(file_path=str(outside), new_file_name="new_name")
+
+
+@pytest.mark.asyncio
+async def test_bulk_delete_rejects_any_path_outside_roots(tmp_path: Path):
+    root = tmp_path / "loras"
+    root.mkdir()
+    model_ok = root / "model.safetensors"
+    model_ok.write_bytes(b"data")
+    outside = tmp_path / "outside.safetensors"
+    outside.write_bytes(b"data")
+
+    scanner = ScannerWithRoots([str(root)])
+    service = ModelLifecycleService(
+        scanner=scanner,
+        metadata_manager=DummyMetadataManager({}),
+        metadata_loader=_empty_metadata_loader,
+    )
+    with pytest.raises(ValueError, match="outside configured library"):
+        await service.bulk_delete_models([str(model_ok), str(outside)])
 
 
 class DummyCache:
@@ -41,7 +219,7 @@ class VersionAwareScanner:
                 continue
             candidate = civitai.get("modelId")
             try:
-                normalized = int(candidate)
+                normalized = int(cast(Any, candidate))
             except (TypeError, ValueError):
                 continue
             if normalized != model_id:
@@ -129,6 +307,7 @@ async def test_rename_model_preserves_compound_extensions(tmp_path: Path):
 
     assert expected_main.exists()
     assert not model_path.exists()
+    assert isinstance(result["new_file_path"], str)
     assert result["new_file_path"].endswith(f"{new_name}.safetensors")
     assert expected_preview.exists()
     assert not preview_path.exists()
@@ -175,7 +354,7 @@ async def test_delete_model_updates_update_service(tmp_path: Path):
         scanner=scanner,
         metadata_manager=metadata_manager,
         metadata_loader=metadata_loader,
-        update_service=update_service,
+        update_service=update_service,  # pyright: ignore[reportArgumentType]
     )
 
     result = await service.delete_model(model_path.as_posix())
@@ -228,6 +407,7 @@ async def test_rename_model_preserves_extension(tmp_path: Path):
 
     assert expected_main.exists()
     assert not model_path.exists()
+    assert isinstance(result["new_file_path"], str)
     assert result["new_file_path"].endswith(f"{new_name}{old_extension}")
     assert expected_preview.exists()
     assert not preview_path.exists()
@@ -280,7 +460,12 @@ async def test_rename_model_with_dotted_basename(tmp_path: Path):
     expected_main = tmp_path / f"{new_name}{old_extension}"
     assert expected_main.exists()
     assert result["new_file_path"] == expected_main.as_posix()
-    assert any(p.endswith(f"{new_name}{old_extension}") for p in result["renamed_files"])
+    renamed_files = result["renamed_files"]
+    assert isinstance(renamed_files, list)
+    assert any(
+        isinstance(p, str) and p.endswith(f"{new_name}{old_extension}")
+        for p in renamed_files
+    )
 
     saved_metadata = json.loads((tmp_path / f"{new_name}.metadata.json").read_text())
     assert saved_metadata["file_name"] == new_name
@@ -322,7 +507,9 @@ async def test_delete_model_removes_gguf_file(tmp_path: Path):
     assert not model_path.exists()
     assert not metadata_path.exists()
     assert not preview_path.exists()
-    assert any(item.endswith("model.gguf") for item in result["deleted_files"])
+    deleted_files = result["deleted_files"]
+    assert isinstance(deleted_files, list)
+    assert any(isinstance(item, str) and item.endswith("model.gguf") for item in deleted_files)
 
 
 # =============================================================================
@@ -363,10 +550,10 @@ async def test_exclude_model_marks_as_excluded(tmp_path: Path):
     saved_metadata = []
 
     class SavingMetadataManager:
-        async def save_metadata(self, path: str, metadata: dict):
+        async def save_metadata(self, path: str, metadata: Dict[str, Any]):
             saved_metadata.append((path, metadata.copy()))
 
-    async def metadata_loader(path: str):
+    async def metadata_loader(path: str) -> Dict[str, Any]:
         return metadata_payload.copy()
 
     service = ModelLifecycleService(
@@ -378,6 +565,7 @@ async def test_exclude_model_marks_as_excluded(tmp_path: Path):
     result = await service.exclude_model(str(model_path))
 
     assert result["success"] is True
+    assert isinstance(result["message"], str)
     assert "excluded" in result["message"].lower()
     assert saved_metadata[0][1]["exclude"] is True
     assert str(model_path) in scanner._excluded_models
@@ -413,7 +601,7 @@ async def test_exclude_model_updates_tag_counts(tmp_path: Path):
     scanner = TagCountScanner(raw_data)
 
     class DummyMetadataManagerLocal:
-        async def save_metadata(self, path: str, metadata: dict):
+        async def save_metadata(self, path: str, metadata: Dict[str, Any]):
             pass
 
     async def metadata_loader(path: str):
@@ -439,7 +627,7 @@ async def test_exclude_model_empty_path_raises_error():
     service = ModelLifecycleService(
         scanner=VersionAwareScanner([]),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="Model path is required"):
@@ -477,7 +665,7 @@ async def test_unexclude_model_restores_cache_entry(tmp_path: Path):
     saved_metadata = []
 
     class SavingMetadataManager:
-        async def save_metadata(self, path: str, metadata: dict):
+        async def save_metadata(self, path: str, metadata: Dict[str, Any]):
             saved_metadata.append((path, metadata.copy()))
             await MetadataManager.save_metadata(path, metadata)
 
@@ -495,6 +683,7 @@ async def test_unexclude_model_restores_cache_entry(tmp_path: Path):
     result = await service.unexclude_model(str(model_path))
 
     assert result["success"] is True
+    assert isinstance(result["message"], str)
     assert "restored" in result["message"].lower()
     assert scanner._excluded_models == []
     assert saved_metadata[0][1]["exclude"] is False
@@ -532,7 +721,7 @@ async def test_bulk_delete_models_deletes_multiple_files(tmp_path: Path):
     service = ModelLifecycleService(
         scanner=scanner,
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     result = await service.bulk_delete_models(file_paths)
@@ -548,7 +737,7 @@ async def test_bulk_delete_models_empty_list_raises_error():
     service = ModelLifecycleService(
         scanner=VersionAwareScanner([]),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="No file paths provided"):
@@ -566,7 +755,7 @@ async def test_delete_model_empty_path_raises_error():
     service = ModelLifecycleService(
         scanner=VersionAwareScanner([]),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="Model path is required"):
@@ -579,7 +768,7 @@ async def test_rename_model_empty_path_raises_error():
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="required"):
@@ -595,7 +784,7 @@ async def test_rename_model_empty_name_raises_error(tmp_path: Path):
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="required"):
@@ -611,7 +800,7 @@ async def test_rename_model_invalid_characters_raises_error(tmp_path: Path):
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     invalid_names = [
@@ -649,7 +838,7 @@ async def test_rename_model_existing_file_raises_error(tmp_path: Path):
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     with pytest.raises(ValueError, match="already exists"):
@@ -669,7 +858,7 @@ async def test_extract_model_id_from_civitai_payload():
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     # Test civitai.modelId
@@ -695,7 +884,7 @@ async def test_extract_model_id_returns_none_for_invalid_payload():
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     assert service._extract_model_id_from_payload({}) is None
@@ -711,8 +900,137 @@ async def test_extract_model_id_handles_string_values():
     service = ModelLifecycleService(
         scanner=DummyScanner(),
         metadata_manager=DummyMetadataManager({}),
-        metadata_loader=lambda x: {},
+        metadata_loader=_empty_metadata_loader,
     )
 
     payload = {"civitai": {"modelId": "54321"}}
     assert service._extract_model_id_from_payload(payload) == 54321
+
+
+# =============================================================================
+# Tests for delete_model undo staging
+# =============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _reset_pending_delete_singleton() -> Iterator[None]:
+    """Reset the pending-delete singleton around every test in this module.
+
+    The singleton keeps an in-process list of staging roots across tests;
+    resetting avoids cross-test pollution (a stale root from one tmp_path
+    leaking into the next test's opportunistic purge enumeration).
+    """
+    _reset_pending_delete_service()
+    yield
+    _reset_pending_delete_service()
+
+
+@pytest.fixture(autouse=True)
+def _stub_scanner_registry_getters(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Prevent purge enumeration from instantiating real scanner singletons.
+
+    ``stage_model_delete`` triggers an opportunistic purge whose root
+    enumeration queries the ServiceRegistry scanner getters; stubbing them to
+    ``None`` keeps tests fast and isolated (mirrors test_pending_delete_service).
+    """
+    from py.services.service_registry import ServiceRegistry
+
+    async def _none(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    monkeypatch.setattr(ServiceRegistry, "get_lora_scanner", _none)
+    monkeypatch.setattr(ServiceRegistry, "get_checkpoint_scanner", _none)
+    monkeypatch.setattr(ServiceRegistry, "get_embedding_scanner", _none)
+
+
+def _make_delete_service(scanner: Any) -> ModelLifecycleService:
+    return ModelLifecycleService(
+        scanner=scanner,
+        metadata_manager=DummyMetadataManager({"civitai": {"modelId": 1}}),
+        metadata_loader=_empty_metadata_loader,
+    )
+
+
+@pytest.mark.asyncio
+async def test_delete_model_stages_file(tmp_path: Path):
+    """Artifacts are renamed into a ``.lm-pending-delete/<batch_id>/`` staging
+    dir under the model root, the response carries the batch_id, the cache
+    entry is removed and the cache is persisted (``_persist_calls`` tracked by
+    ``ScannerForDelete``)."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    model_path = root / "model.safetensors"
+    model_path.write_bytes(b"content")
+    metadata_path = root / "model.metadata.json"
+    metadata_path.write_text(json.dumps({}))
+    preview_path = root / "model.preview.png"
+    preview_path.write_bytes(b"preview")
+
+    scanner = ScannerForDelete(
+        raw_data=[
+            {
+                "file_path": str(model_path),
+                "civitai": {"modelId": 1, "id": 10},
+                "sha256": "abc123",
+            }
+        ],
+        roots=[str(root)],
+    )
+    service = _make_delete_service(scanner)
+
+    result = await service.delete_model(str(model_path))
+
+    assert result["success"] is True
+    batch_id = result["batch_id"]
+    assert isinstance(batch_id, str)
+
+    assert not model_path.exists()
+    assert not metadata_path.exists()
+    assert not preview_path.exists()
+    batch_dir = root / PENDING_DELETE_DIR_NAME / batch_id
+    assert batch_dir.is_dir()
+    assert (batch_dir / "model.safetensors").read_bytes() == b"content"
+    assert (batch_dir / "model.metadata.json").exists()
+    assert (batch_dir / "model.preview.png").exists()
+
+    assert scanner.cache.raw_data == []
+    assert scanner._hash_index.removed == [str(model_path)]
+    assert scanner._persist_calls == [True]
+
+
+@pytest.mark.asyncio
+async def test_delete_model_falls_back_when_staging_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    """Staging rename failure: delete_model_artifacts fallback removes the
+    files, batch_id is None and no staged data is left behind."""
+    root = tmp_path / "loras"
+    root.mkdir()
+    model_path = root / "model.safetensors"
+    model_path.write_bytes(b"content")
+
+    real_rename = os.rename
+
+    def _failing_rename(src: str, dst: str) -> None:
+        if PENDING_DELETE_DIR_NAME in dst:
+            raise OSError("simulated staging failure")
+        real_rename(src, dst)
+
+    monkeypatch.setattr(os, "rename", _failing_rename)
+
+    scanner = ScannerForDelete(
+        raw_data=[{"file_path": str(model_path)}],
+        roots=[str(root)],
+    )
+    service = _make_delete_service(scanner)
+
+    result = await service.delete_model(str(model_path))
+
+    assert result["success"] is True
+    assert result["batch_id"] is None
+    assert result["deleted_files"]
+    assert not model_path.exists()
+    # No staged batch files remain (the batch dir is rolled back; an empty
+    # staging parent, if left behind by the rollback, holds no data).
+    staging_parent = root / PENDING_DELETE_DIR_NAME
+    assert not staging_parent.exists() or not any(staging_parent.iterdir())

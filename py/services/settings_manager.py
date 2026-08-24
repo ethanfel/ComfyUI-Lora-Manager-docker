@@ -12,6 +12,7 @@ from threading import Lock
 from typing import (
     Any,
     Awaitable,
+    Coroutine,
     Dict,
     Iterable,
     List,
@@ -65,6 +66,8 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "onboarding_completed": False,
     "dismissed_banners": [],
     "enable_metadata_archive_db": False,
+    "enable_civarchive_api": True,
+    "metadata_provider_order": "civitai_archive_sqlite",
     "proxy_enabled": False,
     "proxy_host": "",
     "proxy_port": "",
@@ -90,6 +93,7 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "mature_blur_level": "R",
     "autoplay_on_hover": False,
     "display_density": "default",
+    "recipes_layout": "grid",
     "card_info_display": "always",
     "include_trigger_words": False,
     "compact_mode": False,
@@ -108,6 +112,11 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "backup_retention_count": 5,
     "use_new_license_icons": True,
     "group_by_model": False,
+    # AI / LLM provider configuration (BYOK)
+    "llm_provider": "openai",  # "openai" | "ollama" | "custom"
+    "llm_api_key": "",
+    "llm_api_base": "",  # empty = provider default
+    "llm_model": "",  # e.g. "gpt-4o-mini"
 }
 
 
@@ -147,6 +156,11 @@ class SettingsManager:
         self._auto_set_default_roots()
         self._check_environment_variables()
         self._collect_configuration_warnings()
+
+        if os.environ.get("LORA_MANAGER_PORTABLE", "0") == "1":
+            if not self.settings.get("use_portable_settings"):
+                self.settings["use_portable_settings"] = True
+                self._save_settings()
 
         if self._needs_initial_save:
             self._save_settings()
@@ -399,7 +413,12 @@ class SettingsManager:
 
         needs_library_bootstrap = not isinstance(libraries, dict) or not libraries
 
-        if not needs_library_bootstrap and top_level_has_paths and len(libraries) == 1:
+        if (
+            not needs_library_bootstrap
+            and top_level_has_paths
+            and isinstance(libraries, Mapping)
+            and len(libraries) == 1
+        ):
             only_library_payload = next(iter(libraries.values()))
             if isinstance(only_library_payload, Mapping):
                 folder_payload = only_library_payload.get("folder_paths")
@@ -442,6 +461,9 @@ class SettingsManager:
                     candidate_payload.get("folder_paths")
                 ):
                     seed_library_name = target_name
+
+        if not isinstance(libraries, dict) or not libraries:
+            return
 
         sanitized_libraries: Dict[str, Dict[str, Any]] = {}
         changed = False
@@ -582,7 +604,7 @@ class SettingsManager:
         return payload
 
     def _normalize_folder_paths(
-        self, folder_paths: Mapping[str, Iterable[str]]
+        self, folder_paths: Mapping[str, Any]
     ) -> Dict[str, List[str]]:
         normalized: Dict[str, List[str]] = {}
         for key, values in folder_paths.items():
@@ -611,7 +633,7 @@ class SettingsManager:
                 candidate_values = [values]
             else:
                 try:
-                    candidate_values = list(values)  # type: ignore[arg-type]
+                    candidate_values = list(values)  # pyright: ignore[reportArgumentType]
                 except TypeError:
                     continue
 
@@ -621,12 +643,37 @@ class SettingsManager:
 
         return False
 
+    @staticmethod
+    def _normalize_path_set(paths: Iterable[str]) -> set[str]:
+        """Normalize an iterable of paths for set-based overlap comparison.
+
+        Resolves symlinks via ``os.path.realpath`` when the path exists on disk,
+        then applies ``os.path.normcase`` + ``os.path.normpath`` for consistent
+        cross-platform comparison.  Non-string / empty entries are skipped.
+        """
+        result: set[str] = set()
+        for p in paths:
+            if not isinstance(p, str):
+                continue
+            stripped = p.strip()
+            if not stripped:
+                continue
+            if os.path.exists(stripped):
+                stripped = os.path.normpath(os.path.realpath(stripped))
+            result.add(os.path.normcase(stripped))
+        return result
+
     def _validate_folder_paths(
         self,
         library_name: str,
-        folder_paths: Mapping[str, Iterable[str]],
+        folder_paths: Mapping[str, Any],
     ) -> None:
-        """Ensure folder paths do not overlap with other libraries."""
+        """Ensure folder paths do not overlap with other libraries.
+
+        Also detects checkpoints ↔ unet path overlap within the same library
+        (including via symlink resolution), which is a configuration error since
+        these model types must use separate physical folders.
+        """
         libraries = self.settings.get("libraries", {})
         normalized_new: Dict[str, Dict[str, str]] = {}
         for key, values in folder_paths.items():
@@ -663,6 +710,22 @@ class SettingsManager:
                     raise ValueError(
                         f"Folder path(s) {collisions} already assigned to library '{other_name}'"
                     )
+
+        # Checkpoints ↔ unet overlap within the same library
+        ckpt_paths = folder_paths.get("checkpoints", []) or []
+        unet_paths = folder_paths.get("unet", []) or []
+        if ckpt_paths and unet_paths:
+            ckpt_real = self._normalize_path_set(ckpt_paths)
+            unet_real = self._normalize_path_set(unet_paths)
+            overlap = ckpt_real & unet_real
+            if overlap:
+                collisions = ", ".join(sorted(overlap))
+                raise ValueError(
+                    f"Path(s) {collisions} are configured for both "
+                    f"'checkpoints' and 'unet' (diffusion models). "
+                    f"These model types must use separate physical folders. "
+                    f"Please remove one of the conflicting entries."
+                )
 
     def _update_active_library_entry(
         self,
@@ -874,6 +937,23 @@ class SettingsManager:
             self.settings["civitai_api_key"] = env_api_key
             self._save_settings()
 
+        # LLM provider overrides
+        llm_env_map = {
+            "LLM_API_KEY": "llm_api_key",
+            "LLM_MODEL": "llm_model",
+            "LLM_API_BASE": "llm_api_base",
+            "LLM_PROVIDER": "llm_provider",
+        }
+        llm_changed = False
+        for env_var, settings_key in llm_env_map.items():
+            env_val = os.environ.get(env_var)
+            if env_val:
+                logger.info("Found %s environment variable", env_var)
+                self.settings[settings_key] = env_val
+                llm_changed = True
+        if llm_changed:
+            self._save_settings()
+
     def _default_settings_actions(self) -> List[Dict[str, Any]]:
         return [
             {
@@ -1049,7 +1129,7 @@ class SettingsManager:
             return []
 
         if isinstance(value, str):
-            candidates: Iterable[str] = (
+            candidates: Iterable[Any] = (
                 value.replace("\n", ",").replace(";", ",").split(",")
             )
         elif isinstance(value, Sequence) and not isinstance(
@@ -1097,7 +1177,7 @@ class SettingsManager:
             return []
 
         if isinstance(value, str):
-            candidates: Iterable[str] = (
+            candidates: Iterable[Any] = (
                 value.replace("\n", ",").replace(";", ",").split(",")
             )
         elif isinstance(value, Sequence) and not isinstance(
@@ -1137,7 +1217,7 @@ class SettingsManager:
             return []
 
         if isinstance(value, str):
-            candidates: Iterable[str] = (
+            candidates: Iterable[Any] = (
                 value.replace("\n", ",").replace(";", ",").split(",")
             )
         elif isinstance(value, Sequence) and not isinstance(
@@ -1404,10 +1484,12 @@ class SettingsManager:
 
         try:
             common_root = os.path.commonpath([source, target])
-        except ValueError as exc:
-            raise ValueError("Invalid recipes path change") from exc
+        except ValueError:
+            # Windows: paths on different drives share no common root.
+            # A cross-drive move is valid, so treat it as no common root.
+            common_root = None
 
-        if common_root == source:
+        if common_root is not None and common_root == source:
             raise ValueError("Recipes path cannot be moved into a nested directory")
 
         planned_recipe_updates: Dict[str, Dict[str, Any]] = {}
@@ -1521,9 +1603,13 @@ class SettingsManager:
             portable_switch_pending = True
             self._prepare_portable_switch(value)
         if key == "folder_paths" and isinstance(value, Mapping):
-            self._update_active_library_entry(folder_paths=value)  # type: ignore[arg-type]
+            active_name = self.get_active_library_name()
+            self._validate_folder_paths(active_name, value)
+            self._update_active_library_entry(folder_paths=value)  # pyright: ignore[reportArgumentType]
         elif key == "extra_folder_paths" and isinstance(value, Mapping):
-            self._update_active_library_entry(extra_folder_paths=value)  # type: ignore[arg-type]
+            active_name = self.get_active_library_name()
+            self._validate_folder_paths(active_name, value)
+            self._update_active_library_entry(extra_folder_paths=value)  # pyright: ignore[reportArgumentType]
         elif key == "default_lora_root":
             self._update_active_library_entry(default_lora_root=str(value))
         elif key == "default_checkpoint_root":
@@ -1569,7 +1655,7 @@ class SettingsManager:
         previous_dir = os.path.dirname(previous_path) or target_dir
 
         if os.path.abspath(previous_path) != os.path.abspath(target_path):
-            self._copy_model_cache_directory(previous_dir, target_dir)
+            self._migrate_settings_directory_content(previous_dir, target_dir)
             logger.info("Switching settings file to: %s", target_path)
 
         self._pending_portable_switch = {"other_path": other_path}
@@ -1604,46 +1690,52 @@ class SettingsManager:
         finally:
             self._pending_portable_switch = None
 
-    def _copy_model_cache_directory(self, source_dir: str, target_dir: str) -> None:
-        """Copy model_cache artifacts when switching storage locations."""
+    def _migrate_settings_directory_content(
+        self, source_dir: str, target_dir: str
+    ) -> None:
+        """Migrate settings directory subdirectories when switching storage locations.
+
+        Copies the canonical subdirectories (cache, backups, logs, stats, wildcards)
+        from the old settings directory to the new one. Legacy cache artifacts
+        (model_cache, recipe_cache, etc.) are migrated lazily by
+        ``resolve_cache_path_with_migration`` on first access.
+
+        Args:
+            source_dir: The previous settings directory path.
+            target_dir: The new settings directory path.
+        """
 
         if not source_dir or not target_dir:
             return
 
-        source_cache_dir = os.path.join(source_dir, "model_cache")
-        target_cache_dir = os.path.join(target_dir, "model_cache")
-        if os.path.isdir(source_cache_dir) and os.path.abspath(
-            source_cache_dir
-        ) != os.path.abspath(target_cache_dir):
-            try:
-                shutil.copytree(
-                    source_cache_dir,
-                    target_cache_dir,
-                    dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("*.sqlite-shm", "*.sqlite-wal"),
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Failed to copy model_cache directory from %s to %s: %s",
-                    source_cache_dir,
-                    target_cache_dir,
-                    exc,
-                )
+        def _copy_dir(name: str) -> None:
+            source = os.path.join(source_dir, name)
+            target = os.path.join(target_dir, name)
+            if os.path.isdir(source) and os.path.abspath(source) != os.path.abspath(
+                target
+            ):
+                try:
+                    shutil.copytree(
+                        source,
+                        target,
+                        dirs_exist_ok=True,
+                        ignore=shutil.ignore_patterns("*.sqlite-shm", "*.sqlite-wal"),
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to copy directory %s from %s to %s: %s",
+                        name,
+                        source,
+                        target,
+                        exc,
+                    )
 
-        source_cache_file = os.path.join(source_dir, "model_cache.sqlite")
-        target_cache_file = os.path.join(target_dir, "model_cache.sqlite")
-        if os.path.isfile(source_cache_file) and os.path.abspath(
-            source_cache_file
-        ) != os.path.abspath(target_cache_file):
-            try:
-                shutil.copy2(source_cache_file, target_cache_file)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to copy model_cache.sqlite from %s to %s: %s",
-                    source_cache_file,
-                    target_cache_file,
-                    exc,
-                )
+        # Managed subdirectories under settings_dir
+        _copy_dir("cache")
+        _copy_dir("backups")
+        _copy_dir("logs")
+        _copy_dir("stats")
+        _copy_dir("wildcards")
 
     def _get_user_config_directory(self) -> str:
         """Return the user configuration directory, falling back to ~/.config."""
@@ -1670,12 +1762,12 @@ class SettingsManager:
         """Trigger cache resorting when the model name display preference updates."""
 
         try:
-            from .service_registry import ServiceRegistry  # type: ignore
+            from .service_registry import ServiceRegistry  # pyright: ignore[reportImportCycles]
         except Exception:  # pragma: no cover - registry optional in some contexts
             return
 
         display_mode = value if isinstance(value, str) else "model_name"
-        pending: List[Tuple[Optional[asyncio.AbstractEventLoop], Awaitable[Any]]] = []
+        pending: List[Tuple[Optional[asyncio.AbstractEventLoop], Coroutine[Any, Any, Any]]] = []
 
         def _resolve_service_loop(service: Any) -> Optional[asyncio.AbstractEventLoop]:
             loop = getattr(service, "loop", None)
@@ -1769,6 +1861,9 @@ class SettingsManager:
             for key in CORE_USER_SETTING_KEYS:
                 if key in self.settings:
                     minimal[key] = copy.deepcopy(self.settings[key])
+
+            if self.settings.get("use_portable_settings"):
+                minimal["use_portable_settings"] = True
 
             if self._seed_template:
                 for key, value in self._seed_template.items():
@@ -2033,7 +2128,7 @@ class SettingsManager:
             logger.debug("Failed to apply library settings to config: %s", exc)
 
         try:
-            from .service_registry import ServiceRegistry  # type: ignore
+            from .service_registry import ServiceRegistry  # pyright: ignore[reportImportCycles]
 
             for service_name in (
                 "lora_scanner",

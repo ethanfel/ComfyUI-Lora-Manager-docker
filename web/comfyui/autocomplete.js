@@ -14,10 +14,15 @@ import {
     getAutocompleteAppendCommaPreference,
     getAutocompleteAutoFormatPreference,
     getAutocompleteAcceptKeyPreference,
+    getLoraActiveFiltersAutocompletePreference,
     getPromptTagAutocompletePreference,
     getTagSpaceReplacementPreference,
+    setLoraManagerSettingValue,
 } from "./settings.js";
 import { showToast } from "./utils.js";
+
+// localStorage key for the one-time "how to disable" hint in the dropdown
+const FIRST_RUN_HINT_DISMISSED_KEY = 'lm:autocomplete-disable-tip-dismissed';
 
 // Command definitions for category filtering
 const TAG_COMMANDS = {
@@ -32,25 +37,46 @@ const TAG_COMMANDS = {
     '/embedding': { type: 'embedding', label: 'Embeddings' },
     ...WILDCARD_COMMANDS,
     // Autocomplete toggle commands - only show one based on current state
-    '/ac': {
+    '/autocomplete': {
         type: 'toggle_setting',
         settingId: 'loramanager.prompt_tag_autocomplete',
         value: true,
-        label: 'Autocomplete: ON',
+        label: 'Turn autocomplete ON',
         condition: () => !getPromptTagAutocompletePreference()
     },
-    '/noac': {
+    '/noautocomplete': {
         type: 'toggle_setting',
         settingId: 'loramanager.prompt_tag_autocomplete',
         value: false,
-        label: 'Autocomplete: OFF',
+        label: 'Turn autocomplete OFF',
         condition: () => getPromptTagAutocompletePreference()
     },
 };
 
+// Command definitions for LoRA active-filters search
+const LORAS_COMMANDS = {
+    '/activefilters': {
+        type: 'toggle_setting',
+        settingId: 'loramanager.lora_active_filters_autocomplete',
+        value: true,
+        label: 'Turn active filters search ON',
+        feedbackSummary: 'Active Filters Search: ON',
+        feedbackDetail: 'LoRA autocomplete now searches within the active filters of the LoRA Manager page.',
+        condition: () => !getLoraActiveFiltersAutocompletePreference()
+    },
+    '/noactivefilters': {
+        type: 'toggle_setting',
+        settingId: 'loramanager.lora_active_filters_autocomplete',
+        value: false,
+        label: 'Turn active filters search OFF',
+        feedbackSummary: 'Active Filters Search: OFF',
+        feedbackDetail: 'LoRA autocomplete searches the full library again.',
+        condition: () => getLoraActiveFiltersAutocompletePreference()
+    },
+};
+
 // Category display information
-const CATEGORY_INFO = {
-    0: { bg: 'rgba(0, 155, 230, 0.2)', text: '#4bb4ff', label: 'General' },
+const CATEGORY_INFO = {    0: { bg: 'rgba(0, 155, 230, 0.2)', text: '#4bb4ff', label: 'General' },
     1: { bg: 'rgba(255, 138, 139, 0.2)', text: '#ffc3c3', label: 'Artist' },
     3: { bg: 'rgba(199, 151, 255, 0.2)', text: '#ddc9fb', label: 'Copyright' },
     4: { bg: 'rgba(53, 198, 74, 0.2)', text: '#93e49a', label: 'Character' },
@@ -448,6 +474,10 @@ class AutoComplete {
         this.searchType = null;
         this.suppressAutocompleteOnce = false;
 
+        // Discoverability hints state
+        this.commandListFooter = null;   // State hint shown below the slash command list
+        this.firstRunHint = null;        // One-time "how to disable" bar inside the dropdown
+
         // Virtual scrolling state
         this.virtualScrollOffset = 0;
         this.hasMoreItems = true;
@@ -719,6 +749,36 @@ class AutoComplete {
             searchTerm = (match[1] || '').trim();
         }
 
+        // For loras model type, check if we're in command mode (/activefilters, /noactivefilters)
+        if (this.modelType === 'loras') {
+            const commandResult = this._parseCommandInput(rawSearchTerm);
+
+            if (commandResult.showCommands) {
+                // Show command list dropdown
+                this.showingCommands = true;
+                this.activeCommand = null;
+                this.searchType = 'commands';
+                this._showCommandList(commandResult.commandFilter);
+                return;
+            } else if (commandResult.command?.type === 'toggle_setting') {
+                // Handle toggle setting command (/activefilters, /noactivefilters)
+                this._handleToggleSettingCommand(commandResult.command);
+                return;
+            } else if (commandResult.command) {
+                // Command is active, use filtered search
+                this.showingCommands = false;
+                this.activeCommand = null;
+                this.searchType = null;
+                searchTerm = commandResult.searchTerm || rawSearchTerm;
+            } else {
+                // No command - regular lora search
+                this.showingCommands = false;
+                this.activeCommand = null;
+                this.searchType = null;
+                searchTerm = rawSearchTerm;
+            }
+        }
+
         // For prompt model type, check if we're searching embeddings, commands, or tags
         if (this.modelType === 'prompt') {
             const match = rawSearchTerm.match(/^emb:(.*)$/i);
@@ -741,7 +801,7 @@ class AutoComplete {
                     this._showCommandList(commandResult.commandFilter);
                     return;
                 } else if (commandResult.command?.type === 'toggle_setting') {
-                    // Handle toggle setting command (/ac, /noac)
+                    // Handle toggle setting command (/autocomplete, /noautocomplete)
                     this._handleToggleSettingCommand(commandResult.command);
                     return;
                 } else if (commandResult.command) {
@@ -776,7 +836,9 @@ class AutoComplete {
                     searchTerm = rawSearchTerm;
                     this.searchType = 'custom_words';
                 } else {
-                    // No command and setting disabled - no autocomplete for direct typing
+                    // No command and setting disabled - no autocomplete for direct typing.
+                    // Re-enable discovery is covered by the command-list footer,
+                    // the node context menu and the settings tooltip.
                     this.hide();
                     return;
                 }
@@ -1095,7 +1157,11 @@ class AutoComplete {
     }
 
     _isSelectableInfoItem(item) {
-        return isWildcardInfoItem(item);
+        if (isWildcardInfoItem(item)) {
+            return true;
+        }
+        // Command items are not model paths — never show preview for them
+        return item && typeof item === 'object' && 'command' in item;
     }
 
     /**
@@ -1157,6 +1223,11 @@ class AutoComplete {
         if (this.modelType === 'embeddings') {
             const match = rawSearchTerm.match(/^emb:(.*)$/i);
             return (match?.[1] || '').trim();
+        }
+
+        if (this.modelType === 'loras') {
+            const commandResult = this._parseCommandInput(rawSearchTerm);
+            return commandResult.searchTerm ?? rawSearchTerm;
         }
 
         if (this.modelType === 'prompt') {
@@ -1245,6 +1316,91 @@ class AutoComplete {
         return this._getPreferredSelectedIndex(searchTerm);
     }
 
+    /**
+     * Build a URL-encoded query string from the LoRA Manager page's active
+     * filters in localStorage, or null when not applicable.
+     */
+    _getActiveLoraFilters() {
+        if (this.modelType !== 'loras' || !getLoraActiveFiltersAutocompletePreference()) {
+            return null;
+        }
+        try {
+            const params = new URLSearchParams();
+
+            const folder = localStorage.getItem('lora_manager_loras_activeFolder');
+            const recursiveRaw = localStorage.getItem('lora_manager_loras_recursiveSearch');
+            const recursive = recursiveRaw === null ? true : recursiveRaw.toLowerCase() === 'true';
+
+            if (folder && folder !== 'null') {
+                params.append('folder', folder);
+            } else if (!recursive) {
+                // Root folder with recursion disabled mirrors the page list,
+                // which matches only root-level files via folder=''.
+                params.append('folder', '');
+            }
+
+            const raw = localStorage.getItem('lora_manager_loras_filters');
+            if (raw) {
+                const filters = JSON.parse(raw);
+
+                if (Array.isArray(filters.baseModel)) {
+                    filters.baseModel.forEach((m) => m && params.append('base_model', m));
+                }
+
+                if (filters.tags && typeof filters.tags === 'object') {
+                    Object.entries(filters.tags).forEach(([tag, state]) => {
+                        if (state === 'include') {
+                            params.append('tag_include', tag);
+                        } else if (state === 'exclude') {
+                            params.append('tag_exclude', tag);
+                        }
+                    });
+                }
+
+                if (filters.autoTags && typeof filters.autoTags === 'object') {
+                    Object.entries(filters.autoTags).forEach(([tag, state]) => {
+                        if (state === 'include') {
+                            params.append('auto_tag_include', tag);
+                        } else if (state === 'exclude') {
+                            params.append('auto_tag_exclude', tag);
+                        }
+                    });
+                }
+
+                if (Array.isArray(filters.modelTypes)) {
+                    filters.modelTypes.forEach((t) => t && params.append('model_type', t));
+                }
+
+                if (filters.tagLogic) {
+                    params.append('tag_logic', filters.tagLogic);
+                }
+
+                if (filters.license) {
+                    if (filters.license.noCredit === 'include') {
+                        params.append('credit_required', 'false');
+                    } else if (filters.license.noCredit === 'exclude') {
+                        params.append('credit_required', 'true');
+                    }
+                    if (filters.license.allowSelling === 'include') {
+                        params.append('allow_selling_generated_content', 'true');
+                    } else if (filters.license.allowSelling === 'exclude') {
+                        params.append('allow_selling_generated_content', 'false');
+                    }
+                }
+            }
+
+            // Always send recursive in filter mode — its presence also signals
+            // the backend to run the filter pipeline (e.g. show_only_sfw) even
+            // when no concrete filter is set, matching the list endpoint.
+            params.append('recursive', String(recursive));
+
+            return params.toString();
+        } catch (error) {
+            console.warn('[Lora Manager] Failed to read active filters for autocomplete:', error);
+            return null;
+        }
+    }
+
     async search(term = '', endpoint = null) {
         try {
             this.currentSearchTerm = term;
@@ -1261,6 +1417,10 @@ class AutoComplete {
             if (!endpoint) {
                 endpoint = `/lm/${this.modelType}/relative-paths`;
             }
+
+            // Active-filter query params for loras (null when setting off or
+            // model type is not loras, so appending is safe for all types)
+            const activeFiltersQuery = this._getActiveLoraFilters();
 
             // Generate multiple query variations for better matching, but avoid
             // sending duplicate-equivalent requests that normalize to the same
@@ -1281,9 +1441,10 @@ class AutoComplete {
                 const url = endpoint.includes('?')
                     ? `${endpoint}&search=${encodeURIComponent(query)}&limit=${this.options.maxItems}`
                     : `${endpoint}?search=${encodeURIComponent(query)}&limit=${this.options.maxItems}`;
+                const finalUrl = activeFiltersQuery ? `${url}&${activeFiltersQuery}` : url;
 
                 try {
-                    const response = await api.fetchApi(url);
+                    const response = await api.fetchApi(finalUrl);
                     const data = await response.json();
                     return {
                         items: data.success ? (data.relative_paths || data.words || []) : [],
@@ -1359,6 +1520,15 @@ class AutoComplete {
     }
 
     /**
+     * Return the command map for the current model type.
+     * Lora model types get the active-filters toggle commands, all others
+     * keep the prompt tag commands.
+     */
+    _getCommands() {
+        return this.modelType === 'loras' ? LORAS_COMMANDS : TAG_COMMANDS;
+    }
+
+    /**
      * Parse command input to detect command mode
      * @param {string} rawInput - Raw input text
      * @returns {Object} - { showCommands, commandFilter, command, searchTerm }
@@ -1379,8 +1549,8 @@ class AutoComplete {
             const partialCommand = trimmed.toLowerCase();
 
             // Check for exact command match
-            if (TAG_COMMANDS[partialCommand]) {
-                const cmd = TAG_COMMANDS[partialCommand];
+            if (this._getCommands()[partialCommand]) {
+                const cmd = this._getCommands()[partialCommand];
                 // Filter out toggle commands that don't meet their condition
                 if (cmd.type === 'toggle_setting' && cmd.condition && !cmd.condition()) {
                     return { showCommands: false, command: null, searchTerm: '' };
@@ -1405,8 +1575,8 @@ class AutoComplete {
         const commandPart = trimmed.slice(0, spaceIndex).toLowerCase();
         const searchPart = trimmed.slice(spaceIndex + 1).trim();
 
-        if (TAG_COMMANDS[commandPart]) {
-            const cmd = TAG_COMMANDS[commandPart];
+        if (this._getCommands()[commandPart]) {
+            const cmd = this._getCommands()[commandPart];
             // Filter out toggle commands that don't meet their condition
             if (cmd.type === 'toggle_setting' && cmd.condition && !cmd.condition()) {
                 return { showCommands: false, command: null, searchTerm: trimmed };
@@ -1437,7 +1607,7 @@ class AutoComplete {
 
         const commands = [];
 
-        for (const [cmd, info] of Object.entries(TAG_COMMANDS)) {
+        for (const [cmd, info] of Object.entries(this._getCommands())) {
             // Filter out toggle commands that don't meet their condition
             if (info.type === 'toggle_setting' && info.condition) {
                 if (!info.condition()) continue;
@@ -1546,10 +1716,129 @@ class AutoComplete {
                 this.selectItem(0);
             }
         }
-        
+
+        // State hint below the command list (e.g. how to toggle autocomplete)
+        this._renderCommandListFooter();
+
         // Update virtual scroll height for virtual scrolling mode
         if (this.contentContainer) {
             this.updateVirtualScrollHeight();
+        }
+    }
+
+    /**
+     * Render a state hint below the slash command list so the autocomplete
+     * toggle commands explain themselves. Only applies to prompt nodes.
+     */
+    _renderCommandListFooter() {
+        this._removeCommandListFooter();
+
+        if (this.modelType !== 'prompt') {
+            return;
+        }
+
+        const enabled = getPromptTagAutocompletePreference();
+        const footer = document.createElement('div');
+        footer.className = 'lm-autocomplete-command-footer';
+        footer.textContent = enabled
+            ? 'Tag autocomplete is ON — /noautocomplete to disable'
+            : 'Tag autocomplete is OFF — /autocomplete to enable';
+        footer.style.cssText = `
+            padding: 6px 12px;
+            font-size: 11px;
+            color: rgba(226, 232, 240, 0.5);
+            border-top: 1px solid rgba(226, 232, 240, 0.1);
+            white-space: nowrap;
+        `;
+        // Keep focus in the textarea when the hint is clicked
+        footer.addEventListener('mousedown', (e) => e.preventDefault());
+
+        this.dropdown.appendChild(footer);
+        this.commandListFooter = footer;
+    }
+
+    _removeCommandListFooter() {
+        if (this.commandListFooter) {
+            this.commandListFooter.remove();
+            this.commandListFooter = null;
+        }
+    }
+
+    /**
+     * Show a one-time, dismissible hint inside the dropdown telling users how
+     * to disable tag autocomplete. Dismissal is persisted in localStorage.
+     */
+    _maybeShowFirstRunHint() {
+        if (this.firstRunHint) {
+            return;
+        }
+        if (this.modelType !== 'prompt'
+            || this.showingCommands
+            || this.searchType !== 'custom_words'
+            || this.activeCommand) {
+            return;
+        }
+
+        let dismissed = false;
+        try {
+            dismissed = localStorage.getItem(FIRST_RUN_HINT_DISMISSED_KEY) === '1';
+        } catch (e) {
+            // localStorage unavailable - fall through and show the hint
+        }
+        if (dismissed) {
+            return;
+        }
+
+        const hint = document.createElement('div');
+        hint.className = 'lm-autocomplete-first-run-hint';
+        hint.style.cssText = `
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+            padding: 6px 12px;
+            font-size: 11px;
+            color: rgba(226, 232, 240, 0.6);
+            border-bottom: 1px solid rgba(226, 232, 240, 0.1);
+        `;
+
+        const text = document.createElement('span');
+        text.textContent = 'Tip: type /noautocomplete to turn off these suggestions';
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.textContent = '×';
+        closeBtn.title = 'Dismiss';
+        closeBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: rgba(226, 232, 240, 0.5);
+            cursor: pointer;
+            font-size: 14px;
+            line-height: 1;
+            padding: 0 2px;
+        `;
+        closeBtn.addEventListener('click', () => {
+            try {
+                localStorage.setItem(FIRST_RUN_HINT_DISMISSED_KEY, '1');
+            } catch (e) {
+            }
+            this._removeFirstRunHint();
+        });
+
+        hint.appendChild(text);
+        hint.appendChild(closeBtn);
+        // Keep focus in the textarea when interacting with the hint
+        hint.addEventListener('mousedown', (e) => e.preventDefault());
+
+        this.dropdown.insertBefore(hint, this.dropdown.firstChild);
+        this.firstRunHint = hint;
+    }
+
+    _removeFirstRunHint() {
+        if (this.firstRunHint) {
+            this.firstRunHint.remove();
+            this.firstRunHint = null;
         }
     }
 
@@ -1583,6 +1872,9 @@ class AutoComplete {
     render() {
         this.selectedIndex = -1;
         this.hasManualSelection = false;
+
+        // Command-list state hints do not belong to regular search results
+        this._removeCommandListFooter();
 
         // Reset virtual scroll state
         this.virtualScrollOffset = 0;
@@ -1902,7 +2194,8 @@ class AutoComplete {
     
     showPreviewForItem(relativePath, itemElement) {
         if (!this.options.showPreview || !this.previewTooltip) return;
-        
+        if (typeof relativePath !== 'string' || !relativePath) return;
+
         // Extract filename without extension for preview
         const fileName = relativePath.split(/[/\\]/).pop();
         const loraName = fileName.replace(/\.(safetensors|ckpt|pt|bin)$/i, '');
@@ -1984,14 +2277,18 @@ class AutoComplete {
             const queriesToExecute = this._getQueriesToExecute(this.currentSearchTerm);
             const offset = this.items.length;
 
+            // Active-filter query params for loras (null when setting off)
+            const activeFiltersQuery = this._getActiveLoraFilters();
+
             // Execute all queries in parallel with offset
             const searchPromises = queriesToExecute.map(async (query) => {
                 const url = endpoint.includes('?')
                     ? `${endpoint}&search=${encodeURIComponent(query)}&limit=${this.options.pageSize}&offset=${offset}`
                     : `${endpoint}?search=${encodeURIComponent(query)}&limit=${this.options.pageSize}&offset=${offset}`;
+                const finalUrl = activeFiltersQuery ? `${url}&${activeFiltersQuery}` : url;
 
                 try {
-                    const response = await api.fetchApi(url);
+                    const response = await api.fetchApi(finalUrl);
                     const data = await response.json();
                     return data.success ? (data.relative_paths || data.words || []) : [];
                 } catch (error) {
@@ -2281,6 +2578,7 @@ class AutoComplete {
             return;
         }
 
+        this._maybeShowFirstRunHint();
         // For virtual scrolling, render items first so positionAtCursor can measure width correctly
         if (this.options.enableVirtualScroll && this.contentContainer) {
             this.dropdown.style.display = 'block';
@@ -2349,6 +2647,10 @@ class AutoComplete {
         this.selectedIndex = -1;
         this.hasManualSelection = false;
         this.showingCommands = false;
+
+        // Remove discoverability hints attached to the dropdown
+        this._removeCommandListFooter();
+        this._removeFirstRunHint();
         
         // Clear items to prevent stale data from being displayed
         // when autocomplete is shown again
@@ -2681,27 +2983,19 @@ class AutoComplete {
     }
 
     /**
-     * Handle toggle setting command (/ac, /noac)
+     * Handle toggle setting command (e.g., /autocomplete, /activefilters)
      * @param {Object} command - The toggle command with settingId and value
      */
     async _handleToggleSettingCommand(command) {
         const { settingId, value } = command;
 
         try {
-            // Use ComfyUI's setting API to update global setting
-            const settingManager = app?.extensionManager?.setting;
-            if (settingManager && typeof settingManager.set === 'function') {
-                await settingManager.set(settingId, value);
-                this._showToggleFeedback(value);
+            const success = await setLoraManagerSettingValue(settingId, value);
+            if (success) {
+                this._showToggleFeedback(command, value);
                 this._clearCurrentToken();
             } else {
-                // Fallback: use legacy settings API
-                const setting = app.ui.settings.settingsById?.[settingId];
-                if (setting) {
-                    app.ui.settings.setSettingValue(settingId, value);
-                    this._showToggleFeedback(value);
-                    this._clearCurrentToken();
-                }
+                throw new Error('settings API unavailable');
             }
         } catch (error) {
             console.error('[Lora Manager] Failed to toggle setting:', error);
@@ -2718,22 +3012,23 @@ class AutoComplete {
 
     /**
      * Show visual feedback for toggle action using toast
+     * @param {Object} command - The toggle command that was executed
      * @param {boolean} enabled - New autocomplete state
      */
-    _showToggleFeedback(enabled) {
+    _showToggleFeedback(command, enabled) {
         showToast({
             severity: enabled ? 'success' : 'secondary',
-            summary: enabled ? 'Autocomplete Enabled' : 'Autocomplete Disabled',
-            detail: enabled 
-                ? 'Tag autocomplete is now ON. Type to see suggestions.' 
-                : 'Tag autocomplete is now OFF. Use /ac to re-enable.',
+            summary: command.feedbackSummary || (enabled ? 'Autocomplete Enabled' : 'Autocomplete Disabled'),
+            detail: command.feedbackDetail || (enabled
+                ? 'Tag autocomplete is now ON. Type to see suggestions.'
+                : 'Tag autocomplete is now OFF. Use /autocomplete or the node right-click menu to re-enable.'),
             life: 3000
         });
     }
 
     /**
      * Clear the current command token from input
-     * Preserves leading spaces after delimiters (e.g., "1girl, /ac" -> "1girl, ")
+     * Preserves leading spaces after delimiters (e.g., "1girl, /emb" -> "1girl, ")
      */
     _clearCurrentToken() {
         const currentValue = this.inputElement.value;
@@ -2742,7 +3037,7 @@ class AutoComplete {
         const lastSegment = activeRange.rawText;
         
         // Find the command start position, preserving leading spaces
-        // lastSegment includes leading spaces (e.g., " /ac"), find where command actually starts
+        // lastSegment includes leading spaces (e.g., " /emb"), find where command actually starts
         const commandMatch = lastSegment.match(/^(\s*)(\/\w+)/);
         if (commandMatch) {
             // commandMatch[1] is leading spaces, commandMatch[2] is the command

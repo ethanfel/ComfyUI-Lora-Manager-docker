@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, TYPE_CHECKING
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Mapping, Optional, TYPE_CHECKING, cast
 
 from ..services.service_registry import ServiceRegistry
+from ..services.pending_delete_service import get_pending_delete_service
 from ..utils.constants import PREVIEW_EXTENSIONS
 from ..utils.metadata_manager import MetadataManager
 
@@ -48,6 +49,36 @@ async def delete_model_artifacts(
     return deleted
 
 
+def _require_path_in_library_roots(file_path: str, scanner, *, label: str = "path") -> None:
+    """Raise ``ValueError`` if *file_path* is not inside a configured model root.
+
+    Uses ``os.path.abspath()`` (NOT ``realpath``) to resolve ``..`` and ``.``
+    while preserving symlinks — this keeps the check in business-path space.
+    Skips when the scanner does not expose ``get_model_roots`` or the list
+    is empty.
+    """
+
+    roots = None
+    if hasattr(scanner, "get_model_roots"):
+        try:
+            roots = scanner.get_model_roots()
+        except NotImplementedError:
+            roots = None
+    if not roots:
+        return
+
+    resolved = os.path.abspath(os.path.normpath(file_path))
+
+    for root in roots:
+        root_resolved = os.path.abspath(os.path.normpath(root))
+        if resolved == root_resolved or resolved.startswith(root_resolved + os.sep):
+            return
+
+    raise ValueError(
+        f"{label} '{file_path}' is outside configured library directories"
+    )
+
+
 class ModelLifecycleService:
     """Co-ordinate destructive and mutating model operations."""
 
@@ -57,8 +88,8 @@ class ModelLifecycleService:
         scanner,
         metadata_manager,
         metadata_loader: Callable[[str], Awaitable[Dict[str, object]]],
-        recipe_scanner_factory: Callable[[], Awaitable] | None = None,
-        update_service: "ModelUpdateService" | None = None,
+        recipe_scanner_factory: Callable[[], Awaitable[Any]] | None = None,
+        update_service: Optional["ModelUpdateService"] = None,
     ) -> None:
         self._scanner = scanner
         self._metadata_manager = metadata_manager
@@ -73,6 +104,8 @@ class ModelLifecycleService:
 
         if not file_path:
             raise ValueError("Model path is required")
+
+        _require_path_in_library_roots(file_path, self._scanner, label="File path")
 
         cache = await self._scanner.get_cached_data()
 
@@ -97,15 +130,33 @@ class ModelLifecycleService:
         target_dir = os.path.dirname(file_path)
         base_name = os.path.basename(file_path)
         file_name, main_extension = os.path.splitext(base_name)
-        deleted_files = await delete_model_artifacts(
-            target_dir, file_name, main_extension=main_extension
+
+        # Stage the delete into the pending-delete service when undo is
+        # enabled; a successful stage renames the artifacts away, otherwise
+        # fall back to the direct hard delete.
+        pending_delete_service = await get_pending_delete_service()
+        batch_id = await pending_delete_service.stage_model_delete(
+            scanner=self._scanner,
+            target_dir=target_dir,
+            file_name=file_name,
+            main_extension=main_extension,
+            original_file_path=file_path,
+            cached_entry=cached_entry,
         )
+        deleted_files: List[str] = []
+        if batch_id is None:
+            deleted_files = await delete_model_artifacts(
+                target_dir, file_name, main_extension=main_extension
+            )
 
         if cache:
             cache.raw_data = [
                 item for item in cache.raw_data if item.get("file_path") != file_path
             ]
             await cache.resort()
+            bump_cache_version = getattr(self._scanner, "bump_cache_version", None)
+            if callable(bump_cache_version):
+                bump_cache_version()
 
         if hasattr(self._scanner, "_hash_index") and self._scanner._hash_index:
             self._scanner._hash_index.remove_by_path(file_path)
@@ -114,9 +165,13 @@ class ModelLifecycleService:
 
         persist_current_cache = getattr(self._scanner, "_persist_current_cache", None)
         if callable(persist_current_cache):
-            await persist_current_cache()
+            await cast(Awaitable[Any], persist_current_cache())
 
-        return {"success": True, "deleted_files": deleted_files}
+        return {
+            "success": True,
+            "deleted_files": deleted_files,
+            "batch_id": batch_id,
+        }
 
     @staticmethod
     def _extract_model_id_from_payload(payload: Any) -> Optional[int]:
@@ -182,6 +237,8 @@ class ModelLifecycleService:
         if not file_path:
             raise ValueError("Model path is required")
 
+        _require_path_in_library_roots(file_path, self._scanner, label="File path")
+
         metadata_path = os.path.splitext(file_path)[0] + ".metadata.json"
         metadata = await self._metadata_loader(metadata_path)
         metadata["exclude"] = True
@@ -210,6 +267,9 @@ class ModelLifecycleService:
                 item for item in cache.raw_data if item["file_path"] != file_path
             ]
             await cache.resort()
+            bump_cache_version = getattr(self._scanner, "bump_cache_version", None)
+            if callable(bump_cache_version):
+                bump_cache_version()
 
         excluded = getattr(self._scanner, "_excluded_models", None)
         if isinstance(excluded, list):
@@ -218,7 +278,7 @@ class ModelLifecycleService:
 
         persist_current_cache = getattr(self._scanner, "_persist_current_cache", None)
         if callable(persist_current_cache):
-            await persist_current_cache()
+            await cast(Awaitable[Any], persist_current_cache())
 
         message = f"Model {os.path.basename(file_path)} excluded"
         return {"success": True, "message": message}
@@ -228,6 +288,8 @@ class ModelLifecycleService:
 
         if not file_path:
             raise ValueError("Model path is required")
+
+        _require_path_in_library_roots(file_path, self._scanner, label="File path")
 
         if not os.path.exists(file_path):
             raise ValueError("Model file does not exist")
@@ -270,6 +332,9 @@ class ModelLifecycleService:
         if not file_paths:
             raise ValueError("No file paths provided for deletion")
 
+        for path in file_paths:
+            _require_path_in_library_roots(path, self._scanner, label="File path")
+
         return await self._scanner.bulk_delete_models(file_paths)
 
     async def rename_model(
@@ -279,6 +344,8 @@ class ModelLifecycleService:
 
         if not file_path or not new_file_name:
             raise ValueError("File path and new file name are required")
+
+        _require_path_in_library_roots(file_path, self._scanner, label="File path")
 
         invalid_chars = {"/", "\\", ":", "*", "?", '"', "<", ">", "|"}
         if any(char in new_file_name for char in invalid_chars):
@@ -316,7 +383,8 @@ class ModelLifecycleService:
 
         if os.path.exists(metadata_path):
             metadata = await self._metadata_loader(metadata_path)
-            hash_value = metadata.get("sha256") if isinstance(metadata, dict) else None
+            raw_hash = metadata.get("sha256") if isinstance(metadata, dict) else None
+            hash_value = raw_hash if isinstance(raw_hash, str) else None
 
         renamed_files: List[str] = []
         new_metadata_path: Optional[str] = None

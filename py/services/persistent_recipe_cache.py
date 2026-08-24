@@ -1,3 +1,7 @@
+# pyright: reportImportCycles=false
+# Lazy (function-local) imports still count as static edges in basedpyright's
+# reportImportCycles, so the ServiceRegistry singleton pattern necessarily forms
+# import cycles. Breaking them would require an architectural refactor.
 """SQLite-based persistent cache for recipe metadata.
 
 This module provides fast recipe cache persistence using SQLite, enabling
@@ -13,7 +17,7 @@ import os
 import sqlite3
 import threading
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ..utils.cache_paths import CacheType, resolve_cache_path_with_migration
 
@@ -24,7 +28,7 @@ logger = logging.getLogger(__name__)
 class PersistedRecipeData:
     """Lightweight structure returned by the persistent recipe cache."""
 
-    raw_data: List[Dict]
+    raw_data: List[Dict[str, Any]]
     file_stats: Dict[str, Tuple[float, int]]  # json_path -> (mtime, size)
     image_id_map: Dict[str, str] = field(default_factory=dict)
     """Precomputed mapping of civitai image_id → recipe_id."""
@@ -54,6 +58,7 @@ class PersistentRecipeCache:
         "checkpoint_json",
         "gen_params_json",
         "tags_json",
+        "has_workflow",
     )
     _instances: Dict[str, "PersistentRecipeCache"] = {}
     _instance_lock = threading.Lock()
@@ -63,8 +68,8 @@ class PersistentRecipeCache:
         self._db_path = db_path or self._resolve_default_path(self._library_name)
         self._db_lock = threading.Lock()
         self._schema_initialized = False
+        directory = os.path.dirname(self._db_path)
         try:
-            directory = os.path.dirname(self._db_path)
             if directory:
                 os.makedirs(directory, exist_ok=True)
         except Exception as exc:
@@ -140,7 +145,7 @@ class PersistentRecipeCache:
             logger.warning("Failed to load persisted recipe cache: %s", exc)
             return None
 
-        raw_data: List[Dict] = []
+        raw_data: List[Dict[str, Any]] = []
         file_stats: Dict[str, Tuple[float, int]] = {}
 
         for row in rows:
@@ -162,7 +167,7 @@ class PersistentRecipeCache:
 
     def save_cache(
         self,
-        recipes: List[Dict],
+        recipes: List[Dict[str, Any]],
         json_paths: Optional[Dict[str, str]] = None,
         image_id_map: Optional[Dict[str, str]] = None,
     ) -> None:
@@ -251,7 +256,7 @@ class PersistentRecipeCache:
         except Exception:
             return {}
 
-    def update_recipe(self, recipe: Dict, json_path: Optional[str] = None) -> None:
+    def update_recipe(self, recipe: Dict[str, Any], json_path: Optional[str] = None) -> None:
         """Update or insert a single recipe in the cache.
 
         Args:
@@ -403,7 +408,8 @@ class PersistentRecipeCache:
                             loras_json TEXT,
                             checkpoint_json TEXT,
                             gen_params_json TEXT,
-                            tags_json TEXT
+                            tags_json TEXT,
+                            has_workflow INTEGER DEFAULT 0
                         );
 
                         CREATE INDEX IF NOT EXISTS idx_recipes_json_path ON recipes(json_path);
@@ -419,6 +425,13 @@ class PersistentRecipeCache:
                     try:
                         conn.execute(
                             "ALTER TABLE recipes ADD COLUMN source_path TEXT"
+                        )
+                    except Exception:
+                        pass  # column already exists
+                    # Migration: add has_workflow column to existing databases
+                    try:
+                        conn.execute(
+                            "ALTER TABLE recipes ADD COLUMN has_workflow INTEGER DEFAULT 0"
                         )
                     except Exception:
                         pass  # column already exists
@@ -439,7 +452,7 @@ class PersistentRecipeCache:
         conn.row_factory = sqlite3.Row
         return conn
 
-    def _prepare_recipe_row(self, recipe: Dict, json_path: str) -> Tuple:
+    def _prepare_recipe_row(self, recipe: Dict[str, Any], json_path: str) -> Tuple[Any, ...]:
         """Convert a recipe dict to a row tuple for SQLite insertion."""
         loras = recipe.get("loras")
         loras_json = json.dumps(loras) if loras else None
@@ -484,9 +497,10 @@ class PersistentRecipeCache:
             checkpoint_json,
             gen_params_json,
             tags_json,
+            1 if recipe.get("has_workflow") else 0,
         )
 
-    def _row_to_recipe(self, row: sqlite3.Row) -> Dict:
+    def _row_to_recipe(self, row: sqlite3.Row) -> Dict[str, Any]:
         """Convert a SQLite row to a recipe dictionary."""
         loras = []
         if row["loras_json"]:
@@ -529,6 +543,7 @@ class PersistentRecipeCache:
             "favorite": bool(row["favorite"]),
             "repair_version": row["repair_version"] or 0,
             "preview_nsfw_level": row["preview_nsfw_level"] or 0,
+            "has_workflow": bool(row["has_workflow"]),
             "loras": loras,
             "gen_params": gen_params,
         }

@@ -5,6 +5,7 @@ import os
 import subprocess
 import zipfile
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -15,6 +16,7 @@ from py.routes.handlers.misc_handlers import (
     BackupHandler,
     DoctorHandler,
     FileSystemHandler,
+    HealthCheckHandler,
     LoraCodeHandler,
     ModelLibraryHandler,
     NodeRegistry,
@@ -32,6 +34,13 @@ from py.utils.session_logging import (
 )
 from py.routes.misc_route_registrar import MISC_ROUTE_DEFINITIONS, MiscRouteRegistrar
 from py.routes.misc_routes import MiscRoutes
+
+
+def _json_payload(response) -> dict[str, Any]:
+    """Decode the JSON body of a web.Response, asserting it is not null."""
+    text = response.text
+    assert text is not None
+    return json.loads(text)
 
 
 class FakeRequest:
@@ -129,8 +138,8 @@ async def test_get_settings_excludes_no_sync_keys():
         downloader_factory=dummy_downloader_factory,
     )
 
-    response = await handler.get_settings(FakeRequest())
-    payload = json.loads(response.text)
+    response = await handler.get_settings(FakeRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     # Regular settings should be synced
@@ -155,8 +164,8 @@ async def test_update_settings_rejects_missing_example_path(tmp_path):
     missing_path = tmp_path / "does-not-exist"
     request = FakeRequest(json_data={"example_images_path": str(missing_path)})
 
-    response = await handler.update_settings(request)
-    payload = json.loads(response.text)
+    response = await handler.update_settings(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is False
     assert "Path does not exist" in payload["error"]
@@ -181,9 +190,9 @@ async def test_doctor_handler_reports_key_cache_and_ui_issues():
     )
 
     response = await handler.get_doctor_diagnostics(
-        FakeRequest(query={"clientVersion": "1.2.2-client"}, method="GET")
+        FakeRequest(query={"clientVersion": "1.2.2-client"}, method="GET")  # pyright: ignore[reportArgumentType]
     )
-    payload = json.loads(response.text)
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     assert payload["summary"]["status"] == "error"
@@ -209,8 +218,8 @@ async def test_doctor_handler_can_repair_cache():
         scanner_factories=(("lora", "LoRAs", scanner_factory),),
     )
 
-    response = await handler.repair_doctor_cache(FakeRequest())
-    payload = json.loads(response.text)
+    response = await handler.repair_doctor_cache(FakeRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 200
     assert payload["success"] is True
@@ -230,7 +239,7 @@ async def test_doctor_handler_exports_support_bundle():
     )
 
     response = await handler.export_doctor_bundle(
-        FakeRequest(
+        FakeRequest(  # pyright: ignore[reportArgumentType]
             json_data={
                 "summary": {"status": "warning"},
                 "diagnostics": [{"id": "cache_health", "status": "warning"}],
@@ -241,6 +250,7 @@ async def test_doctor_handler_exports_support_bundle():
     )
 
     assert response.status == 200
+    assert isinstance(response.body, bytes)
     with zipfile.ZipFile(io.BytesIO(response.body), "r") as archive:
         names = set(archive.namelist())
         assert "doctor-report.json" in names
@@ -263,7 +273,7 @@ async def test_doctor_handler_redacts_string_secrets_in_bundle():
     )
 
     response = await handler.export_doctor_bundle(
-        FakeRequest(
+        FakeRequest(  # pyright: ignore[reportArgumentType]
             json_data={
                 "frontend_logs": [
                     {
@@ -276,6 +286,7 @@ async def test_doctor_handler_redacts_string_secrets_in_bundle():
     )
 
     assert response.status == 200
+    assert isinstance(response.body, bytes)
     with zipfile.ZipFile(io.BytesIO(response.body), "r") as archive:
         frontend_logs = archive.read("frontend-console.json").decode("utf-8")
         assert "abcdef123456" not in frontend_logs
@@ -308,7 +319,7 @@ async def test_doctor_handler_redacts_json_shaped_string_secrets_in_bundle():
     }
 
     response = await handler.export_doctor_bundle(
-        FakeRequest(
+        FakeRequest(  # pyright: ignore[reportArgumentType]
             json_data={
                 "frontend_logs": [
                     {
@@ -321,6 +332,7 @@ async def test_doctor_handler_redacts_json_shaped_string_secrets_in_bundle():
     )
 
     assert response.status == 200
+    assert isinstance(response.body, bytes)
     with zipfile.ZipFile(io.BytesIO(response.body), "r") as archive:
         frontend_logs = archive.read("frontend-console.json").decode("utf-8")
         backend_logs = archive.read("backend-logs.txt").decode("utf-8")
@@ -359,9 +371,10 @@ async def test_doctor_handler_exports_backend_session_logs_from_helper():
         "notes": [],
     }
 
-    response = await handler.export_doctor_bundle(FakeRequest(json_data={}))
+    response = await handler.export_doctor_bundle(FakeRequest(json_data={}))  # pyright: ignore[reportArgumentType]
 
     assert response.status == 200
+    assert isinstance(response.body, bytes)
     with zipfile.ZipFile(io.BytesIO(response.body), "r") as archive:
         backend_logs = archive.read("backend-logs.txt").decode("utf-8")
         backend_source = json.loads(
@@ -449,14 +462,14 @@ async def test_backup_handler_returns_status_and_exports(monkeypatch):
 
     handler = BackupHandler(backup_service_factory=factory)
 
-    status_response = await handler.get_backup_status(FakeRequest())
-    status_payload = json.loads(status_response.text)
+    status_response = await handler.get_backup_status(FakeRequest())  # pyright: ignore[reportArgumentType]
+    status_payload = _json_payload(status_response)
     assert status_payload["success"] is True
     assert status_payload["status"]["backupDir"] == "/tmp/backups"
     assert status_payload["status"]["enabled"] is True
     assert status_payload["snapshots"][0]["name"] == "backup.zip"
 
-    export_response = await handler.export_backup(FakeRequest())
+    export_response = await handler.export_backup(FakeRequest())  # pyright: ignore[reportArgumentType]
     assert export_response.status == 200
     assert export_response.body == b"zip-bytes"
 
@@ -476,8 +489,8 @@ async def test_backup_handler_rejects_missing_import_archive():
         async def read(self):
             return b""
 
-    response = await handler.import_backup(EmptyRequest())
-    payload = json.loads(response.text)
+    response = await handler.import_backup(EmptyRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 400
     assert payload["success"] is False
@@ -504,8 +517,8 @@ async def test_open_backup_location_uses_settings_directory(tmp_path, monkeypatc
     monkeypatch.setattr("py.routes.handlers.misc_handlers._is_docker", lambda: False)
     monkeypatch.setattr("py.routes.handlers.misc_handlers._is_wsl", lambda: False)
 
-    response = await handler.open_backup_location(FakeRequest())
-    payload = json.loads(response.text)
+    response = await handler.open_backup_location(FakeRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 200
     assert payload["success"] is True
@@ -535,8 +548,8 @@ async def test_open_wildcards_location_creates_and_opens_directory(tmp_path, mon
         else str(wildcards_dir),
     )
 
-    response = await handler.open_wildcards_location(FakeRequest())
-    payload = json.loads(response.text)
+    response = await handler.open_wildcards_location(FakeRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 200
     assert payload["success"] is True
@@ -564,7 +577,7 @@ class RecordingRouter:
 
 def test_misc_route_registrar_registers_all_routes():
     app = SimpleNamespace(router=RecordingRouter())
-    registrar = MiscRouteRegistrar(app)  # type: ignore[arg-type]
+    registrar = MiscRouteRegistrar(app)  # pyright: ignore[reportArgumentType]
 
     async def dummy_handler(_request):
         return web.Response()
@@ -586,7 +599,7 @@ class FakePromptServer:
     sent = []
 
     class Instance:
-        sockets: dict = {}
+        sockets: dict[str, Any] = {}
 
         def send_sync(self, event, payload, sid=None):
             FakePromptServer.sent.append((event, payload))
@@ -599,7 +612,7 @@ async def test_register_nodes_requires_graph_id():
     node_registry = NodeRegistry()
     handler = NodeRegistryHandler(
         node_registry=node_registry,
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         standalone_mode=False,
     )
 
@@ -609,8 +622,8 @@ async def test_register_nodes_requires_graph_id():
             "client_id": "test-client-1",
         }
     )
-    response = await handler.register_nodes(request)
-    payload = json.loads(response.text)
+    response = await handler.register_nodes(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 400
     assert payload["success"] is False
@@ -622,7 +635,7 @@ async def test_register_nodes_stores_graph_identifier():
     node_registry = NodeRegistry()
     handler = NodeRegistryHandler(
         node_registry=node_registry,
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         standalone_mode=False,
     )
 
@@ -641,8 +654,8 @@ async def test_register_nodes_stores_graph_identifier():
         }
     )
 
-    response = await handler.register_nodes(request)
-    payload = json.loads(response.text)
+    response = await handler.register_nodes(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
 
@@ -659,7 +672,7 @@ async def test_register_nodes_defaults_graph_name_to_none():
     node_registry = NodeRegistry()
     handler = NodeRegistryHandler(
         node_registry=node_registry,
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         standalone_mode=False,
     )
 
@@ -677,8 +690,8 @@ async def test_register_nodes_defaults_graph_name_to_none():
         }
     )
 
-    response = await handler.register_nodes(request)
-    payload = json.loads(response.text)
+    response = await handler.register_nodes(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
 
@@ -692,7 +705,7 @@ async def test_register_nodes_includes_capabilities():
     node_registry = NodeRegistry()
     handler = NodeRegistryHandler(
         node_registry=node_registry,
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         standalone_mode=False,
     )
 
@@ -714,8 +727,8 @@ async def test_register_nodes_includes_capabilities():
         }
     )
 
-    response = await handler.register_nodes(request)
-    payload = json.loads(response.text)
+    response = await handler.register_nodes(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
 
@@ -729,12 +742,60 @@ async def test_register_nodes_includes_capabilities():
 
 
 @pytest.mark.asyncio
+async def test_register_nodes_accepts_compound_node_ids():
+    """Subgraph nodes from expanded group nodes have compound IDs like '252:0'."""
+    node_registry = NodeRegistry()
+    handler = NodeRegistryHandler(
+        node_registry=node_registry,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
+        standalone_mode=False,
+    )
+
+    request = FakeRequest(
+        json_data={
+            "nodes": [
+                {
+                    "node_id": "252:0",
+                    "graph_id": "252",
+                    "type": "CheckpointLoaderSimple",
+                    "title": "Checkpoint Loader (subgraph)",
+                },
+                {
+                    "node_id": "252:1",
+                    "graph_id": "252",
+                    "type": "CLIPLoader",
+                    "title": "CLIP Loader (subgraph)",
+                },
+            ],
+            "client_id": "test-client-1",
+        }
+    )
+
+    response = await handler.register_nodes(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
+
+    assert response.status == 200
+    assert payload["success"] is True
+    assert "2 nodes registered" in payload["message"]
+
+    registry = await node_registry.get_merged_registry()
+    assert registry["node_count"] == 2
+
+    nodes_map = registry["nodes"]
+    assert "252:0" in nodes_map
+    assert "252:1" in nodes_map
+    assert nodes_map["252:0"]["id"] == 0
+    assert nodes_map["252:0"]["graph_id"] == "252"
+    assert nodes_map["252:1"]["id"] == 1
+
+
+@pytest.mark.asyncio
 async def test_update_node_widget_sends_payload():
-    send_calls: list[tuple[str, dict]] = []
+    send_calls: list[tuple[str, dict[str, Any]]] = []
 
     class RecordingPromptServer:
         class Instance:
-            sockets: dict = {}
+            sockets: dict[str, Any] = {}
 
             def send_sync(self, event, payload, sid=None):
                 send_calls.append((event, payload))
@@ -743,7 +804,7 @@ async def test_update_node_widget_sends_payload():
 
     handler = NodeRegistryHandler(
         node_registry=NodeRegistry(),
-        prompt_server=RecordingPromptServer,
+        prompt_server=RecordingPromptServer,  # pyright: ignore[reportArgumentType]
         standalone_mode=False,
     )
 
@@ -755,8 +816,8 @@ async def test_update_node_widget_sends_payload():
         }
     )
 
-    response = await handler.update_node_widget(request)
-    payload = json.loads(response.text)
+    response = await handler.update_node_widget(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 200
     assert payload["success"] is True
@@ -776,18 +837,18 @@ async def test_update_node_widget_sends_payload():
 
 @pytest.mark.asyncio
 async def test_update_lora_code_includes_graph_identifier():
-    send_calls: list[tuple[str, dict]] = []
+    send_calls: list[tuple[str, dict[str, Any]]] = []
 
     class RecordingPromptServer:
         class Instance:
-            sockets: dict = {}
+            sockets: dict[str, Any] = {}
 
             def send_sync(self, event, payload, sid=None):
                 send_calls.append((event, payload))
 
         instance = Instance()
 
-    handler = LoraCodeHandler(RecordingPromptServer)
+    handler = LoraCodeHandler(RecordingPromptServer)  # pyright: ignore[reportArgumentType]
 
     request = FakeRequest(
         json_data={
@@ -797,8 +858,8 @@ async def test_update_lora_code_includes_graph_identifier():
         }
     )
 
-    response = await handler.update_lora_code(request)
-    payload = json.loads(response.text)
+    response = await handler.update_lora_code(request)  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     assert payload["results"] == [
@@ -848,25 +909,62 @@ class FakeExistenceScanner:
         return []
 
 
+class FakeVersionFilesCache:
+    """Cache stub exposing the multi-valued version->files index (#1058)."""
+
+    def __init__(self, entries):
+        self._entries = entries
+
+    def get_files_by_version_id(self, _version_id):
+        return list(self._entries)
+
+
+class FakeDownloadedFilesScanner:
+    """Scanner stub with one known version and per-file cache entries."""
+
+    def __init__(self, version_id, entries):
+        self._version_id = version_id
+        self._cache = FakeVersionFilesCache(entries)
+
+    async def check_model_version_exists(self, version_id):
+        return version_id == self._version_id
+
+    async def get_model_versions_by_id(self, _model_id):
+        return []
+
+    async def get_cached_data(self):
+        return self._cache
+
+
 class FakeMetadataProvider:
     async def get_model_versions(self, _model_id):
         return {"modelVersions": [], "name": "", "type": "lora"}
 
-    async def get_user_models(self, _username):
-        return []
+    async def get_user_models(self, _username, cursor=None):
+        return {"items": [], "nextCursor": None}
+
+    async def get_creator_model_count(self, _username):
+        return None
 
 
 class FakeUserModelsProvider(FakeMetadataProvider):
-    def __init__(self, models):
+    def __init__(self, models, next_cursor=None, estimated_total=None):
         self.models = models
+        self.next_cursor = next_cursor
+        self.estimated_total = estimated_total
         self.received_usernames: list[str] = []
+        self.received_cursors: list[Any] = []
 
-    async def get_user_models(self, username):
+    async def get_user_models(self, username, cursor=None):
         self.received_usernames.append(username)
-        return self.models
+        self.received_cursors.append(cursor)
+        return {"items": self.models, "nextCursor": self.next_cursor}
+
+    async def get_creator_model_count(self, _username):
+        return self.estimated_total
 
 
-async def fake_metadata_provider_factory():
+async def fake_metadata_provider_factory() -> Any:
     return FakeMetadataProvider()
 
 
@@ -891,8 +989,8 @@ async def fake_metadata_archive_manager_factory():
 class FakeDownloadHistoryService:
     def __init__(self, downloaded_by_type=None):
         self.downloaded_by_type = downloaded_by_type or {}
-        self.marked_downloaded: list[tuple] = []
-        self.marked_not_downloaded: list[tuple] = []
+        self.marked_downloaded: list[tuple[Any, ...]] = []
+        self.marked_not_downloaded: list[tuple[Any, ...]] = []
 
     async def has_been_downloaded(self, model_type, version_id):
         return version_id in self.downloaded_by_type.get(model_type, set())
@@ -954,20 +1052,20 @@ async def test_misc_routes_bind_produces_expected_handlers():
 
     controller = MiscRoutes(
         settings_service=DummySettings(),
-        usage_stats_factory=lambda: SimpleNamespace(
+        usage_stats_factory=lambda: SimpleNamespace(  # pyright: ignore[reportArgumentType]
             process_execution=noop_async, get_stats=noop_async
         ),
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         service_registry_adapter=service_registry_adapter,
         metadata_provider_factory=fake_metadata_provider_factory,
         metadata_archive_manager_factory=fake_metadata_archive_manager_factory,
         metadata_provider_updater=noop_async,
         downloader_factory=dummy_downloader_factory,
-        registrar_factory=registrar_factory,
+        registrar_factory=registrar_factory,  # pyright: ignore[reportArgumentType]
     )
 
     app = SimpleNamespace(router=RecordingRouter())
-    controller.bind(app)  # type: ignore[arg-type]
+    controller.bind(app)  # pyright: ignore[reportArgumentType]
 
     assert recorded_registrars, "Expected registrar to be created"
     mapping = recorded_registrars[0].registered_mapping
@@ -1048,7 +1146,7 @@ async def test_get_civitai_user_models_marks_library_versions():
 
     provider = FakeUserModelsProvider(models)
 
-    async def provider_factory():
+    async def provider_factory() -> Any:
         return provider
 
     lora_scanner = FakeExistenceScanner({101})
@@ -1075,9 +1173,9 @@ async def test_get_civitai_user_models_marks_library_versions():
     )
 
     response = await handler.get_civitai_user_models(
-        FakeRequest(query={"username": "pixel"})
+        FakeRequest(query={"username": "pixel"})  # pyright: ignore[reportArgumentType]
     )
-    payload = json.loads(response.text)
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     assert payload["username"] == "pixel"
@@ -1181,7 +1279,7 @@ async def test_get_civitai_user_models_rewrites_civitai_previews():
 
     provider = FakeUserModelsProvider(models)
 
-    async def provider_factory():
+    async def provider_factory() -> Any:
         return provider
 
     handler = ModelLibraryHandler(
@@ -1195,9 +1293,9 @@ async def test_get_civitai_user_models_rewrites_civitai_previews():
     )
 
     response = await handler.get_civitai_user_models(
-        FakeRequest(query={"username": "pixel"})
+        FakeRequest(query={"username": "pixel"})  # pyright: ignore[reportArgumentType]
     )
-    payload = json.loads(response.text)
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     previews_by_version = {
@@ -1217,7 +1315,7 @@ async def test_get_civitai_user_models_rewrites_civitai_previews():
 async def test_get_civitai_user_models_requires_username():
     provider = FakeUserModelsProvider([])
 
-    async def provider_factory():
+    async def provider_factory() -> Any:
         return provider
 
     handler = ModelLibraryHandler(
@@ -1230,12 +1328,94 @@ async def test_get_civitai_user_models_requires_username():
         metadata_provider_factory=provider_factory,
     )
 
-    response = await handler.get_civitai_user_models(FakeRequest())
-    payload = json.loads(response.text)
+    response = await handler.get_civitai_user_models(FakeRequest())  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert response.status == 400
     assert payload["success"] is False
     assert "username" in payload["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_get_civitai_user_models_returns_pagination_fields():
+    models = [
+        {
+            "id": 1,
+            "name": "Model A",
+            "type": "LORA",
+            "tags": [],
+            "modelVersions": [
+                {"id": 100, "name": "v1", "images": [{"url": "http://example.com/a.jpg"}]},
+            ],
+        },
+        {
+            "id": 2,
+            "name": "Unsupported",
+            "type": "Other",
+            "modelVersions": [{"id": 200, "name": "v1"}],
+        },
+    ]
+
+    provider = FakeUserModelsProvider(models, next_cursor="cursor-token", estimated_total=2140)
+
+    async def provider_factory() -> Any:
+        return provider
+
+    handler = ModelLibraryHandler(
+        ServiceRegistryAdapter(
+            get_lora_scanner=fake_scanner_factory,
+            get_checkpoint_scanner=fake_scanner_factory,
+            get_embedding_scanner=fake_scanner_factory,
+            get_downloaded_version_history_service=fake_download_history_service_factory,
+        ),
+        metadata_provider_factory=provider_factory,
+    )
+
+    response = await handler.get_civitai_user_models(
+        FakeRequest(query={"username": "pixel"})  # pyright: ignore[reportArgumentType]
+    )
+    payload = _json_payload(response)
+
+    assert response.status == 200
+    assert payload["success"] is True
+    # modelCount only counts models surviving the type filter
+    assert payload["modelCount"] == 1
+    assert payload["nextCursor"] == "cursor-token"
+    assert payload["hasMore"] is True
+    # first page includes the estimated total
+    assert payload["estimatedTotal"] == 2140
+    assert provider.received_cursors == [None]
+
+
+@pytest.mark.asyncio
+async def test_get_civitai_user_models_passes_cursor_and_omits_estimate():
+    provider = FakeUserModelsProvider([], next_cursor=None, estimated_total=999)
+
+    async def provider_factory() -> Any:
+        return provider
+
+    handler = ModelLibraryHandler(
+        ServiceRegistryAdapter(
+            get_lora_scanner=fake_scanner_factory,
+            get_checkpoint_scanner=fake_scanner_factory,
+            get_embedding_scanner=fake_scanner_factory,
+            get_downloaded_version_history_service=fake_download_history_service_factory,
+        ),
+        metadata_provider_factory=provider_factory,
+    )
+
+    response = await handler.get_civitai_user_models(
+        FakeRequest(query={"username": "pixel", "cursor": "opaque-token"})  # pyright: ignore[reportArgumentType]
+    )
+    payload = _json_payload(response)
+
+    assert response.status == 200
+    assert payload["success"] is True
+    assert payload["nextCursor"] is None
+    assert payload["hasMore"] is False
+    # cursor requests must not include the estimated total
+    assert payload["estimatedTotal"] is None
+    assert provider.received_cursors == ["opaque-token"]
 
 
 def test_ensure_handler_mapping_caches_result():
@@ -1251,10 +1431,10 @@ def test_ensure_handler_mapping_caches_result():
 
     controller = MiscRoutes(
         settings_service=DummySettings(),
-        usage_stats_factory=lambda: SimpleNamespace(
+        usage_stats_factory=lambda: SimpleNamespace(  # pyright: ignore[reportArgumentType]
             process_execution=noop_async, get_stats=noop_async
         ),
-        prompt_server=FakePromptServer,
+        prompt_server=FakePromptServer,  # pyright: ignore[reportArgumentType]
         service_registry_adapter=ServiceRegistryAdapter(
             get_lora_scanner=fake_scanner_factory,
             get_checkpoint_scanner=fake_scanner_factory,
@@ -1265,7 +1445,7 @@ def test_ensure_handler_mapping_caches_result():
         metadata_archive_manager_factory=fake_metadata_archive_manager_factory,
         metadata_provider_updater=noop_async,
         downloader_factory=dummy_downloader_factory,
-        handler_set_factory=RecordingHandlerSet,
+        handler_set_factory=RecordingHandlerSet,  # pyright: ignore[reportArgumentType]
     )
 
     first_mapping = controller._ensure_handler_mapping()
@@ -1307,8 +1487,8 @@ async def test_check_model_exists_returns_local_versions():
         metadata_provider_factory=fake_metadata_provider_factory,
     )
 
-    response = await handler.check_model_exists(FakeRequest(query={"modelId": "5"}))
-    payload = json.loads(response.text)
+    response = await handler.check_model_exists(FakeRequest(query={"modelId": "5"}))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     assert payload["modelType"] == "lora"
@@ -1321,7 +1501,7 @@ async def test_check_model_exists_returns_local_versions():
 
 @pytest.mark.asyncio
 async def test_check_model_exists_model_id_only_does_not_call_metadata_provider():
-    async def metadata_provider_factory():
+    async def metadata_provider_factory() -> Any:
         raise AssertionError("metadata provider should not be called for modelId-only checks")
 
     handler = ModelLibraryHandler(
@@ -1334,8 +1514,8 @@ async def test_check_model_exists_model_id_only_does_not_call_metadata_provider(
         metadata_provider_factory=metadata_provider_factory,
     )
 
-    response = await handler.check_model_exists(FakeRequest(query={"modelId": "5"}))
-    payload = json.loads(response.text)
+    response = await handler.check_model_exists(FakeRequest(query={"modelId": "5"}))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload == {
         "success": True,
@@ -1363,16 +1543,132 @@ async def test_check_model_exists_returns_download_history_when_file_missing():
     )
 
     response = await handler.check_model_exists(
-        FakeRequest(query={"modelId": "5", "modelVersionId": "999"})
+        FakeRequest(query={"modelId": "5", "modelVersionId": "999"})  # pyright: ignore[reportArgumentType]
     )
-    payload = json.loads(response.text)
+    payload = _json_payload(response)
 
     assert payload == {
         "success": True,
         "exists": False,
         "modelType": "checkpoint",
         "hasBeenDownloaded": True,
+        "downloadedFiles": [],
     }
+
+
+@pytest.mark.asyncio
+async def test_check_model_exists_returns_downloaded_files():
+    """The version branch exposes per-file downloaded state (#1058)."""
+    civitai_payload = {
+        "id": 100,
+        "files": [
+            {
+                "id": 1001,
+                "name": "model-fp16.safetensors",
+                "hashes": {"SHA256": "A" * 64},
+            },
+            {
+                "id": 1002,
+                "name": "model-fp32.safetensors",
+                "hashes": {"SHA256": "B" * 64},
+            },
+        ],
+    }
+    entries = [
+        {
+            "file_name": "model-fp16",
+            "file_path": "/models/loras/model-fp16.safetensors",
+            "sha256": "a" * 64,
+            "civitai": civitai_payload,
+        },
+        {
+            # Legacy entry without a hash: matched by extension-less name (D2)
+            "file_name": "model-fp32",
+            "file_path": "/models/loras/model-fp32.safetensors",
+            "sha256": "",
+            "civitai": civitai_payload,
+        },
+    ]
+    lora_scanner = FakeDownloadedFilesScanner(100, entries)
+
+    async def lora_factory():
+        return lora_scanner
+
+    handler = ModelLibraryHandler(
+        ServiceRegistryAdapter(
+            get_lora_scanner=lora_factory,
+            get_checkpoint_scanner=fake_scanner_factory,
+            get_embedding_scanner=fake_scanner_factory,
+            get_downloaded_version_history_service=fake_download_history_service_factory,
+        ),
+        metadata_provider_factory=fake_metadata_provider_factory,
+    )
+
+    response = await handler.check_model_exists(
+        FakeRequest(query={"modelId": "5", "modelVersionId": "100"})  # pyright: ignore[reportArgumentType]
+    )
+    payload = _json_payload(response)
+
+    assert payload == {
+        "success": True,
+        "exists": True,
+        "modelType": "lora",
+        "hasBeenDownloaded": False,
+        "downloadedFiles": [
+            {
+                "fileId": 1001,
+                "fileName": "model-fp16.safetensors",
+                "filePath": "/models/loras/model-fp16.safetensors",
+            },
+            {
+                "fileId": 1002,
+                "fileName": "model-fp32.safetensors",
+                "filePath": "/models/loras/model-fp32.safetensors",
+            },
+        ],
+    }
+
+
+@pytest.mark.asyncio
+async def test_check_model_exists_downloaded_files_without_remote_metadata():
+    """Unmatchable local files are still reported with fileId None (#1058)."""
+    entries = [
+        {
+            "file_name": "renamed-model",
+            "file_path": "/models/loras/renamed-model.safetensors",
+            "sha256": "c" * 64,
+            "civitai": {"id": 100},  # no remote files list cached
+        },
+    ]
+    lora_scanner = FakeDownloadedFilesScanner(100, entries)
+
+    async def lora_factory():
+        return lora_scanner
+
+    handler = ModelLibraryHandler(
+        ServiceRegistryAdapter(
+            get_lora_scanner=lora_factory,
+            get_checkpoint_scanner=fake_scanner_factory,
+            get_embedding_scanner=fake_scanner_factory,
+            get_downloaded_version_history_service=fake_download_history_service_factory,
+        ),
+        metadata_provider_factory=fake_metadata_provider_factory,
+    )
+
+    response = await handler.check_model_exists(
+        FakeRequest(query={"modelId": "5", "modelVersionId": "100"})  # pyright: ignore[reportArgumentType]
+    )
+    payload = _json_payload(response)
+
+    assert payload["success"] is True
+    assert payload["exists"] is True
+    assert payload["downloadedFiles"] == [
+        {
+            "fileId": None,
+            "fileName": "renamed-model",
+            "filePath": "/models/loras/renamed-model.safetensors",
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -1393,9 +1689,9 @@ async def test_model_version_download_status_endpoints():
     )
 
     get_response = await handler.get_model_version_download_status(
-        FakeRequest(query={"modelType": "lora", "modelVersionId": "123"})
+        FakeRequest(query={"modelType": "lora", "modelVersionId": "123"})  # pyright: ignore[reportArgumentType]
     )
-    get_payload = json.loads(get_response.text)
+    get_payload = _json_payload(get_response)
     assert get_payload == {
         "success": True,
         "modelType": "lora",
@@ -1404,7 +1700,7 @@ async def test_model_version_download_status_endpoints():
     }
 
     set_response = await handler.set_model_version_download_status(
-        FakeRequest(
+        FakeRequest(  # pyright: ignore[reportArgumentType]
             json_data={
                 "modelType": "checkpoint",
                 "modelVersionId": 456,
@@ -1414,7 +1710,7 @@ async def test_model_version_download_status_endpoints():
             }
         )
     )
-    set_payload = json.loads(set_response.text)
+    set_payload = _json_payload(set_response)
     assert set_payload == {
         "success": True,
         "modelType": "checkpoint",
@@ -1426,7 +1722,7 @@ async def test_model_version_download_status_endpoints():
     ]
 
     set_get_response = await handler.set_model_version_download_status(
-        FakeRequest(
+        FakeRequest(  # pyright: ignore[reportArgumentType]
             method="GET",
             query={
                 "modelType": "embedding",
@@ -1436,7 +1732,7 @@ async def test_model_version_download_status_endpoints():
             },
         )
     )
-    set_get_payload = json.loads(set_get_response.text)
+    set_get_payload = _json_payload(set_get_response)
     assert set_get_payload == {
         "success": True,
         "modelType": "embedding",
@@ -1446,7 +1742,7 @@ async def test_model_version_download_status_endpoints():
 
 
 def test_create_handler_set_uses_provided_dependencies():
-    recorded_handlers: list[dict] = []
+    recorded_handlers: list[dict[str, Any]] = []
 
     class RecordingHandlerSet:
         def __init__(self, **handlers):
@@ -1469,8 +1765,8 @@ def test_create_handler_set_uses_provided_dependencies():
 
     controller = MiscRoutes(
         settings_service=DummySettings(),
-        usage_stats_factory=lambda: FakeUsageStats(),
-        prompt_server=CustomPromptServer,
+        usage_stats_factory=lambda: FakeUsageStats(),  # pyright: ignore[reportArgumentType]
+        prompt_server=CustomPromptServer,  # pyright: ignore[reportArgumentType]
         service_registry_adapter=ServiceRegistryAdapter(
             get_lora_scanner=fake_scanner_factory,
             get_checkpoint_scanner=fake_scanner_factory,
@@ -1481,8 +1777,8 @@ def test_create_handler_set_uses_provided_dependencies():
         metadata_archive_manager_factory=fake_metadata_archive_manager_factory,
         metadata_provider_updater=noop_async,
         downloader_factory=dummy_downloader_factory,
-        handler_set_factory=RecordingHandlerSet,
-        node_registry=fake_node_registry,
+        handler_set_factory=RecordingHandlerSet,  # pyright: ignore[reportArgumentType]
+        node_registry=fake_node_registry,  # pyright: ignore[reportArgumentType]
         standalone_mode_flag=True,
     )
 
@@ -1525,7 +1821,7 @@ def test_is_wsl_returns_false_on_read_error():
         assert result is False
 
 
-def test_is_wsl_returns_false_on_read_error():
+def test_is_wsl_returns_false_on_read_error_builtins():
     with patch("builtins.open", side_effect=OSError()):
         result = _is_wsl()
         assert result is False
@@ -1548,7 +1844,7 @@ def test_wsl_to_windows_path_returns_none_on_error():
         assert result is None
 
 
-def test_wsl_to_windows_path_returns_none_on_subprocess_error():
+def test_wsl_to_windows_path_returns_none_on_subprocess_error_plain():
     with patch(
         "subprocess.run", side_effect=subprocess.CalledProcessError(1, "wslpath")
     ):
@@ -1629,8 +1925,8 @@ async def test_check_filename_conflicts_returns_ok_when_no_duplicates():
         scanner_factories=(("lora", "LoRAs", scanner_factory),),
     )
 
-    response = await handler.get_doctor_diagnostics(FakeRequest(method="GET"))
-    payload = json.loads(response.text)
+    response = await handler.get_doctor_diagnostics(FakeRequest(method="GET"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     diagnostic_map = {item["id"]: item for item in payload["diagnostics"]}
     assert diagnostic_map["filename_conflicts"]["status"] == "ok"
@@ -1658,8 +1954,8 @@ async def test_check_filename_conflicts_detects_duplicates():
         scanner_factories=(("lora", "LoRAs", scanner_factory),),
     )
 
-    response = await handler.get_doctor_diagnostics(FakeRequest(method="GET"))
-    payload = json.loads(response.text)
+    response = await handler.get_doctor_diagnostics(FakeRequest(method="GET"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     diagnostic_map = {item["id"]: item for item in payload["diagnostics"]}
     conflict_diag = diagnostic_map["filename_conflicts"]
@@ -1686,8 +1982,8 @@ async def test_resolve_filename_conflicts_returns_renamed_list():
         scanner_factories=(("lora", "LoRAs", scanner_factory),),
     )
 
-    response = await handler.resolve_filename_conflicts(FakeRequest(method="POST"))
-    payload = json.loads(response.text)
+    response = await handler.resolve_filename_conflicts(FakeRequest(method="POST"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     # Files don't exist on disk, so nothing gets renamed
@@ -1710,8 +2006,59 @@ async def test_resolve_filename_conflicts_handles_scanner_error_gracefully():
         scanner_factories=(("lora", "LoRAs", scanner_factory),),
     )
 
-    response = await handler.resolve_filename_conflicts(FakeRequest(method="POST"))
-    payload = json.loads(response.text)
+    response = await handler.resolve_filename_conflicts(FakeRequest(method="POST"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
 
     assert payload["success"] is True
     assert payload["count"] == 0
+
+
+async def test_get_init_status_reports_complete_when_all_scanners_ready():
+    async def ready_scanner():
+        return SimpleNamespace(_cache=object(), is_initializing=lambda: False)
+
+    handler = HealthCheckHandler(
+        scanner_getters={
+            "lora": ready_scanner,
+            "recipe": ready_scanner,
+        }
+    )
+
+    response = await handler.get_init_status(FakeRequest(method="GET"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
+
+    assert payload["status"] == "complete"
+    assert payload["progress"] == 100
+    assert "pageType" not in payload
+
+
+async def test_get_init_status_reports_pending_scanners():
+    async def ready_scanner():
+        return SimpleNamespace(_cache=object(), is_initializing=lambda: False)
+
+    async def initializing_scanner():
+        return SimpleNamespace(_cache=object(), is_initializing=lambda: True)
+
+    async def no_cache_scanner():
+        return SimpleNamespace(_cache=None, is_initializing=lambda: False)
+
+    async def failing_scanner():
+        raise RuntimeError("scanner unavailable")
+
+    handler = HealthCheckHandler(
+        scanner_getters={
+            "lora": ready_scanner,
+            "checkpoint": initializing_scanner,
+            "embedding": no_cache_scanner,
+            "recipe": failing_scanner,
+        }
+    )
+
+    response = await handler.get_init_status(FakeRequest(method="GET"))  # pyright: ignore[reportArgumentType]
+    payload = _json_payload(response)
+
+    assert payload["status"] == "initializing"
+    assert "checkpoint" in payload["details"]
+    assert "embedding" in payload["details"]
+    assert "recipe" in payload["details"]
+    assert "lora" not in payload["details"]

@@ -31,7 +31,7 @@ COVERAGE_FILE=coverage/backend/.coverage pytest \
   --cov-report=xml:coverage/backend/coverage.xml
 ```
 
-### Frontend Development (Standalone Web UI)
+### Frontend Development (LoRA Manager Web UI)
 
 ```bash
 npm install
@@ -102,6 +102,7 @@ npm run test:coverage       # Generate coverage report
 - ComfyUI: `app.registerExtension()`, `node.addDOMWidget(name, type, element, options)`
 - Event handlers via `addEventListener` or widget callbacks
 - Shared utilities: `web/comfyui/utils.js`
+- Dual-mode rendering patterns (canvas vs Vue): see `docs/comfyui-dual-mode-widgets.md`
 
 ### Vue Composables Pattern
 
@@ -136,7 +137,13 @@ npm run test:coverage       # Generate coverage report
 - Dual mode: ComfyUI plugin (folder_paths) vs standalone (settings.json)
 - Detection: `os.environ.get("LORA_MANAGER_STANDALONE", "0") == "1"`
 - Run `python scripts/sync_translation_keys.py` after adding UI strings to `locales/en.json`
-- Symlinks require normalized paths
+- Symlinks require normalized paths.
+  **Business paths vs real paths**: All stored paths and operation routing use the
+  original paths as they appear under configured model roots — symlinks are NOT
+  resolved. `os.path.realpath` is only for scanner dedup and the symlink cache.
+  Any path passed to `os.remove`/`os.rename`/`shutil.move` or validated by a
+  containment check MUST use the business path (i.e. `os.path.abspath`, not
+  `realpath`).
 
 ## Git / Commit Messages
 
@@ -147,9 +154,9 @@ npm run test:coverage       # Generate coverage report
 
 ## Frontend UI Architecture
 
-### 1. Standalone Web UI
+### 1. LoRA Manager Web UI
 - Location: `./static/` and `./templates/`
-- Tech: Vanilla JS + CSS, served by standalone server
+- Tech: Vanilla JS + CSS, served by the hosting server (ComfyUI app in plugin mode, `standalone.py` in standalone mode)
 - Tests via npm in root directory
 
 ### 2. ComfyUI Custom Node Widgets
