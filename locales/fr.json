@@ -972,6 +972,7 @@
             }
         },
         "duplicates": {
+            "finding": "Recherche de recettes en doublon...",
             "found": "Trouvé {count} groupes de doublons",
             "noGroups": "Aucun groupe de doublons trouvé avec le critère de correspondance actuel",
             "keepLatest": "Garder les dernières versions",
@@ -1041,6 +1042,8 @@
             "start": "Start Import",
             "startImport": "Start Import",
             "importing": "Importing...",
+            "rateLimitedSlowdown": "[TODO: Translate] Rate limited — slowing down...",
+            "rateLimitedHint": "[TODO: Translate] Some items were skipped due to metadata provider rate limits. Re-run the import later to retry them.",
             "progress": "Progress",
             "total": "Total",
             "success": "Success",
@@ -1430,13 +1433,14 @@
             },
             "proceedText": "Ne procédez que si vous êtes sûr que c'est ce que vous voulez.",
             "urlLabel": "URL du modèle Civitai :",
-            "urlPlaceholder": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
+            "urlPlaceholder": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
             "helpText": {
-                "title": "Collez n'importe quelle URL de modèle Civitai. Formats supportés :",
-                "format1": "https://civitai.com/models/649516",
-                "format2": "https://civitai.com/models/649516?modelVersionId=726676",
-                "format3": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
-                "note": "Note : Si aucun modelVersionId n'est fourni, la dernière version sera utilisée."
+                "title": "Collez n'importe quelle URL de modèle Civitai ou CivitArchive. Formats supportés :",
+                "format1": "https://civitai.com/models/12345",
+                "format2": "https://civitai.com/models/12345?modelVersionId=67890",
+                "format3": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
+                "note": "Note : Si aucun modelVersionId n'est fourni, la dernière version sera utilisée.",
+                "format4": "https://civarchive.com/models/12345 (CivitArchive)"
             },
             "confirmAction": "Confirmer la re-liaison"
         },
@@ -2045,6 +2049,7 @@
             "batchImportCancelFailed": "Failed to cancel batch import: {message}",
             "batchImportNoUrls": "Please enter at least one URL or file path",
             "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportRateLimited": "[TODO: Translate] Metadata provider rate limit reached — requests are being slowed and some items may be skipped. You can re-run the import later.",
             "batchImportBrowseFailed": "Failed to browse directory: {message}",
             "batchImportDirectorySelected": "Directory selected: {path}",
             "noRecipesSelected": "Aucune recette sélectionnée",
@@ -2234,6 +2239,7 @@
             "relinkFailed": "Erreur : {message}",
             "linkHfSuccess": "Modèle lié à HuggingFace avec succès",
             "linkHfFailed": "Erreur : {message}",
+            "linkCivArchSuccess": "Modèle relié via CivitArchive avec succès",
             "fetchMetadataFirst": "Veuillez d'abord récupérer les métadonnées depuis CivitAI",
             "noCivitaiInfo": "Aucune information CivitAI disponible",
             "missingHash": "Hash du modèle non disponible"

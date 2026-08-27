@@ -972,6 +972,7 @@
             }
         },
         "duplicates": {
+            "finding": "重複レシピをスキャンしています...",
             "found": "{count} 個の重複グループが見つかりました",
             "noGroups": "現在の一致基準では重複グループが見つかりませんでした",
             "keepLatest": "最新バージョンを保持",
@@ -1041,6 +1042,8 @@
             "start": "Start Import",
             "startImport": "Start Import",
             "importing": "Importing...",
+            "rateLimitedSlowdown": "[TODO: Translate] Rate limited — slowing down...",
+            "rateLimitedHint": "[TODO: Translate] Some items were skipped due to metadata provider rate limits. Re-run the import later to retry them.",
             "progress": "Progress",
             "total": "Total",
             "success": "Success",
@@ -1430,13 +1433,14 @@
             },
             "proceedText": "これが本当に必要な場合のみ続行してください。",
             "urlLabel": "CivitaiモデルURL：",
-            "urlPlaceholder": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
+            "urlPlaceholder": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
             "helpText": {
-                "title": "CivitaiモデルURLを貼り付けてください。対応形式：",
-                "format1": "https://civitai.com/models/649516",
-                "format2": "https://civitai.com/models/649516?modelVersionId=726676",
-                "format3": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
-                "note": "注：modelVersionIdが提供されていない場合、最新バージョンが使用されます。"
+                "title": "CivitaiまたはCivitArchiveのモデルURLを貼り付けてください。対応形式：",
+                "format1": "https://civitai.com/models/12345",
+                "format2": "https://civitai.com/models/12345?modelVersionId=67890",
+                "format3": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
+                "note": "注：modelVersionIdが提供されていない場合、最新バージョンが使用されます。",
+                "format4": "https://civarchive.com/models/12345 (CivitArchive)"
             },
             "confirmAction": "再リンクを確認"
         },
@@ -2045,6 +2049,7 @@
             "batchImportCancelFailed": "Failed to cancel batch import: {message}",
             "batchImportNoUrls": "Please enter at least one URL or file path",
             "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportRateLimited": "[TODO: Translate] Metadata provider rate limit reached — requests are being slowed and some items may be skipped. You can re-run the import later.",
             "batchImportBrowseFailed": "Failed to browse directory: {message}",
             "batchImportDirectorySelected": "Directory selected: {path}",
             "noRecipesSelected": "レシピが選択されていません",
@@ -2234,6 +2239,7 @@
             "relinkFailed": "エラー：{message}",
             "linkHfSuccess": "モデルを HuggingFace にリンクしました",
             "linkHfFailed": "エラー：{message}",
+            "linkCivArchSuccess": "モデルがCivitArchive経由で正常に再リンクされました",
             "fetchMetadataFirst": "最初にCivitAIからメタデータを取得してください",
             "noCivitaiInfo": "CivitAI情報が利用できません",
             "missingHash": "モデルハッシュが利用できません"

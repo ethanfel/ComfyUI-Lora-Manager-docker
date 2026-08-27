@@ -34,6 +34,8 @@ from ..utils.settings_paths import (
     APP_NAME,
     ensure_settings_file,
     get_legacy_settings_path,
+    get_settings_dir_override,
+    is_settings_dir_pinned,
 )
 from ..utils.tag_priorities import (
     PriorityTagEntry,
@@ -68,6 +70,9 @@ DEFAULT_SETTINGS: Dict[str, Any] = {
     "enable_metadata_archive_db": False,
     "enable_civarchive_api": True,
     "metadata_provider_order": "civitai_archive_sqlite",
+    "rate_limit_gate_enabled": True,
+    "rate_limit_max_wait_seconds": 300,
+    "rate_limit_min_interval_seconds": 0.75,
     "proxy_enabled": False,
     "proxy_host": "",
     "proxy_port": "",
@@ -157,7 +162,10 @@ class SettingsManager:
         self._check_environment_variables()
         self._collect_configuration_warnings()
 
-        if os.environ.get("LORA_MANAGER_PORTABLE", "0") == "1":
+        if (
+            os.environ.get("LORA_MANAGER_PORTABLE", "0") == "1"
+            and not is_settings_dir_pinned()
+        ):
             if not self.settings.get("use_portable_settings"):
                 self.settings["use_portable_settings"] = True
                 self._save_settings()
@@ -1641,6 +1649,15 @@ class SettingsManager:
 
     def _prepare_portable_switch(self, use_portable: bool) -> None:
         """Prepare switching the settings storage location."""
+
+        if is_settings_dir_pinned():
+            logger.info(
+                "Portable-mode switch ignored: settings directory is pinned via "
+                "%s/--settings-path (%s)",
+                "LORA_MANAGER_SETTINGS_DIR",
+                get_settings_dir_override(),
+            )
+            return
 
         legacy_path = get_legacy_settings_path()
         user_dir = self._get_user_config_directory()

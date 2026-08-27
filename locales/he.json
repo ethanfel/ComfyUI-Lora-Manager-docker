@@ -972,6 +972,7 @@
             }
         },
         "duplicates": {
+            "finding": "סורק למציאת מתכונים כפולים...",
             "found": "נמצאו {count} קבוצות כפולות",
             "noGroups": "לא נמצאו קבוצות כפולות לפי קריטריון ההתאמה הנוכחי",
             "keepLatest": "שמור גרסאות אחרונות",
@@ -1041,6 +1042,8 @@
             "start": "Start Import",
             "startImport": "Start Import",
             "importing": "Importing...",
+            "rateLimitedSlowdown": "[TODO: Translate] Rate limited — slowing down...",
+            "rateLimitedHint": "[TODO: Translate] Some items were skipped due to metadata provider rate limits. Re-run the import later to retry them.",
             "progress": "Progress",
             "total": "Total",
             "success": "Success",
@@ -1430,13 +1433,14 @@
             },
             "proceedText": "המשך רק אם אתה בטוח שזה מה שאתה רוצה.",
             "urlLabel": "כתובת URL של מודל ב-Civitai:",
-            "urlPlaceholder": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
+            "urlPlaceholder": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
             "helpText": {
-                "title": "הדבק כל כתובת URL של מודל מ-Civitai. פורמטים נתמכים:",
-                "format1": "https://civitai.com/models/649516",
-                "format2": "https://civitai.com/models/649516?modelVersionId=726676",
-                "format3": "https://civitai.com/models/649516/model-name?modelVersionId=726676",
-                "note": "הערה: אם לא סופק modelVersionId, תילקח הגרסה האחרונה."
+                "title": "הדבק כל כתובת URL של מודל מ-Civitai או מ-CivitArchive. פורמטים נתמכים:",
+                "format1": "https://civitai.com/models/12345",
+                "format2": "https://civitai.com/models/12345?modelVersionId=67890",
+                "format3": "https://civitai.com/models/12345/model-name?modelVersionId=67890",
+                "note": "הערה: אם לא סופק modelVersionId, תילקח הגרסה האחרונה.",
+                "format4": "https://civarchive.com/models/12345 (CivitArchive)"
             },
             "confirmAction": "אשר קישור מחדש"
         },
@@ -2045,6 +2049,7 @@
             "batchImportCancelFailed": "Failed to cancel batch import: {message}",
             "batchImportNoUrls": "Please enter at least one URL or file path",
             "batchImportNoDirectory": "Please enter a directory path",
+            "batchImportRateLimited": "[TODO: Translate] Metadata provider rate limit reached — requests are being slowed and some items may be skipped. You can re-run the import later.",
             "batchImportBrowseFailed": "Failed to browse directory: {message}",
             "batchImportDirectorySelected": "Directory selected: {path}",
             "noRecipesSelected": "לא נבחרו מתכונים",
@@ -2234,6 +2239,7 @@
             "relinkFailed": "שגיאה: {message}",
             "linkHfSuccess": "המודל נקשר בהצלחה ל-HuggingFace",
             "linkHfFailed": "שגיאה: {message}",
+            "linkCivArchSuccess": "המודל קושר מחדש דרך CivitArchive בהצלחה",
             "fetchMetadataFirst": "אנא אחזר מטא-דאטה מ-CivitAI תחילה",
             "noCivitaiInfo": "אין מידע מ-CivitAI זמין",
             "missingHash": "ה-hash של המודל אינו זמין"
