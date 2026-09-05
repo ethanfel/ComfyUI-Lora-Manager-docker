@@ -197,6 +197,7 @@ class StubAnalysisService:
         self.upload_calls: List[bytes] = []
         self.remote_calls: List[Optional[str]] = []
         self.local_calls: List[Optional[str]] = []
+        self.local_ignore_recipe_metadata_calls: List[bool] = []
         self.result = SimpleNamespace(payload={"loras": []}, status=200)
         self._recipe_parser_factory: Any = None
         StubAnalysisService.instances.append(self)
@@ -218,11 +219,16 @@ class StubAnalysisService:
         return self.result
 
     async def analyze_local_image(
-        self, *, file_path: Optional[str], recipe_scanner
+        self,
+        *,
+        file_path: Optional[str],
+        recipe_scanner,
+        ignore_recipe_metadata: bool = False,
     ) -> SimpleNamespace:  # noqa: D401
         if self.raise_for_local:
             raise self.raise_for_local
         self.local_calls.append(file_path)
+        self.local_ignore_recipe_metadata_calls.append(ignore_recipe_metadata)
         return self.result
 
     async def analyze_widget_metadata(self, *, recipe_scanner) -> SimpleNamespace:
@@ -257,6 +263,7 @@ class StubPersistenceService:
         extension=None,
         recipe_id=None,
         target_dir=None,
+        skip_optimize=False,
     ) -> SimpleNamespace:  # noqa: D401
         self.save_calls.append(
             {
@@ -269,6 +276,7 @@ class StubPersistenceService:
                 "extension": extension,
                 "recipe_id": recipe_id,
                 "target_dir": target_dir,
+                "skip_optimize": skip_optimize,
             }
         )
         return self.save_result
@@ -308,6 +316,28 @@ class StubPersistenceService:
 
     async def reconnect_lora(
         self, *, recipe_scanner, recipe_id: str, lora_index: int, target_name: str
+    ) -> SimpleNamespace:  # pragma: no cover
+        return SimpleNamespace(payload={"success": True}, status=200)
+
+    async def reconnect_checkpoint(
+        self, *, recipe_scanner, recipe_id: str, target_name: str
+    ) -> SimpleNamespace:  # pragma: no cover
+        return SimpleNamespace(payload={"success": True}, status=200)
+
+    async def restore_checkpoint(
+        self, *, recipe_scanner, recipe_id: str
+    ) -> SimpleNamespace:  # pragma: no cover
+        return SimpleNamespace(payload={"success": True}, status=200)
+
+    async def get_checkpoint_reconnect_suggestions(
+        self, *, recipe_scanner, recipe_id: str, query: str | None = None
+    ) -> SimpleNamespace:  # pragma: no cover
+        return SimpleNamespace(
+            payload={"success": True, "suggestions": []}, status=200
+        )
+
+    async def mark_checkpoint_hash_invalid(
+        self, *, recipe_scanner, recipe_id: str, hash_invalid: bool = True
     ) -> SimpleNamespace:  # pragma: no cover
         return SimpleNamespace(payload={"success": True}, status=200)
 
@@ -2050,3 +2080,279 @@ async def test_find_duplicates_forwards_include_prompt_and_assigns_unique_keys(
         assert len(groups) == 2
         assert {g["type"] for g in groups} == {"fingerprint", "source_path"}
         assert len({g["key"] for g in groups}) == 2
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint reconnect routes (manual remediation for recipe.checkpoint)
+# ---------------------------------------------------------------------------
+
+
+async def test_checkpoint_reconnect_route(monkeypatch, tmp_path: Path) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/reconnect",
+            json={"recipe_id": "r1", "target_name": "main"},
+        )
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["success"] is True
+
+
+async def test_checkpoint_reconnect_route_requires_target_name(
+    monkeypatch, tmp_path: Path
+) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/reconnect",
+            json={"recipe_id": "r1"},
+        )
+        assert response.status == 400
+
+
+async def test_checkpoint_restore_route(monkeypatch, tmp_path: Path) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/restore",
+            json={"recipe_id": "r1"},
+        )
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["success"] is True
+
+
+async def test_checkpoint_restore_route_requires_recipe_id(
+    monkeypatch, tmp_path: Path
+) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/restore",
+            json={},
+        )
+        assert response.status == 400
+
+
+async def test_checkpoint_reconnect_suggestions_route(
+    monkeypatch, tmp_path: Path
+) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.get(
+            "/api/lm/recipe/r1/checkpoint/reconnect-suggestions?query=main"
+        )
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["success"] is True
+        assert payload["suggestions"] == []
+
+
+async def test_checkpoint_reconnect_suggestions_route_without_query(
+    monkeypatch, tmp_path: Path
+) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.get(
+            "/api/lm/recipe/r1/checkpoint/reconnect-suggestions"
+        )
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["success"] is True
+
+
+async def test_checkpoint_mark_hash_invalid_route(monkeypatch, tmp_path: Path) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/mark-hash-invalid",
+            json={"recipe_id": "r1"},
+        )
+        payload = await response.json()
+        assert response.status == 200
+        assert payload["success"] is True
+
+
+async def test_checkpoint_mark_hash_invalid_route_requires_recipe_id(
+    monkeypatch, tmp_path: Path
+) -> None:
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        response = await harness.client.post(
+            "/api/lm/recipe/checkpoint/mark-hash-invalid",
+            json={},
+        )
+        assert response.status == 400
+
+
+async def test_reimport_without_source_path_falls_back_to_recipe_file(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Drag & drop imports record no source_path; re-import must fall back to
+    the recipe's own saved image and re-parse ignoring the recipe metadata."""
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        recipe_file = harness.tmp_dir / "recipes" / "rec1.webp"
+        recipe_file.parent.mkdir(parents=True, exist_ok=True)
+        recipe_file.write_bytes(b"fake-image")
+
+        harness.scanner.recipes["rec1"] = {
+            "id": "rec1",
+            "title": "Old title",
+            "file_path": str(recipe_file),
+            "tags": ["tag1"],
+            # no source_path on purpose
+        }
+        harness.analysis.result = SimpleNamespace(
+            payload={
+                "success": True,
+                "recipe_id": "new-rec",
+                "loras": [],
+            },
+            status=200,
+        )
+        harness.persistence.save_result = SimpleNamespace(
+            payload={"success": True, "recipe_id": "new-rec"}, status=200
+        )
+
+        response = await harness.client.post("/api/lm/recipe/rec1/reimport")
+        payload = await response.json()
+
+        assert response.status == 200
+        assert payload["success"] is True
+        assert payload["old_recipe_id"] == "rec1"
+        assert payload["recipe_id"] == "new-rec"
+        # Local analysis is used on the saved image, ignoring recipe metadata.
+        assert harness.analysis.local_calls == [str(recipe_file)]
+        assert harness.analysis.local_ignore_recipe_metadata_calls == [True]
+        # The old recipe is deleted after the fresh save.
+        assert harness.persistence.delete_calls == ["rec1"]
+        # The already-optimized preview image must be stored verbatim.
+        assert harness.persistence.save_calls[-1]["skip_optimize"] is True
+        assert harness.persistence.save_calls[-1]["image_bytes"] == b"fake-image"
+        # The fallback source is the recipe's own previous preview, which gets
+        # deleted with the old recipe — it must not be recorded as source_path.
+        assert harness.persistence.save_calls[-1]["metadata"]["source_path"] == ""
+        # User edits (title, tags) are carried over to the new recipe.
+        assert harness.persistence.update_calls[-1]["recipe_id"] == "new-rec"
+        assert harness.persistence.update_calls[-1]["updates"]["title"] == "Old title"
+        assert harness.persistence.update_calls[-1]["updates"]["tags"] == ["tag1"]
+
+
+async def test_reimport_with_dangling_source_path_falls_back_to_recipe_file(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """A source_path pointing to a deleted file (left by an earlier re-import)
+    must not block re-import: fall back to the recipe's own saved image and
+    clear the dangling source_path."""
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        recipe_file = harness.tmp_dir / "recipes" / "rec3.webp"
+        recipe_file.parent.mkdir(parents=True, exist_ok=True)
+        recipe_file.write_bytes(b"fake-image")
+
+        harness.scanner.recipes["rec3"] = {
+            "id": "rec3",
+            "title": "Dangling source",
+            "file_path": str(recipe_file),
+            "tags": [],
+            # Dangling local path: the file no longer exists.
+            "source_path": str(harness.tmp_dir / "recipes" / "deleted.webp"),
+        }
+        harness.analysis.result = SimpleNamespace(
+            payload={"success": True, "recipe_id": "new-rec-3", "loras": []},
+            status=200,
+        )
+        harness.persistence.save_result = SimpleNamespace(
+            payload={"success": True, "recipe_id": "new-rec-3"}, status=200
+        )
+
+        response = await harness.client.post("/api/lm/recipe/rec3/reimport")
+        payload = await response.json()
+
+        assert response.status == 200
+        assert payload["success"] is True
+        assert payload["recipe_id"] == "new-rec-3"
+        assert harness.analysis.local_calls == [str(recipe_file)]
+        assert harness.persistence.delete_calls == ["rec3"]
+        # The dangling path is not carried over to the new recipe.
+        assert harness.persistence.save_calls[-1]["metadata"]["source_path"] == ""
+
+
+async def test_reimport_with_accessible_local_source_keeps_source_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """When the recorded source_path is an existing external file, it remains
+    the source of truth and stays recorded on the new recipe."""
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        source_file = harness.tmp_dir / "imports" / "original.png"
+        source_file.parent.mkdir(parents=True, exist_ok=True)
+        source_file.write_bytes(b"original-image")
+        recipe_file = harness.tmp_dir / "recipes" / "rec4.webp"
+        recipe_file.parent.mkdir(parents=True, exist_ok=True)
+        recipe_file.write_bytes(b"fake-image")
+
+        harness.scanner.recipes["rec4"] = {
+            "id": "rec4",
+            "title": "External source",
+            "file_path": str(recipe_file),
+            "tags": [],
+            "source_path": str(source_file),
+        }
+        harness.analysis.result = SimpleNamespace(
+            payload={"success": True, "recipe_id": "new-rec-4", "loras": []},
+            status=200,
+        )
+        harness.persistence.save_result = SimpleNamespace(
+            payload={"success": True, "recipe_id": "new-rec-4"}, status=200
+        )
+
+        response = await harness.client.post("/api/lm/recipe/rec4/reimport")
+        payload = await response.json()
+
+        assert response.status == 200
+        assert payload["success"] is True
+        # The external source file is re-parsed, not the recipe preview.
+        assert harness.analysis.local_calls == [str(source_file)]
+        assert harness.persistence.save_calls[-1]["metadata"]["source_path"] == str(
+            source_file
+        )
+
+
+async def test_reimport_without_any_source_returns_400(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """Recipes with neither source_path nor an accessible image cannot re-import."""
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        harness.scanner.recipes["rec2"] = {
+            "id": "rec2",
+            "title": "No source",
+            "file_path": str(harness.tmp_dir / "recipes" / "missing.webp"),
+        }
+
+        response = await harness.client.post("/api/lm/recipe/rec2/reimport")
+        payload = await response.json()
+
+        assert response.status == 400
+        assert payload["success"] is False
+        assert harness.analysis.local_calls == []
+        assert harness.persistence.delete_calls == []
+
+
+async def test_get_recipe_detail_includes_recipe_json_path(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """The detail response exposes the recipe JSON path for open-location UI."""
+    async with recipe_harness(monkeypatch, tmp_path) as harness:
+        recipes_dir = Path(harness.scanner.recipes_dir)
+        recipes_dir.mkdir(parents=True, exist_ok=True)
+        harness.scanner.recipes["recipe-1"] = {
+            "id": "recipe-1",
+            "title": "Demo",
+            "file_path": str(recipes_dir / "recipe-1.png"),
+        }
+        json_file = recipes_dir / "recipe-1.recipe.json"
+        json_file.write_text("{}", encoding="utf-8")
+
+        response = await harness.client.get("/api/lm/recipe/recipe-1")
+        assert response.status == 200
+        payload = await response.json()
+        assert payload["recipe_json_path"] == str(json_file)
+
+        # Without the JSON file on disk the key is omitted entirely.
+        json_file.unlink()
+        response = await harness.client.get("/api/lm/recipe/recipe-1")
+        assert response.status == 200
+        payload = await response.json()
+        assert "recipe_json_path" not in payload
